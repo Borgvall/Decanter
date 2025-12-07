@@ -28,7 +28,7 @@ createVolume :: FilePath -> IO ()
 createVolume path = do
   -- Wir versuchen ein Subvolume zu erstellen.
   -- Das schlägt fehl, wenn das Dateisystem kein BTRFS ist oder Rechte fehlen.
-  result <- try (Btrfs.createSubvolume path) :: IO (Either IOException ())
+  result <- try (Btrfs.createSubvol path) :: IO (Either IOException ())
   
   case result of
     Right _ -> putStrLn $ "BTRFS Subvolume erstellt: " ++ path
