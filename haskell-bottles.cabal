@@ -28,11 +28,11 @@ executable haskell-bottles
                     , async
                     
                     -- BTRFS Support
-                    , linux-btrfs >= 0.1
+                    , btrfs >= 0.2
                     
                     -- GUI (GTK4 + Adwaita)
-                    , gi-gtk == 4.*
-                    , gi-adw == 1.*
+                    , gi-gtk4 == 4.*
+                    , gi-adwaita == 1.*
                     , gi-gio
                     , haskell-gi-base
 
