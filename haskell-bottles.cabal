@@ -1,0 +1,39 @@
+cabal-version:      3.0
+name:               haskell-bottles
+version:            0.1.0.0
+synopsis:           A Wine prefix manager written in Haskell (Bottles clone)
+license:            GPL-3.0-only
+author:             Haskell Dev
+maintainer:         dev@example.com
+category:           System
+build-type:         Simple
+
+common warnings
+    ghc-options: -Wall -threaded -rtsopts
+
+executable haskell-bottles
+    import:           warnings
+    main-is:          Main.hs
+    
+    -- Die anderen Module müssen im selben Verzeichnis liegen
+    other-modules:    Bottle.Types
+                    , Bottle.Logic
+    
+    -- Dependencies
+    build-depends:    base >= 4.16 && < 5
+                    , text
+                    , directory
+                    , filepath
+                    , typed-process
+                    , async
+                    
+                    -- BTRFS Support
+                    , linux-btrfs >= 0.1
+                    
+                    -- GUI (GTK4 + Adwaita)
+                    , gi-gtk == 4.*
+                    , gi-adw == 1.*
+                    , gi-gio
+                    , haskell-gi-base
+
+    default-language: Haskell2010
