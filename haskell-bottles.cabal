@@ -9,7 +9,7 @@ category:           System
 build-type:         Simple
 
 common warnings
-    ghc-options: -Wall -threaded -rtsopts
+    ghc-options: -Wall -threaded -rtsopts -O2
 
 executable haskell-bottles
     import:           warnings
