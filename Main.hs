@@ -30,7 +30,7 @@ buildUI app = do
   window <- new Adw.ApplicationWindow [ #application := app, #title := "Haskell Bottles" ]
   
   -- WICHTIG: Adwaita Window zu GTK Window casten für Funktionen, die Gtk.Window erwarten
-  windowAsGtk <- unsafeCastTo Gtk.Window window
+  Just windowAsGtk <- castTo Gtk.Window window
 
   -- Toolbar View Setup
   content <- new Adw.ToolbarView []
