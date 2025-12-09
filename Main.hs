@@ -79,7 +79,6 @@ buildOverviewPage window stack = do
   let refreshAction = do
         -- 1. Alte Kinder entfernen
         children <- #observeChildren listBox
-        n <- Gio.listModelGetNChildren children
         -- Ein naiver Weg, alles zu löschen (von hinten nach vorne oder via removeAll wenn verfügbar)
         -- Da ListBox kein 'removeAll' hat, iterieren wir:
         -- (In GTK4 ist das etwas mühsam, wir bauen einfach die Items neu auf und ersetzen sie nicht, 
