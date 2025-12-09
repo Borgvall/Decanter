@@ -185,31 +185,27 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
         , bottleName bottle
         , tr "'? All data will be lost. This cannot be undone."
         ]
-        
+  let handleAlertDialogResult :: a -> Int -> IO ()
+      handleAlertDialogResult _ 1 = do
+          #setVisibleChildName windowStack "overview"
+          async $ do
+            res <- try (deleteBottleLogic bottle) :: IO (Either SomeException ())
+            GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+              case res of
+                Right _ -> do
+                  putStrLn $ "Bottle " ++ T.unpack (bottleName bottle) ++ " erfolgreich gelöscht."
+                  refreshCallback
+                Left err -> do
+                  putStrLn $ "Fehler beim Löschen der Bottle: " ++ show err
+              return False
+          return ()
+      handleAlertDialogResult _ _ = return ()
   dialog <- new Gtk.AlertDialog 
     [ #message := fullMessage
     , #buttons := [ tr "Cancel", tr "Delete" ]
     ]
-
-  #show dialog (Just parent) Nothing $ Just $ \_ result -> do -- FIX: Fügen Sie Nothing für Gio.Cancellable ein
-    if result == 1
-      then do
-        #setVisibleChildName windowStack "overview"
-        
-        async $ do
-          res <- try (deleteBottleLogic bottle) :: IO (Either SomeException ())
-          
-          GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
-            case res of
-              Right _ -> do
-                putStrLn $ "Bottle " ++ T.unpack (bottleName bottle) ++ " erfolgreich gelöscht."
-                refreshCallback
-              Left err -> do
-                putStrLn $ "Fehler beim Löschen der Bottle: " ++ show err
-            return False
-        return ()
-      else 
-        return ()
+  #show dialog (Just parent)
+  return ()
 
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildBottleView window bottle stack refreshCallback = do
