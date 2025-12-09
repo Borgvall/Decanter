@@ -5,11 +5,54 @@ module Bottle.Logic where
 
 import Bottle.Types
 import System.Process.Typed
-import System.Directory (createDirectoryIfMissing)
+import System.Directory 
+    ( createDirectoryIfMissing
+    , getXdgDirectory
+    , XdgDirectory(XdgData)
+    , listDirectory
+    , doesDirectoryExist
+    , doesFileExist
+    )
 import System.FilePath ((</>), takeExtension)
 import Control.Exception (try, IOException)
-import Control.Monad (void)
-import qualified System.Linux.Btrfs as Btrfs -- Aus dem Paket 'linux-btrfs'
+import Control.Monad (void, filterM)
+import qualified Data.Text as T
+import qualified System.Linux.Btrfs as Btrfs
+
+-- | Bestimmt das Basisverzeichnis für alle Bottles: ~/.local/share/bottles
+getBottlesBaseDir :: IO FilePath
+getBottlesBaseDir = do
+  base <- getXdgDirectory XdgData "haskell-bottles"
+  createDirectoryIfMissing True base
+  return base
+
+-- | Erstellt ein Bottle-Objekt mit korrektem Pfad basierend auf Namen
+createBottleObject :: T.Text -> Arch -> IO Bottle
+createBottleObject name arch = do
+  base <- getBottlesBaseDir
+  let path = base </> T.unpack name
+  return $ Bottle name path SystemWine arch
+
+-- | Scannt das Verzeichnis nach existierenden Bottles
+-- Kriterium: Ordner existiert und enthält "drive_c"
+listExistingBottles :: IO [Bottle]
+listExistingBottles = do
+  base <- getBottlesBaseDir
+  exists <- doesDirectoryExist base
+  if not exists 
+    then return []
+    else do
+      entries <- listDirectory base
+      -- Filter: Muss ein Verzeichnis sein
+      dirs <- filterM (\e -> doesDirectoryExist (base </> e)) entries
+      
+      -- Filter: Muss drive_c enthalten (Indikator für valides Prefix)
+      validDirs <- filterM (\e -> doesDirectoryExist (base </> e </> "drive_c")) dirs
+      
+      -- Rückgabe als Bottle Objekte
+      -- Hinweis: Wir raten hier Arch/Runner, da wir die Config nicht parsen.
+      -- In einer echten App würde man bottles.yml im Ordner lesen.
+      return $ map (\name -> Bottle (T.pack name) (base </> name) SystemWine Win64) validDirs
 
 -- Umgebungsvariablen setzen
 getWineEnv :: Bottle -> [(String, String)]
@@ -18,18 +61,13 @@ getWineEnv Bottle{..} =
   , ("WINEARCH", archToString arch)
   ]
 
--- Helper um Prozesse zu starten
 runCmd :: Bottle -> String -> [String] -> IO ()
 runCmd bottle cmd args = 
   void $ startProcess $ setEnv (getWineEnv bottle) $ proc cmd args
 
--- Erstellt Volume: Versucht BTRFS Subvolume, Fallback auf mkdir
 createVolume :: FilePath -> IO ()
 createVolume path = do
-  -- Wir versuchen ein Subvolume zu erstellen.
-  -- Das schlägt fehl, wenn das Dateisystem kein BTRFS ist oder Rechte fehlen.
   result <- try (Btrfs.createSubvol path) :: IO (Either IOException ())
-  
   case result of
     Right _ -> putStrLn $ "BTRFS Subvolume erstellt: " ++ path
     Left _  -> do
@@ -40,7 +78,6 @@ createVolume path = do
 createBottleLogic :: Bottle -> IO ()
 createBottleLogic bottle@Bottle{..} = do
   createVolume bottlePath
-  -- wineboot initialisiert das Prefix
   let procConfig = setEnv (getWineEnv bottle)
                  $ proc "wineboot" ["-u"]
   runProcess_ procConfig
@@ -60,7 +97,6 @@ runFileManager Bottle{..} = do
   let driveC = bottlePath </> "drive_c"
   void $ startProcess $ proc "xdg-open" [driveC]
 
--- Führt EXE oder MSI aus
 runExecutable :: Bottle -> FilePath -> IO ()
 runExecutable bottle filePath = do
   let ext = takeExtension filePath
