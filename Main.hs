@@ -252,9 +252,8 @@ openExecutableFileDialog parentWindow callback = do
             exeFilter <- configureFilter (tr "Windows Executables (*.exe)") ["*.exe", "*.EXE"]
             msiFilter <- configureFilter (tr "Windows Installers (*.msi)") ["*.msi", "*.MSI"]
             
-            -- FIX: listStoreNew BENÖTIGT den GType. Das ist die korrekte Lösung:
-            -- Wir holen den Type Identifier für GtkFileFilter aus den Bindings.
-            listStore <- Gio.listStoreNew Gtk.fileFilterGetType
+            gType <- glibType @Gtk.FileFilter
+            listStore <- Gio.listStoreNew gType
             
             Gio.listStoreAppend listStore exeFilter
             Gio.listStoreAppend listStore msiFilter
