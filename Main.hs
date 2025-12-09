@@ -8,7 +8,7 @@ import qualified GI.Gio as Gio
 import qualified GI.GLib as GLib
 import Data.GI.Base
 import Control.Concurrent.Async (async)
-import Control.Exception (try)
+import Control.Exception (try, SomeException)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Control.Monad (void, forM_)
@@ -271,10 +271,27 @@ openExecutableFileDialog parentWindow callback = do
     cancellable <- Gio.cancellableNew
     Gtk.fileDialogOpen dialog (Just parentWindow) (Just cancellable) (Just $ \_ result -> handleFileDialogResponse callback dialog result)
 
+-- | Handles the response from the file dialog.
+-- Fängt alle Exceptions (einschließlich GError bei Abbruch) ab.
 handleFileDialogResponse :: FileSelectedCallback -> Gtk.FileDialog -> Gio.AsyncResult -> IO ()
 handleFileDialogResponse userCallback dialog result = do
-    gfile <- Gtk.fileDialogOpenFinish dialog result
-    mpath <- Gio.fileGetPath gfile
-    case mpath of
-        Just path -> userCallback path
-        Nothing -> return ()
+    -- Versuche, die Datei zu bekommen, fange dabei ALLE Fehler ab (SomeException)
+    fileResult <- try (Gtk.fileDialogOpenFinish dialog result) :: IO (Either SomeException Gio.File)
+    
+    case fileResult of
+        Left err -> do
+            -- Fehler (z.B. Abbruch des Dialogs) aufgetreten
+            putStrLn $ "File dialog operation cancelled or failed: " ++ show err
+            return () -- Wichtig: Normale Beendigung der Funktion bei Abbruch
+            
+        Right gfile -> do
+            -- Erfolgreich eine GFile erhalten
+            mpath <- Gio.fileGetPath gfile
+            case mpath of
+                Just path -> do
+                    -- Erfolgreich einen lokalen Pfad erhalten
+                    userCallback path
+                Nothing -> do
+                    -- Ausgewählte Datei ist keine lokale URI (z.B. Netzwerk)
+                    uri <- Gio.fileGetUri gfile
+                    putStrLn $ "Error: Selected file is not a local path. URI: " ++ T.unpack uri
