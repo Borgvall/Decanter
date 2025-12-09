@@ -210,7 +210,8 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
                     return False
               return ()
           else return ()
-  Gtk.alertDialogChoose dialog (Just parent) Nothing (Just handleAlertDialogResult)
+  let notCancellable = Nothing :: Maybe Gio.Cancellable -- explicit type annotation needed
+  Gtk.alertDialogChoose dialog (Just parent) notCancellable (Just handleAlertDialogResult)
 
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildBottleView window bottle stack refreshCallback = do
