@@ -18,8 +18,37 @@ import Control.Exception (try, IOException)
 import Control.Monad (void, filterM)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
+import System.Environment (getEnvironment) -- NEUER IMPORT
 
--- | Bestimmt das Basisverzeichnis für alle Bottles: ~/.local/share/bottles
+-- | Erstellt die Umgebungsvariablen für Wine, indem die aktuelle Umgebung
+-- | (mit DISPLAY, XDG_RUNTIME_DIR, etc.) gelesen und WINEPREFIX/WINEARCH überschrieben wird.
+getMergedWineEnv :: Bottle -> IO [(String, String)]
+getMergedWineEnv Bottle{..} = do
+  -- 1. Aktuelle Umgebung lesen (d.h. alles, was Wine braucht)
+  currentEnv <- getEnvironment
+  
+  -- 2. Wine-spezifische Overrides definieren
+  let wineSpecificEnv = 
+        [ ("WINEPREFIX", bottlePath)
+        , ("WINEARCH", archToString arch)
+        ]
+  
+  -- 3. Aus der aktuellen Umgebung die Wine-spezifischen Keys entfernen,
+  --    damit wir keine Duplikate haben.
+  let filteredEnv = filter (\(k, _) -> k `notElem` ["WINEPREFIX", "WINEARCH"]) currentEnv
+  
+  -- 4. Neue Umgebung erstellen: Overrides zuerst, dann der Rest der Umgebung.
+  return (wineSpecificEnv ++ filteredEnv)
+
+
+-- | Helper um Prozesse zu starten (GEÄNDERT)
+runCmd :: Bottle -> String -> [String] -> IO ()
+runCmd bottle cmd args = do
+  mergedEnv <- getMergedWineEnv bottle
+  -- setEnv setzt die gesamte Umgebung auf 'mergedEnv'
+  void $ startProcess $ setEnv mergedEnv $ proc cmd args
+
+-- | Bestimmt das Basisverzeichnis für alle Bottles: ~/.local/share/haskell-bottles
 getBottlesBaseDir :: IO FilePath
 getBottlesBaseDir = do
   base <- getXdgDirectory XdgData "haskell-bottles"
@@ -50,20 +79,8 @@ listExistingBottles = do
       validDirs <- filterM (\e -> doesDirectoryExist (base </> e </> "drive_c")) dirs
       
       -- Rückgabe als Bottle Objekte
-      -- Hinweis: Wir raten hier Arch/Runner, da wir die Config nicht parsen.
-      -- In einer echten App würde man bottles.yml im Ordner lesen.
       return $ map (\name -> Bottle (T.pack name) (base </> name) SystemWine Win64) validDirs
 
--- Umgebungsvariablen setzen
-getWineEnv :: Bottle -> [(String, String)]
-getWineEnv Bottle{..} =
-  [ ("WINEPREFIX", bottlePath)
-  , ("WINEARCH", archToString arch)
-  ]
-
-runCmd :: Bottle -> String -> [String] -> IO ()
-runCmd bottle cmd args = 
-  void $ startProcess $ setEnv (getWineEnv bottle) $ proc cmd args
 
 createVolume :: FilePath -> IO ()
 createVolume path = do
@@ -78,8 +95,8 @@ createVolume path = do
 createBottleLogic :: Bottle -> IO ()
 createBottleLogic bottle@Bottle{..} = do
   createVolume bottlePath
-  let procConfig = setEnv (getWineEnv bottle)
-                 $ proc "wineboot" ["-u"]
+  -- wineboot initialisiert das Prefix
+  let procConfig = setEnv (getMergedWineEnv bottle) $ proc "wineboot" ["-u"]
   runProcess_ procConfig
 
 -- Tools
