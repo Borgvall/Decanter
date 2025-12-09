@@ -6,6 +6,7 @@ import qualified GI.Gtk as Gtk
 import qualified GI.Adw as Adw
 import qualified GI.Gio as Gio
 import qualified GI.GLib as GLib
+import GI.Gio.Callbacks (AsyncReadyCallback)
 import Data.GI.Base
 import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
@@ -185,26 +186,30 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
         , bottleName bottle
         , tr "'? All data will be lost. This cannot be undone."
         ]
-  let handleAlertDialogResult :: a -> Int -> IO ()
-      handleAlertDialogResult _ 1 = do
-          #setVisibleChildName windowStack "overview"
-          async $ do
-            res <- try (deleteBottleLogic bottle) :: IO (Either SomeException ())
-            GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
-              case res of
-                Right _ -> do
-                  putStrLn $ "Bottle " ++ T.unpack (bottleName bottle) ++ " erfolgreich gelöscht."
-                  refreshCallback
-                Left err -> do
-                  putStrLn $ "Fehler beim Löschen der Bottle: " ++ show err
-              return False
-          return ()
-      handleAlertDialogResult _ _ = return ()
   dialog <- new Gtk.AlertDialog 
     [ #message := fullMessage
     , #buttons := [ tr "Cancel", tr "Delete" ]
     ]
-  #show dialog (Just parent)
+  let handleAlertDialogResult :: AsyncReadyCallback
+      handleAlertDialogResult _dialog result = do
+          #setVisibleChildName windowStack "overview"
+          buttonIndex <- Gtk.alertDialogChooseFinish dialog result
+          -- buttonIndex == 1 -> Confirmation to delete the bottle
+          if buttonIndex == 1
+          then do
+              async $ do
+                  res <- try (deleteBottleLogic bottle) :: IO (Either SomeException ())
+                  GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+                    case res of
+                      Right _ -> do
+                        putStrLn $ "Bottle " ++ T.unpack (bottleName bottle) ++ " erfolgreich gelöscht."
+                        refreshCallback
+                      Left err -> do
+                        putStrLn $ "Fehler beim Löschen der Bottle: " ++ show err
+                    return False
+              return ()
+          else return ()
+  Gtk.alertDialogChoose dialog (Just parent) Nothing (Just handleAlertDialogResult)
   return ()
 
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
