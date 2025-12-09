@@ -8,7 +8,7 @@ import qualified GI.Gio as Gio
 import qualified GI.GLib as GLib
 import Data.GI.Base
 import Control.Concurrent.Async (async)
-import Control.Exception (try, SomeException) -- SomeException ist für die robustere Fehlerbehandlung im Dateidialog notwendig
+import Control.Exception (try, SomeException)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Control.Monad (void, forM_)
@@ -29,13 +29,10 @@ buildUI :: Adw.Application -> IO ()
 buildUI app = do
   window <- new Adw.ApplicationWindow [ #application := app, #title := "Haskell Bottles" ]
   
-  -- WICHTIG: Adwaita Window zu GTK Window casten für Funktionen, die Gtk.Window erwarten
   Just windowAsGtk <- castTo Gtk.Window window
 
-  -- Toolbar View Setup
   content <- new Adw.ToolbarView []
   
-  -- Header Bar mit "Add" Button
   header <- new Adw.HeaderBar []
   addBtn <- new Gtk.Button [ #iconName := "list-add-symbolic", #tooltipText := tr "Create new Bottle" ]
   #packEnd header addBtn
@@ -43,39 +40,30 @@ buildUI app = do
 
   stack <- new Gtk.Stack []
   
-  -- Overview Page erstellen
   (overviewWidget, refreshList) <- buildOverviewPage windowAsGtk stack
   #addNamed stack overviewWidget (Just "overview")
   
   #setContent content (Just stack)
   #setContent window (Just content)
   
-  -- Event: Neue Bottle erstellen
   on addBtn #clicked $ showNewBottleDialog windowAsGtk refreshList
   
-  -- Initiales Laden der Liste
   refreshList
 
   #present window
 
--- | Baut die Übersichtsseite und gibt eine Funktion zum Aktualisieren der Liste zurück
 buildOverviewPage :: Gtk.Window -> Gtk.Stack -> IO (Gtk.Widget, IO ())
 buildOverviewPage window stack = do
-  -- 1. Scrollbares Fenster (Dies ist der Container, der scrollt)
   scrolled <- new Gtk.ScrolledWindow [ #hscrollbarPolicy := Gtk.PolicyTypeNever ]
-  #setVexpand scrolled True -- WICHTIG: Damit die Liste den Platz im Fenster ausfüllt
+  #setVexpand scrolled True
   
-  -- 2. Clamp (Zentriert den Inhalt)
   clamp <- new Adw.Clamp [ #maximumSize := 600, #tighteningThreshold := 400 ]
   
-  -- 3. ListBox (Der eigentliche Inhalt)
   listBox <- new Gtk.ListBox [ #selectionMode := Gtk.SelectionModeNone, #cssClasses := ["boxed-list"] ]
   
-  -- HIERARCHIE VERBINDEN:
   #setChild clamp (Just listBox)
   #setChild scrolled (Just clamp)
   
-  -- Box um alles zusammenzuhalten (mit etwas Margin)
   outerBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #marginTop := 24, #spacing := 12 ]
   
   title <- new Gtk.Label [ #label := tr "Your Bottles", #cssClasses := ["title-2"] ]
@@ -84,7 +72,6 @@ buildOverviewPage window stack = do
   #append outerBox scrolled
 
   let refreshAction = do
-        -- 1. Alte Kinder entfernen
         let removeAll = do
               child <- Gtk.widgetGetFirstChild listBox
               case child of
@@ -92,7 +79,6 @@ buildOverviewPage window stack = do
                 Nothing -> return ()
         removeAll
 
-        -- 2. Bottles laden
         bottles <- listExistingBottles
         
         if null bottles
@@ -108,7 +94,6 @@ buildOverviewPage window stack = do
                
                #setActivatableWidget row (Just icon) 
                on row #activated $ do
-                 -- WICHTIGE ÄNDERUNG: refreshAction an buildBottleView übergeben
                  detailView <- buildBottleView window b stack refreshAction
                  let viewName = "detail_" <> bottleName b
                  
@@ -120,7 +105,6 @@ buildOverviewPage window stack = do
   widget <- Gtk.toWidget outerBox
   return (widget, refreshAction)
 
--- | Dialog zum Erstellen einer neuen Bottle (Unverändert)
 showNewBottleDialog :: Gtk.Window -> IO () -> IO ()
 showNewBottleDialog parent refreshCallback = do
   dialog <- new Gtk.Window 
@@ -136,11 +120,9 @@ showNewBottleDialog parent refreshCallback = do
   
   group <- new Adw.PreferencesGroup []
   
-  -- 1. Name Entry
   nameEntry <- new Adw.EntryRow [ #title := tr "Name" ]
   #add group nameEntry
   
-  -- 2. Architecture Combo
   archRow <- new Adw.ComboRow [ #title := tr "Architecture" ]
   
   model <- Gtk.stringListNew (Just $ map (T.pack . show) [Win64, Win32])
@@ -150,7 +132,6 @@ showNewBottleDialog parent refreshCallback = do
   
   #append contentBox group
   
-  -- Buttons (Cancel / Create)
   btnBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10, #halign := Gtk.AlignEnd ]
   
   cancelBtn <- new Gtk.Button [ #label := tr "Cancel" ]
@@ -197,10 +178,8 @@ showNewBottleDialog parent refreshCallback = do
   #setChild dialog (Just contentBox)
   #present dialog
 
--- NEU: Dialog zum Löschen einer Bottle (FEHLER #body GEFIXED)
 showDeleteConfirmationDialog :: Gtk.Window -> Gtk.Stack -> Bottle -> IO () -> IO ()
 showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
-  -- Die Meldung wird in das einzige unterstützte #message Feld zusammengeführt
   let fullMessage = T.concat 
         [ tr "Are you sure you want to delete the bottle '"
         , bottleName bottle
@@ -209,16 +188,14 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
         
   dialog <- new Gtk.AlertDialog 
     [ #message := fullMessage
-    , #buttons := [ tr "Cancel", tr "Delete" ] -- Index 0: Cancel, Index 1: Delete
+    , #buttons := [ tr "Cancel", tr "Delete" ]
     ]
 
-  #show dialog (Just parent) $ Just $ \_ result -> do
-    if result == 1 -- Index 1 ist "Delete"
+  #show dialog (Just parent) Nothing $ Just $ \_ result -> do -- FIX: Fügen Sie Nothing für Gio.Cancellable ein
+    if result == 1
       then do
-        -- Optional: Sofort zur Übersichtsseite wechseln
         #setVisibleChildName windowStack "overview"
         
-        -- Löschvorgang asynchron starten
         async $ do
           res <- try (deleteBottleLogic bottle) :: IO (Either SomeException ())
           
@@ -226,15 +203,14 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
             case res of
               Right _ -> do
                 putStrLn $ "Bottle " ++ T.unpack (bottleName bottle) ++ " erfolgreich gelöscht."
-                refreshCallback -- Liste neu laden
+                refreshCallback
               Left err -> do
                 putStrLn $ "Fehler beim Löschen der Bottle: " ++ show err
             return False
         return ()
       else 
-        return () -- Abbruch
+        return ()
 
--- | Die Detailansicht (SIGNATUR GEÄNDERT: Fügt refreshCallback hinzu)
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildBottleView window bottle stack refreshCallback = do
   box <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 10, #marginTop := 20 ]
@@ -245,7 +221,6 @@ buildBottleView window bottle stack refreshCallback = do
   #append headerBox title
   #append box headerBox
 
-  -- NEU: Fügt cssClasses als Argument hinzu
   let addBtn label tooltip cssClasses action = do 
         btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip, #cssClasses := cssClasses ]
         on btn #clicked action
@@ -265,7 +240,6 @@ buildBottleView window bottle stack refreshCallback = do
   addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (runUninstaller bottle)
   addBtn (tr "Browse Files") (tr "Open drive_c in file manager") [] (runFileManager bottle)
   
-  -- NEU: LÖSCHEN-BUTTON
   addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle and all its contents") ["destructive-action"] $ do
     showDeleteConfirmationDialog window stack bottle refreshCallback
 
@@ -304,27 +278,20 @@ openExecutableFileDialog parentWindow callback = do
     cancellable <- Gio.cancellableNew
     Gtk.fileDialogOpen dialog (Just parentWindow) (Just cancellable) (Just $ \_ result -> handleFileDialogResponse callback dialog result)
 
--- | Handles the response from the file dialog.
--- Fängt alle Exceptions (einschließlich GError bei Abbruch) ab.
 handleFileDialogResponse :: FileSelectedCallback -> Gtk.FileDialog -> Gio.AsyncResult -> IO ()
 handleFileDialogResponse userCallback dialog result = do
-    -- Versuche, die Datei zu bekommen, fange dabei ALLE Fehler ab (SomeException)
     fileResult <- try (Gtk.fileDialogOpenFinish dialog result) :: IO (Either SomeException Gio.File)
     
     case fileResult of
         Left err -> do
-            -- Fehler (z.B. Abbruch des Dialogs) aufgetreten
             putStrLn $ "File dialog operation cancelled or failed: " ++ show err
-            return () -- Wichtig: Normale Beendigung der Funktion bei Abbruch
+            return ()
             
         Right gfile -> do
-            -- Erfolgreich eine GFile erhalten
             mpath <- Gio.fileGetPath gfile
             case mpath of
                 Just path -> do
-                    -- Erfolgreich einen lokalen Pfad erhalten
                     userCallback path
                 Nothing -> do
-                    -- Ausgewählte Datei ist keine lokale URI (z.B. Netzwerk)
                     uri <- Gio.fileGetUri gfile
                     putStrLn $ "Error: Selected file is not a local path. URI: " ++ T.unpack uri
