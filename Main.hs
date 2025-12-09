@@ -8,7 +8,7 @@ import qualified GI.Gio as Gio
 import qualified GI.GLib as GLib
 import Data.GI.Base
 import Control.Concurrent.Async (async)
-import Control.Exception (try, SomeException)
+import Control.Exception (try, SomeException) -- SomeException für handleFileDialogResponse
 import Data.Text (Text)
 import qualified Data.Text as T
 import Control.Monad (void, forM_)
@@ -44,14 +44,13 @@ buildUI app = do
   stack <- new Gtk.Stack []
   
   -- Overview Page erstellen
-  -- Hier übergeben wir jetzt das gecastete 'windowAsGtk'
   (overviewWidget, refreshList) <- buildOverviewPage windowAsGtk stack
   #addNamed stack overviewWidget (Just "overview")
   
   #setContent content (Just stack)
   #setContent window (Just content)
   
-  -- Event: Neue Bottle erstellen (auch hier windowAsGtk nutzen)
+  -- Event: Neue Bottle erstellen
   on addBtn #clicked $ showNewBottleDialog windowAsGtk refreshList
   
   -- Initiales Laden der Liste
@@ -62,37 +61,20 @@ buildUI app = do
 -- | Baut die Übersichtsseite und gibt eine Funktion zum Aktualisieren der Liste zurück
 buildOverviewPage :: Gtk.Window -> Gtk.Stack -> IO (Gtk.Widget, IO ())
 buildOverviewPage window stack = do
-  -- 1. Scrollbares Fenster (Dies ist der Container, der scrollt)
+  -- ... (Rest der Widgets bleiben unverändert) ...
   scrolled <- new Gtk.ScrolledWindow [ #hscrollbarPolicy := Gtk.PolicyTypeNever ]
-  #setVexpand scrolled True -- WICHTIG: Damit die Liste den Platz im Fenster ausfüllt
-  
-  -- 2. Clamp (Zentriert den Inhalt)
+  #setVexpand scrolled True
   clamp <- new Adw.Clamp [ #maximumSize := 600, #tighteningThreshold := 400 ]
-  
-  -- 3. ListBox (Der eigentliche Inhalt)
   listBox <- new Gtk.ListBox [ #selectionMode := Gtk.SelectionModeNone, #cssClasses := ["boxed-list"] ]
-  
-  -- HIERARCHIE VERBINDEN:
-  -- ListBox kommt in den Clamp
   #setChild clamp (Just listBox)
-  
-  -- Clamp kommt in das ScrolledWindow
   #setChild scrolled (Just clamp)
-  
-  -- Box um alles zusammenzuhalten (mit etwas Margin)
   outerBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #marginTop := 24, #spacing := 12 ]
-  
   title <- new Gtk.Label [ #label := tr "Your Bottles", #cssClasses := ["title-2"] ]
   #append outerBox title
-  
-  -- Das ScrolledWindow (mit Clamp & ListBox darin) kommt in die OuterBox
   #append outerBox scrolled
 
   let refreshAction = do
         -- 1. Alte Kinder entfernen
-        children <- #observeChildren listBox
-        
-        -- Rekursive Löschfunktion (Workaround für fehlendes removeAll)
         let removeAll = do
               child <- Gtk.widgetGetFirstChild listBox
               case child of
@@ -116,11 +98,10 @@ buildOverviewPage window stack = do
                
                #setActivatableWidget row (Just icon) 
                on row #activated $ do
-                 detailView <- buildBottleView window b stack
+                 -- HIER: refreshAction an buildBottleView übergeben
+                 detailView <- buildBottleView window b stack refreshAction
                  let viewName = "detail_" <> bottleName b
                  
-                 -- Prüfen, ob View schon existiert wäre gut, aber Stack überschreibt oder ignoriert Namen meistens.
-                 -- Einfachheitshalber fügen wir es hinzu. (In Prod würde man erst prüfen)
                  #addNamed stack detailView (Just viewName)
                  #setVisibleChildName stack viewName
                
@@ -129,7 +110,7 @@ buildOverviewPage window stack = do
   widget <- Gtk.toWidget outerBox
   return (widget, refreshAction)
 
--- | Dialog zum Erstellen einer neuen Bottle
+-- | Dialog zum Erstellen einer neuen Bottle (Unverändert)
 showNewBottleDialog :: Gtk.Window -> IO () -> IO ()
 showNewBottleDialog parent refreshCallback = do
   dialog <- new Gtk.Window 
@@ -145,22 +126,16 @@ showNewBottleDialog parent refreshCallback = do
   
   group <- new Adw.PreferencesGroup []
   
-  -- 1. Name Entry
   nameEntry <- new Adw.EntryRow [ #title := tr "Name" ]
   #add group nameEntry
   
-  -- 2. Architecture Combo
   archRow <- new Adw.ComboRow [ #title := tr "Architecture" ]
-  
-  -- FIX: stringListNew erwartet (Maybe [Text]), nicht [Text]
   model <- Gtk.stringListNew (Just $ map (T.pack . show) [Win64, Win32])
-  
   #setModel archRow (Just model)
   #add group archRow
   
   #append contentBox group
   
-  -- Buttons (Cancel / Create)
   btnBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10, #halign := Gtk.AlignEnd ]
   
   cancelBtn <- new Gtk.Button [ #label := tr "Cancel" ]
@@ -207,9 +182,41 @@ showNewBottleDialog parent refreshCallback = do
   #setChild dialog (Just contentBox)
   #present dialog
 
--- | Die Detailansicht
-buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO Gtk.Widget
-buildBottleView window bottle stack = do
+-- NEU: Dialog zum Löschen einer Bottle
+showDeleteConfirmationDialog :: Gtk.Window -> Gtk.Stack -> Bottle -> IO () -> IO ()
+showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
+  dialog <- new Gtk.AlertDialog 
+    [ #message := tr "Delete Bottle"
+    , #body := T.concat [tr "Are you sure you want to delete the bottle '", bottleName bottle, tr "'? All data will be lost. This cannot be undone."]
+    , #buttons := [ tr "Cancel", tr "Delete" ] -- Index 0: Cancel, Index 1: Delete
+    ]
+
+  #show dialog (Just parent) $ Just $ \_ result -> do
+    if result == 1 -- Index 1 ist "Delete"
+      then do
+        -- Optional: Sofort zur Übersichtsseite wechseln
+        #setVisibleChildName windowStack "overview"
+        
+        -- Löschvorgang asynchron starten
+        async $ do
+          res <- try (deleteBottleLogic bottle) :: IO (Either SomeException ())
+          
+          GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+            case res of
+              Right _ -> do
+                putStrLn $ "Bottle " ++ T.unpack (bottleName bottle) ++ " erfolgreich gelöscht."
+                refreshCallback -- Liste neu laden
+              Left err -> do
+                putStrLn $ "Fehler beim Löschen der Bottle: " ++ show err
+                -- Hier könnte man einen Gtk.AlertDialog für den Fehler zeigen
+            return False
+        return ()
+      else 
+        return () -- Abbruch
+
+-- | Die Detailansicht (SIGNATUR GEÄNDERT: Fügt refreshCallback hinzu)
+buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
+buildBottleView window bottle stack refreshCallback = do
   box <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 10, #marginTop := 20 ]
   
   headerBox <- new Gtk.Box [ #spacing := 10 ]
@@ -218,10 +225,11 @@ buildBottleView window bottle stack = do
   #append headerBox title
   #append box headerBox
 
-  let addBtn label tooltip action = do
-        btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip ]
-        on btn #clicked action
+  let addBtn label tooltip cssClasses action = do
+        btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip, #cssClasses := cssClasses ]
         #append box btn
+        on btn #clicked action
+        return btn
 
   runBtn <- new Gtk.Button 
     [ #label := tr "Run Executable / Installer"
@@ -231,10 +239,14 @@ buildBottleView window bottle stack = do
     openExecutableFileDialog window $ runExecutable bottle
   #append box runBtn
 
-  addBtn (tr "Wine Config") (tr "Opens winecfg") (runWineCfg bottle)
-  addBtn (tr "Registry Editor") (tr "Opens regedit") (runRegedit bottle)
-  addBtn (tr "Uninstaller") (tr "Manage installed programs") (runUninstaller bottle)
-  addBtn (tr "Browse Files") (tr "Open drive_c in file manager") (runFileManager bottle)
+  addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle)
+  addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle)
+  addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (runUninstaller bottle)
+  addBtn (tr "Browse Files") (tr "Open drive_c in file manager") [] (runFileManager bottle)
+  
+  -- NEUER LÖSCHEN-BUTTON
+  deleteBtn <- addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle and all its contents") ["destructive-action"] $ do
+    showDeleteConfirmationDialog window stack bottle refreshCallback
   
   backBtn <- new Gtk.Button [ #label := tr "Back to Library", #marginTop := 20 ]
   on backBtn #clicked $ #setVisibleChildName stack "overview"

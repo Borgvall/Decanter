@@ -11,6 +11,7 @@ import System.Directory
     , XdgDirectory(XdgData)
     , listDirectory
     , doesDirectoryExist
+    , removePathForcibly -- NEUER IMPORT
     , doesFileExist
     )
 import System.FilePath ((</>), takeExtension)
@@ -18,10 +19,10 @@ import Control.Exception (try, IOException)
 import Control.Monad (void, filterM)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
-import System.Environment (getEnvironment) -- WICHTIG: Sollte vorhanden sein
+import System.Environment (getEnvironment)
+
 
 -- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
--- NOTE: Dies ist jetzt eine reine Funktion, die nur von getMergedWineEnv verwendet wird.
 getWineOverrides :: Bottle -> [(String, String)]
 getWineOverrides Bottle{..} =
     [ ("WINEPREFIX", bottlePath)
@@ -32,21 +33,20 @@ getWineOverrides Bottle{..} =
 -- | gelesen und die Overrides eingefügt werden.
 getMergedWineEnv :: Bottle -> IO [(String, String)]
 getMergedWineEnv bottle = do
-    -- Die zu überschreibenden Schlüssel und ihre Werte
     let wineSpecificEnv = getWineOverrides bottle
-    let overrideKeys = map fst wineSpecificEnv -- [ "WINEPREFIX", "WINEARCH" ]
+    -- Automatische Ableitung der zu filternden Keys (deine Optimierung)
+    let overrideKeys = map fst wineSpecificEnv 
     
-    -- 1. Aktuelle Umgebung lesen (IO Aktion)
     currentEnv <- getEnvironment
     
-    -- 2. Filtern der aktuellen Umgebung, um die Schlüssel zu entfernen,
-    --    die in 'overrideKeys' enthalten sind.
+    -- Filtern der aktuellen Umgebung, um die Schlüssel zu entfernen,
     let filteredEnv = filter (\(k, _) -> k `notElem` overrideKeys) currentEnv
     
-    -- 3. Neue Umgebung erstellen: Overrides zuerst, dann der Rest der Umgebung.
+    -- Neue Umgebung erstellen: Overrides zuerst, dann der Rest der Umgebung.
     return (wineSpecificEnv ++ filteredEnv)
 
--- | Helper um Prozesse zu starten (funktioniert bereits mit do-Notation)
+
+-- | Helper um Prozesse zu starten
 runCmd :: Bottle -> String -> [String] -> IO ()
 runCmd bottle cmd args = do
   mergedEnv <- getMergedWineEnv bottle
@@ -89,18 +89,23 @@ createVolume path = do
       putStrLn "Kein BTRFS oder Fehler, nutze Standard-Verzeichnis."
       createDirectoryIfMissing True path
 
--- Hauptlogik zum Erstellen
+-- Hauptlogik zum Erstellen (FIX: IO-Bindung für mergedEnv)
 createBottleLogic :: Bottle -> IO ()
 createBottleLogic bottle@Bottle{..} = do
   createVolume bottlePath
   
-  -- FIX: Umgebung laden (IO-Aktion)
   mergedEnv <- getMergedWineEnv bottle
-  
-  -- Prozesskonfiguration mit der geladenen Umgebung erstellen
   let procConfig = setEnv mergedEnv $ proc "wineboot" ["-u"]
   
   runProcess_ procConfig
+
+-- NEU: Logik zum Löschen des Wine-Prefix
+deleteBottleLogic :: Bottle -> IO ()
+deleteBottleLogic Bottle{..} = do
+  putStrLn $ "Lösche Wine-Prefix: " ++ bottlePath
+  removePathForcibly bottlePath
+  putStrLn "Löschvorgang abgeschlossen."
+
 
 -- Tools
 runWineCfg :: Bottle -> IO ()
