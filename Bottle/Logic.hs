@@ -20,26 +20,31 @@ import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment) -- WICHTIG: Sollte vorhanden sein
 
+-- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
+-- NOTE: Dies ist jetzt eine reine Funktion, die nur von getMergedWineEnv verwendet wird.
+getWineOverrides :: Bottle -> [(String, String)]
+getWineOverrides Bottle{..} =
+    [ ("WINEPREFIX", bottlePath)
+    , ("WINEARCH", archToString arch)
+    ]
 
 -- | Erstellt die Umgebungsvariablen für Wine, indem die aktuelle Umgebung
--- | (mit DISPLAY, XDG_RUNTIME_DIR, etc.) gelesen und WINEPREFIX/WINEARCH überschrieben wird.
+-- | gelesen und die Overrides eingefügt werden.
 getMergedWineEnv :: Bottle -> IO [(String, String)]
-getMergedWineEnv Bottle{..} = do
-  -- 1. Aktuelle Umgebung lesen (IO Aktion)
-  currentEnv <- getEnvironment
-  
-  -- 2. Wine-spezifische Overrides definieren
-  let wineSpecificEnv = 
-        [ ("WINEPREFIX", bottlePath)
-        , ("WINEARCH", archToString arch)
-        ]
-  
-  -- 3. Aus der aktuellen Umgebung die Wine-spezifischen Keys entfernen,
-  let filteredEnv = filter (\(k, _) -> k `notElem` ["WINEPREFIX", "WINEARCH"]) currentEnv
-  
-  -- 4. Neue Umgebung erstellen: Overrides zuerst, dann der Rest der Umgebung.
-  return (wineSpecificEnv ++ filteredEnv)
-
+getMergedWineEnv bottle = do
+    -- Die zu überschreibenden Schlüssel und ihre Werte
+    let wineSpecificEnv = getWineOverrides bottle
+    let overrideKeys = map fst wineSpecificEnv -- [ "WINEPREFIX", "WINEARCH" ]
+    
+    -- 1. Aktuelle Umgebung lesen (IO Aktion)
+    currentEnv <- getEnvironment
+    
+    -- 2. Filtern der aktuellen Umgebung, um die Schlüssel zu entfernen,
+    --    die in 'overrideKeys' enthalten sind.
+    let filteredEnv = filter (\(k, _) -> k `notElem` overrideKeys) currentEnv
+    
+    -- 3. Neue Umgebung erstellen: Overrides zuerst, dann der Rest der Umgebung.
+    return (wineSpecificEnv ++ filteredEnv)
 
 -- | Helper um Prozesse zu starten (funktioniert bereits mit do-Notation)
 runCmd :: Bottle -> String -> [String] -> IO ()
