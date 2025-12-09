@@ -62,30 +62,37 @@ buildUI app = do
 -- | Baut die Übersichtsseite und gibt eine Funktion zum Aktualisieren der Liste zurück
 buildOverviewPage :: Gtk.Window -> Gtk.Stack -> IO (Gtk.Widget, IO ())
 buildOverviewPage window stack = do
-  -- Scrollbares Fenster für die Liste
+  -- 1. Scrollbares Fenster (Dies ist der Container, der scrollt)
   scrolled <- new Gtk.ScrolledWindow [ #hscrollbarPolicy := Gtk.PolicyTypeNever ]
+  #setVexpand scrolled True -- WICHTIG: Damit die Liste den Platz im Fenster ausfüllt
   
-  -- Clamp für schöne Zentrierung (Adwaita Style)
+  -- 2. Clamp (Zentriert den Inhalt)
   clamp <- new Adw.Clamp [ #maximumSize := 600, #tighteningThreshold := 400 ]
   
-  -- FIX: setChild erwartet Maybe Widget
-  #setChild scrolled (Just clamp)
-  
-  -- Container für die Liste
+  -- 3. ListBox (Der eigentliche Inhalt)
   listBox <- new Gtk.ListBox [ #selectionMode := Gtk.SelectionModeNone, #cssClasses := ["boxed-list"] ]
-  #setChild scrolled (Just listBox) -- hier war es schon korrekt, oben fehlte es
+  
+  -- HIERARCHIE VERBINDEN:
+  -- ListBox kommt in den Clamp
+  #setChild clamp (Just listBox)
+  
+  -- Clamp kommt in das ScrolledWindow
+  #setChild scrolled (Just clamp)
   
   -- Box um alles zusammenzuhalten (mit etwas Margin)
   outerBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #marginTop := 24, #spacing := 12 ]
   
   title <- new Gtk.Label [ #label := tr "Your Bottles", #cssClasses := ["title-2"] ]
   #append outerBox title
-  #append outerBox clamp
+  
+  -- Das ScrolledWindow (mit Clamp & ListBox darin) kommt in die OuterBox
+  #append outerBox scrolled
 
   let refreshAction = do
         -- 1. Alte Kinder entfernen
         children <- #observeChildren listBox
         
+        -- Rekursive Löschfunktion (Workaround für fehlendes removeAll)
         let removeAll = do
               child <- Gtk.widgetGetFirstChild listBox
               case child of
@@ -104,15 +111,16 @@ buildOverviewPage window stack = do
             forM_ bottles $ \b -> do
                row <- new Adw.ActionRow [ #title := bottleName b, #subtitle := T.pack (bottlePath b) ]
                
-               -- Pfeil Icon rechts
                icon <- new Gtk.Image [ #iconName := "go-next-symbolic" ]
                #addSuffix row icon
                
-               -- Klickbar machen
                #setActivatableWidget row (Just icon) 
                on row #activated $ do
                  detailView <- buildBottleView window b stack
                  let viewName = "detail_" <> bottleName b
+                 
+                 -- Prüfen, ob View schon existiert wäre gut, aber Stack überschreibt oder ignoriert Namen meistens.
+                 -- Einfachheitshalber fügen wir es hinzu. (In Prod würde man erst prüfen)
                  #addNamed stack detailView (Just viewName)
                  #setVisibleChildName stack viewName
                
