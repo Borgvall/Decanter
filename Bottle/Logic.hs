@@ -18,13 +18,14 @@ import Control.Exception (try, IOException)
 import Control.Monad (void, filterM)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
-import System.Environment (getEnvironment) -- NEUER IMPORT
+import System.Environment (getEnvironment) -- WICHTIG: Sollte vorhanden sein
+
 
 -- | Erstellt die Umgebungsvariablen für Wine, indem die aktuelle Umgebung
 -- | (mit DISPLAY, XDG_RUNTIME_DIR, etc.) gelesen und WINEPREFIX/WINEARCH überschrieben wird.
 getMergedWineEnv :: Bottle -> IO [(String, String)]
 getMergedWineEnv Bottle{..} = do
-  -- 1. Aktuelle Umgebung lesen (d.h. alles, was Wine braucht)
+  -- 1. Aktuelle Umgebung lesen (IO Aktion)
   currentEnv <- getEnvironment
   
   -- 2. Wine-spezifische Overrides definieren
@@ -34,18 +35,16 @@ getMergedWineEnv Bottle{..} = do
         ]
   
   -- 3. Aus der aktuellen Umgebung die Wine-spezifischen Keys entfernen,
-  --    damit wir keine Duplikate haben.
   let filteredEnv = filter (\(k, _) -> k `notElem` ["WINEPREFIX", "WINEARCH"]) currentEnv
   
   -- 4. Neue Umgebung erstellen: Overrides zuerst, dann der Rest der Umgebung.
   return (wineSpecificEnv ++ filteredEnv)
 
 
--- | Helper um Prozesse zu starten (GEÄNDERT)
+-- | Helper um Prozesse zu starten (funktioniert bereits mit do-Notation)
 runCmd :: Bottle -> String -> [String] -> IO ()
 runCmd bottle cmd args = do
   mergedEnv <- getMergedWineEnv bottle
-  -- setEnv setzt die gesamte Umgebung auf 'mergedEnv'
   void $ startProcess $ setEnv mergedEnv $ proc cmd args
 
 -- | Bestimmt das Basisverzeichnis für alle Bottles: ~/.local/share/haskell-bottles
@@ -63,7 +62,6 @@ createBottleObject name arch = do
   return $ Bottle name path SystemWine arch
 
 -- | Scannt das Verzeichnis nach existierenden Bottles
--- Kriterium: Ordner existiert und enthält "drive_c"
 listExistingBottles :: IO [Bottle]
 listExistingBottles = do
   base <- getBottlesBaseDir
@@ -72,13 +70,8 @@ listExistingBottles = do
     then return []
     else do
       entries <- listDirectory base
-      -- Filter: Muss ein Verzeichnis sein
       dirs <- filterM (\e -> doesDirectoryExist (base </> e)) entries
-      
-      -- Filter: Muss drive_c enthalten (Indikator für valides Prefix)
       validDirs <- filterM (\e -> doesDirectoryExist (base </> e </> "drive_c")) dirs
-      
-      -- Rückgabe als Bottle Objekte
       return $ map (\name -> Bottle (T.pack name) (base </> name) SystemWine Win64) validDirs
 
 
@@ -95,8 +88,13 @@ createVolume path = do
 createBottleLogic :: Bottle -> IO ()
 createBottleLogic bottle@Bottle{..} = do
   createVolume bottlePath
-  -- wineboot initialisiert das Prefix
-  let procConfig = setEnv (getMergedWineEnv bottle) $ proc "wineboot" ["-u"]
+  
+  -- FIX: Umgebung laden (IO-Aktion)
+  mergedEnv <- getMergedWineEnv bottle
+  
+  -- Prozesskonfiguration mit der geladenen Umgebung erstellen
+  let procConfig = setEnv mergedEnv $ proc "wineboot" ["-u"]
+  
   runProcess_ procConfig
 
 -- Tools
