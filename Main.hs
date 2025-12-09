@@ -192,11 +192,12 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
     ]
   let handleAlertDialogResult :: AsyncReadyCallback
       handleAlertDialogResult _dialog result = do
-          #setVisibleChildName windowStack "overview"
           buttonIndex <- Gtk.alertDialogChooseFinish dialog result
           -- buttonIndex == 1 -> Confirmation to delete the bottle
           if buttonIndex == 1
           then do
+              -- Stop showing the bottle view, when deleting the bottle
+              #setVisibleChildName windowStack "overview"
               async $ do
                   res <- try (deleteBottleLogic bottle) :: IO (Either SomeException ())
                   GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
@@ -210,7 +211,6 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
               return ()
           else return ()
   Gtk.alertDialogChoose dialog (Just parent) Nothing (Just handleAlertDialogResult)
-  return ()
 
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildBottleView window bottle stack refreshCallback = do
