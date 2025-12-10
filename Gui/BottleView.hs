@@ -12,7 +12,7 @@ import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Control.Monad (void)
+import Control.Monad (when, void)
 
 import Bottle.Types
 import Bottle.Logic
@@ -83,6 +83,11 @@ buildBottleView window bottle stack refreshCallback = do
   addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle)
   addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle)
   addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (runUninstaller bottle)
+
+  hasWinetricks <- isWinetricksAvailable
+  when hasWinetricks $ void $
+    addBtn (tr "Winetricks") (tr "Manage packages and settings") [] (runWinetricks bottle)
+
   addBtn (tr "Browse Files") (tr "Open drive_c in file manager") [] (runFileManager bottle)
   
   addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle and all its contents") ["destructive-action"] $ do

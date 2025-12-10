@@ -11,12 +11,14 @@ import System.Directory
     , XdgDirectory(XdgData)
     , listDirectory
     , doesDirectoryExist
-    , removePathForcibly -- NEUER IMPORT
+    , removePathForcibly
+    , findExecutable
     , doesFileExist
     )
 import System.FilePath ((</>), takeExtension)
 import Control.Exception (try, IOException)
 import Control.Monad (void, filterM)
+import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
@@ -46,6 +48,13 @@ getMergedWineEnv bottle = do
     -- Neue Umgebung erstellen: Overrides zuerst, dann der Rest der Umgebung.
     return (wineSpecificEnv ++ filteredEnv)
 
+isWinetricksAvailable :: IO Bool
+isWinetricksAvailable = do
+    path <- findExecutable "winetricks"
+    return (isJust path)
+
+runWinetricks :: Bottle -> IO ()
+runWinetricks bottle = runCmd bottle "winetricks" []
 
 -- | Helper um Prozesse zu starten
 runCmd :: Bottle -> String -> [String] -> IO ()
