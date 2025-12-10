@@ -15,35 +15,12 @@ import Bottle.Types
 import Bottle.Logic
 import Logic.Translation (tr)
 
-data NameValid
-  = Valid
-  | EmptyName
-  | NameTooLong
-  | ContainsSlash
-  deriving (Show, Eq)
-
--- | Überprüft, ob ein Bottle-Name gültig ist, und gibt den Grund für die Ungültigkeit zurück.
-isNameValid :: T.Text -> NameValid
-isNameValid name
-  | T.null name = EmptyName
-  | T.length name > 256 = NameTooLong
-  | T.elem '/' name = ContainsSlash
-  | otherwise = Valid
-
--- | Erklärt den Grund der Ungültigkeit in übersetztem Text.
-explainNameValid :: NameValid -> T.Text
-explainNameValid status = case status of
-  Valid         -> ""
-  EmptyName     -> tr "The name cannot be empty."
-  NameTooLong   -> tr "The name is too long (max 256 characters)."
-  ContainsSlash -> tr "The name cannot contain a slash ('/')."
-
 -- | Die Logik zur Validierung des Namens und Aktualisierung des UI-Status.
 validateName :: Adw.EntryRow -> Gtk.Button -> Gtk.Label -> IO ()
 validateName entryRow createBtn errorLabel = do
   nameText <- #getText entryRow
   
-  let status = isNameValid nameText
+  let status = checkNameValidity nameText
   let valid = status == Valid
   
   #setSensitive createBtn valid

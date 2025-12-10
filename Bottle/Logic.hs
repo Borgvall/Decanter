@@ -21,6 +21,7 @@ import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
 
+import Logic.Translation (tr)
 
 -- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
 getWineOverrides :: Bottle -> [(String, String)]
@@ -58,6 +59,29 @@ getBottlesBaseDir = do
   base <- getXdgDirectory XdgData "haskell-bottles"
   createDirectoryIfMissing True base
   return base
+
+data NameValid
+  = Valid
+  | EmptyName
+  | NameTooLong
+  | ContainsSlash
+  deriving (Show, Eq)
+
+-- | Überprüft, ob ein Bottle-Name gültig ist, und gibt den Grund für die Ungültigkeit zurück.
+checkNameValidity :: T.Text -> NameValid
+checkNameValidity name
+  | T.null name = EmptyName
+  | T.length name > 256 = NameTooLong
+  | T.elem '/' name = ContainsSlash
+  | otherwise = Valid
+
+-- | Erklärt den Grund der Ungültigkeit in übersetztem Text.
+explainNameValid :: NameValid -> T.Text
+explainNameValid status = case status of
+  Valid         -> ""
+  EmptyName     -> tr "The name cannot be empty."
+  NameTooLong   -> tr "The name is too long (max 256 characters)."
+  ContainsSlash -> tr "The name cannot contain a slash ('/')."
 
 -- | Erstellt ein Bottle-Objekt mit korrektem Pfad basierend auf Namen
 createBottleObject :: T.Text -> Arch -> IO Bottle
