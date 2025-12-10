@@ -137,10 +137,10 @@ deleteBottleLogic Bottle{..} = do
 
 -- Tools
 runWineCfg :: Bottle -> IO ()
-runWineCfg bottle = runCmd bottle "winecfg" []
+runWineCfg bottle = runCmd bottle "wine" ["winecfg"]
 
 runRegedit :: Bottle -> IO ()
-runRegedit bottle = runCmd bottle "regedit" []
+runRegedit bottle = runCmd bottle "wine" ["regedit"]
 
 runUninstaller :: Bottle -> IO ()
 runUninstaller bottle = runCmd bottle "wine" ["uninstaller"]
