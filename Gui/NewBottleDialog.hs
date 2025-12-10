@@ -8,6 +8,7 @@ import qualified GI.GLib as GLib
 import Data.GI.Base
 import Control.Concurrent.Async (async)
 import Control.Exception (try)
+import Control.Monad (void)
 import qualified Data.Text as T
 
 import Bottle.Types
@@ -87,7 +88,7 @@ showNewBottleDialog parent refreshCallback = do
 
   -- 2. Hinzufügen des Handlers für Textänderungen
   -- Das 'notify::text' Signal wird ausgelöst, wenn sich die 'text'-Eigenschaft ändert.
-  void $ on nameEntry #notifyText $ validateName nameEntry createBtn
+  void $ Gtk.on nameEntry #notifyText $ validateName nameEntry createBtn
 
   on createBtn #clicked $ do
     nameText <- #getText nameEntry
