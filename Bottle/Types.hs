@@ -4,10 +4,6 @@ module Bottle.Types where
 
 import Data.Text (Text)
 
--- Dummy-Funktion für i18n
-tr :: Text -> Text
-tr = id 
-
 -- Architekturen
 data Arch = Win32 | Win64
   deriving (Show, Eq, Enum)
