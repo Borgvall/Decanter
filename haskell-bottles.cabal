@@ -20,6 +20,7 @@ executable haskell-bottles
                     , Bottle.Logic
                     , Logic.Translation
                     , Gui.BottleView
+                    , Gui.NewBottleDialog
                     , Gui.OverviewView
     
     -- Dependencies
