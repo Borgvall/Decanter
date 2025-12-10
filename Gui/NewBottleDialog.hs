@@ -14,6 +14,35 @@ import Bottle.Types
 import Bottle.Logic
 import Logic.Translation (tr)
 
+-- | Überprüft, ob ein Bottle-Name gültig ist.
+isNameValid :: T.Text -> Bool
+isNameValid name
+  | T.null name = False            -- Name ist leer
+  | T.length name > 256 = False    -- Name ist zu lang
+  | T.elem '/' name = False        -- Enthält einen Slash
+  | otherwise = True               -- Name ist gültig
+
+
+-- | Die Logik zur Validierung des Namens und Aktualisierung des UI-Status.
+validateName :: Adw.EntryRow -> Gtk.Button -> IO ()
+validateName entryRow createBtn = do
+  nameText <- #getText entryRow
+  
+  if isNameValid nameText
+    then do
+      -- Gültiger Name
+      #setSensitive createBtn True
+      -- Entferne 'error' CSS-Klasse, falls vorhanden
+      styleContext <- #getStyleContext entryRow
+      #removeCssClass styleContext (T.pack "error") 
+    else do
+      -- Ungültiger Name
+      #setSensitive createBtn False
+      -- Füge 'error' CSS-Klasse hinzu, um die rote Markierung zu bewirken (setzt passendes GTK-Theme voraus)
+      styleContext <- #getStyleContext entryRow
+      #addCssClass styleContext (T.pack "error") 
+
+
 -- | Dialog zum Erstellen einer neuen Bottle
 -- Diesen lassen wir vorerst in Main, da er von der HeaderBar getriggert wird.
 showNewBottleDialog :: Gtk.Window -> IO () -> IO ()
@@ -52,10 +81,19 @@ showNewBottleDialog parent refreshCallback = do
   
   statusLabel <- new Gtk.Label [ #label := "", #visible := False ]
 
+  -- **NEUE LOGIK: On-the-fly Validierung**
+  -- 1. Initialer Aufruf der Validierung, da der Name beim Start leer ist.
+  validateName nameEntry createBtn
+
+  -- 2. Hinzufügen des Handlers für Textänderungen
+  -- Das 'notify::text' Signal wird ausgelöst, wenn sich die 'text'-Eigenschaft ändert.
+  void $ on nameEntry #notifyText $ validateName nameEntry createBtn
+
   on createBtn #clicked $ do
     nameText <- #getText nameEntry
     
-    if T.null nameText 
+    -- **Hinzufügen eines letzten Checks, obwohl der Button deaktiviert sein sollte**
+    if not (isNameValid nameText) 
       then return () 
       else do
         #setSensitive createBtn False
