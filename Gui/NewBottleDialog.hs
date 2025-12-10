@@ -15,28 +15,36 @@ import Bottle.Types
 import Bottle.Logic
 import Logic.Translation (tr)
 
--- | Überprüft, ob ein Bottle-Name gültig ist.
-isNameValid :: T.Text -> Bool
-isNameValid name
-  | T.null name = False            -- Name ist leer
-  | T.length name > 256 = False    -- Name ist zu lang
-  | T.elem '/' name = False        -- Enthält einen Slash
-  | otherwise = True               -- Name ist gültig
+data NameValid
+  = Valid
+  | EmptyName
+  | NameTooLong
+  | ContainsSlash
+  deriving (Show, Eq)
 
--- | Bestimmt die spezifische Fehlermeldung
-determineError :: T.Text -> T.Text
-determineError name
-  | T.null name = tr "The name cannot be empty."
-  | T.length name > 256 = tr "The name is too long (max 256 characters)."
-  | T.elem '/' name = tr "The name cannot contain a slash ('/')."
-  | otherwise = ""
+-- | Überprüft, ob ein Bottle-Name gültig ist, und gibt den Grund für die Ungültigkeit zurück.
+isNameValid :: T.Text -> NameValid
+isNameValid name
+  | T.null name = EmptyName
+  | T.length name > 256 = NameTooLong
+  | T.elem '/' name = ContainsSlash
+  | otherwise = Valid
+
+-- | Erklärt den Grund der Ungültigkeit in übersetztem Text.
+explainNameValid :: NameValid -> T.Text
+explainNameValid status = case status of
+  Valid         -> ""
+  EmptyName     -> tr "The name cannot be empty."
+  NameTooLong   -> tr "The name is too long (max 256 characters)."
+  ContainsSlash -> tr "The name cannot contain a slash ('/')."
 
 -- | Die Logik zur Validierung des Namens und Aktualisierung des UI-Status.
 validateName :: Adw.EntryRow -> Gtk.Button -> Gtk.Label -> IO ()
 validateName entryRow createBtn errorLabel = do
   nameText <- #getText entryRow
   
-  let valid = isNameValid nameText
+  let status = isNameValid nameText
+  let valid = status == Valid
   
   #setSensitive createBtn valid
   
@@ -49,7 +57,7 @@ validateName entryRow createBtn errorLabel = do
       -- Ungültiger Name
       Gtk.widgetAddCssClass entryRow (T.pack "error")
       
-      let errorMsg = determineError nameText
+      let errorMsg = explainNameValid status
       #setLabel errorLabel errorMsg
       #setVisible errorLabel True
 
@@ -117,31 +125,27 @@ showNewBottleDialog parent refreshCallback = do
   on createBtn #clicked $ do
     nameText <- #getText nameEntry
     
-    -- **Hinzufügen eines letzten Checks, obwohl der Button deaktiviert sein sollte**
-    if not (isNameValid nameText) 
-      then return () 
-      else do
-        #setSensitive createBtn False
-        #setLabel statusLabel (tr "Creating prefix (this may take a while)...")
-        #setVisible statusLabel True
-        
-        selectedIdx <- #getSelected archRow
-        let selectedArch = if selectedIdx == 0 then Win64 else Win32
-        
-        async $ do
-          bottleObj <- createBottleObject nameText selectedArch
-          res <- try (createBottleLogic bottleObj) :: IO (Either IOError ())
-          
-          GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
-             case res of
-               Right _ -> do
-                 #close dialog
-                 refreshCallback 
-               Left err -> do
-                 #setLabel statusLabel (T.pack $ "Error: " ++ show err)
-                 #setSensitive createBtn True
-             return False
-        return ()
+    #setSensitive createBtn False
+    #setLabel statusLabel (tr "Creating prefix (this may take a while)...")
+    #setVisible statusLabel True
+    
+    selectedIdx <- #getSelected archRow
+    let selectedArch = if selectedIdx == 0 then Win64 else Win32
+    
+    async $ do
+      bottleObj <- createBottleObject nameText selectedArch
+      res <- try (createBottleLogic bottleObj) :: IO (Either IOError ())
+      
+      GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+         case res of
+           Right _ -> do
+             #close dialog
+             refreshCallback 
+           Left err -> do
+             #setLabel statusLabel (T.pack $ "Error: " ++ show err)
+             #setSensitive createBtn True
+         return False
+    return ()
 
   #append btnBox cancelBtn
   #append btnBox createBtn
