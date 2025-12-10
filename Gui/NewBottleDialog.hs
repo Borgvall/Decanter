@@ -33,15 +33,13 @@ validateName entryRow createBtn = do
     then do
       -- Gültiger Name
       #setSensitive createBtn True
-      -- Entferne 'error' CSS-Klasse, falls vorhanden
-      styleContext <- #getStyleContext entryRow
-      #removeCssClass styleContext (T.pack "error") 
+      -- Korrektur für GTK4: CSS-Klasse direkt am Widget entfernen
+      Gtk.widgetRemoveCssClass entryRow (T.pack "error") 
     else do
       -- Ungültiger Name
       #setSensitive createBtn False
-      -- Füge 'error' CSS-Klasse hinzu, um die rote Markierung zu bewirken (setzt passendes GTK-Theme voraus)
-      styleContext <- #getStyleContext entryRow
-      #addCssClass styleContext (T.pack "error") 
+      -- Korrektur für GTK4: CSS-Klasse direkt am Widget hinzufügen
+      Gtk.widgetAddCssClass entryRow (T.pack "error") 
 
 
 -- | Dialog zum Erstellen einer neuen Bottle
@@ -87,8 +85,12 @@ showNewBottleDialog parent refreshCallback = do
   validateName nameEntry createBtn
 
   -- 2. Hinzufügen des Handlers für Textänderungen
-  -- Das 'notify::text' Signal wird ausgelöst, wenn sich die 'text'-Eigenschaft ändert.
-  void $ Gtk.on nameEntry #notifyText $ validateName nameEntry createBtn
+  -- Korrektur für notify::text Signal-Handling: Das Signal muss als String angegeben werden.
+  void $ Gtk.on nameEntry (Gtk.signalConnect "notify::text") $ \_ ->
+    validateName nameEntry createBtn
+  
+  -- Der Handler erwartet ein Argument (das Objekt selbst, hier mit '_' ignoriert),
+  -- deshalb die Lambda-Funktion, um validateName mit den benötigten UI-Elementen aufzurufen.
 
   on createBtn #clicked $ do
     nameText <- #getText nameEntry
