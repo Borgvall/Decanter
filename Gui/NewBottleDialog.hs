@@ -85,8 +85,8 @@ showNewBottleDialog parent refreshCallback = do
   validateName nameEntry createBtn
 
   -- 2. Hinzufügen des Handlers für Textänderungen
-  -- Korrektur für notify::text Signal-Handling: Das Signal muss als String angegeben werden.
-  void $ Gtk.on nameEntry (Gtk.signalConnect "notify::text") $ \_ ->
+  -- Korrektur: 'signalConnect' kommt aus Data.GI.Base (unqualifiziert), nicht aus GI.Gtk.
+  void $ Gtk.on nameEntry (signalConnect "notify::text") $ \_ ->
     validateName nameEntry createBtn
   
   -- Der Handler erwartet ein Argument (das Objekt selbst, hier mit '_' ignoriert),
