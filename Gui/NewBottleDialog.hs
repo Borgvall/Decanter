@@ -6,6 +6,7 @@ import qualified GI.Gtk as Gtk
 import qualified GI.Adw as Adw
 import qualified GI.GLib as GLib
 import Data.GI.Base
+import Data.GI.Base.Signals (signalConnect)
 import Control.Concurrent.Async (async)
 import Control.Exception (try)
 import Control.Monad (void)
@@ -86,7 +87,7 @@ showNewBottleDialog parent refreshCallback = do
 
   -- 2. Hinzufügen des Handlers für Textänderungen
   -- Korrektur: 'signalConnect' kommt aus Data.GI.Base (unqualifiziert), nicht aus GI.Gtk.
-  void $ Gtk.on nameEntry (signalConnect "notify::text") $ \_ ->
+  void $ Gtk.on nameEntry (signalConnect "notify::text") $
     validateName nameEntry createBtn
   
   -- Der Handler erwartet ein Argument (das Objekt selbst, hier mit '_' ignoriert),
