@@ -23,24 +23,35 @@ isNameValid name
   | T.elem '/' name = False        -- Enthält einen Slash
   | otherwise = True               -- Name ist gültig
 
+-- | Bestimmt die spezifische Fehlermeldung
+determineError :: T.Text -> T.Text
+determineError name
+  | T.null name = tr "The name cannot be empty."
+  | T.length name > 256 = tr "The name is too long (max 256 characters)."
+  | T.elem '/' name = tr "The name cannot contain a slash ('/')."
+  | otherwise = ""
 
 -- | Die Logik zur Validierung des Namens und Aktualisierung des UI-Status.
-validateName :: Adw.EntryRow -> Gtk.Button -> IO ()
-validateName entryRow createBtn = do
+validateName :: Adw.EntryRow -> Gtk.Button -> Gtk.Label -> IO ()
+validateName entryRow createBtn errorLabel = do
   nameText <- #getText entryRow
   
-  if isNameValid nameText
+  let valid = isNameValid nameText
+  
+  #setSensitive createBtn valid
+  
+  if valid
     then do
       -- Gültiger Name
-      #setSensitive createBtn True
-      -- Korrektur für GTK4: CSS-Klasse direkt am Widget entfernen
       Gtk.widgetRemoveCssClass entryRow (T.pack "error") 
+      #setVisible errorLabel False
     else do
       -- Ungültiger Name
-      #setSensitive createBtn False
-      -- Korrektur für GTK4: CSS-Klasse direkt am Widget hinzufügen
-      Gtk.widgetAddCssClass entryRow (T.pack "error") 
-
+      Gtk.widgetAddCssClass entryRow (T.pack "error")
+      
+      let errorMsg = determineError nameText
+      #setLabel errorLabel errorMsg
+      #setVisible errorLabel True
 
 -- | Dialog zum Erstellen einer neuen Bottle
 -- Diesen lassen wir vorerst in Main, da er von der HeaderBar getriggert wird.
@@ -71,6 +82,21 @@ showNewBottleDialog parent refreshCallback = do
   
   #append contentBox group
   
+  -- NEU: Das Label für die Fehlermeldung, platziert nach der PreferencesGroup
+  errorLabel <- new Gtk.Label 
+    [ #label := ""
+    , #halign := Gtk.AlignStart
+    , #vexpand := False
+    , #visible := False
+    -- Die Klasse 'error' sorgt dafür, dass das Label rot dargestellt wird, 
+    -- vorausgesetzt das Theme unterstützt dies für Gtk.Label.
+    , #cssClasses := [T.pack "error"]
+    , #marginStart := 20 
+    , #marginEnd := 20
+    , #marginBottom := 10
+    ]
+  #append contentBox errorLabel
+  
   btnBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10, #halign := Gtk.AlignEnd ]
   
   cancelBtn <- new Gtk.Button [ #label := tr "Cancel" ]
@@ -81,13 +107,13 @@ showNewBottleDialog parent refreshCallback = do
   statusLabel <- new Gtk.Label [ #label := "", #visible := False ]
 
   -- **NEUE LOGIK: On-the-fly Validierung**
-  -- 1. Initialer Aufruf der Validierung, da der Name beim Start leer ist.
-  validateName nameEntry createBtn
+  -- 1. Initialer Aufruf der Validierung
+  validateName nameEntry createBtn errorLabel
 
   -- 2. Hinzufügen des Handlers für Textänderungen
   void $ on nameEntry #changed $
-    validateName nameEntry createBtn
-  
+    validateName nameEntry createBtn errorLabel
+
   on createBtn #clicked $ do
     nameText <- #getText nameEntry
     
