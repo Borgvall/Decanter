@@ -6,7 +6,6 @@ import qualified GI.Gtk as Gtk
 import qualified GI.Adw as Adw
 import qualified GI.GLib as GLib
 import Data.GI.Base
-import Data.GI.Base.Signals (signalConnect)
 import Control.Concurrent.Async (async)
 import Control.Exception (try)
 import Control.Monad (void)
