@@ -60,6 +60,28 @@ getBottlesBaseDir = do
   createDirectoryIfMissing True base
   return base
 
+-- | Scannt das Verzeichnis nach existierenden Bottles
+listExistingBottles :: IO [Bottle]
+listExistingBottles = do
+  base <- getBottlesBaseDir
+  exists <- doesDirectoryExist base
+  if not exists 
+    then return []
+    else do
+      entries <- listDirectory base
+      dirs <- filterM (\e -> doesDirectoryExist (base </> e)) entries
+      validDirs <- filterM (\e -> doesDirectoryExist (base </> e </> "drive_c")) dirs
+      return $ map (\name -> Bottle (T.pack name) (base </> name) SystemWine Win64) validDirs
+
+createVolume :: FilePath -> IO ()
+createVolume path = do
+  result <- try (Btrfs.createSubvol path) :: IO (Either IOException ())
+  case result of
+    Right _ -> putStrLn $ "BTRFS Subvolume erstellt: " ++ path
+    Left _  -> do
+      putStrLn "Kein BTRFS oder Fehler, nutze Standard-Verzeichnis."
+      createDirectoryIfMissing True path
+
 data NameValid
   = Valid
   | EmptyName
@@ -90,38 +112,20 @@ createBottleObject name arch = do
   let path = base </> T.unpack name
   return $ Bottle name path SystemWine arch
 
--- | Scannt das Verzeichnis nach existierenden Bottles
-listExistingBottles :: IO [Bottle]
-listExistingBottles = do
-  base <- getBottlesBaseDir
-  exists <- doesDirectoryExist base
-  if not exists 
-    then return []
-    else do
-      entries <- listDirectory base
-      dirs <- filterM (\e -> doesDirectoryExist (base </> e)) entries
-      validDirs <- filterM (\e -> doesDirectoryExist (base </> e </> "drive_c")) dirs
-      return $ map (\name -> Bottle (T.pack name) (base </> name) SystemWine Win64) validDirs
-
-
-createVolume :: FilePath -> IO ()
-createVolume path = do
-  result <- try (Btrfs.createSubvol path) :: IO (Either IOException ())
-  case result of
-    Right _ -> putStrLn $ "BTRFS Subvolume erstellt: " ++ path
-    Left _  -> do
-      putStrLn "Kein BTRFS oder Fehler, nutze Standard-Verzeichnis."
-      createDirectoryIfMissing True path
-
 -- Hauptlogik zum Erstellen (FIX: IO-Bindung für mergedEnv)
 createBottleLogic :: Bottle -> IO ()
 createBottleLogic bottle@Bottle{..} = do
-  createVolume bottlePath
-  
-  mergedEnv <- getMergedWineEnv bottle
-  let procConfig = setEnv mergedEnv $ proc "wineboot" ["-u"]
-  
-  runProcess_ procConfig
+  -- Just in case the GUI prevention is screwed
+  case checkNameValidity bottleName of
+    Valid -> do
+      createVolume bottlePath
+      
+      mergedEnv <- getMergedWineEnv bottle
+      let procConfig = setEnv mergedEnv $ proc "wineboot" ["-u"]
+      
+      runProcess_ procConfig
+    invalidName -> do
+      putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
 -- NEU: Logik zum Löschen des Wine-Prefix
 deleteBottleLogic :: Bottle -> IO ()
