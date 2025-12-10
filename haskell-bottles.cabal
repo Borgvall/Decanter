@@ -18,6 +18,9 @@ executable haskell-bottles
     -- Die anderen Module müssen im selben Verzeichnis liegen
     other-modules:    Bottle.Types
                     , Bottle.Logic
+                    , Logic.Translation
+                    , Gui.BottleView
+                    , Gui.OverviewView
     
     -- Dependencies
     build-depends:    base >= 4.16 && < 5
