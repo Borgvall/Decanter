@@ -12,7 +12,8 @@ import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Control.Monad (when, void)
+import Control.Monad (forM_, when, void)
+import System.FilePath (takeBaseName)
 
 import Bottle.Types
 import Bottle.Logic
@@ -79,6 +80,39 @@ buildBottleView window bottle stack refreshCallback = do
   on runBtn #clicked $ do
     openExecutableFileDialog window $ runExecutable bottle
   #append box runBtn
+
+  -- Wir holen die Links. Da dies IO ist, passiert es beim Aufbau der View.
+  lnkFiles <- findWineStartMenuLnks bottle
+  
+  -- Container für die Programme (Expander, damit es nicht zu voll wird)
+  progExpander <- new Gtk.Expander [ #label := tr "Installed Programs" ]
+  progBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #marginTop := 10 ]
+  #setChild progExpander (Just progBox)
+  
+  if null lnkFiles
+    then do
+        -- Hinweis, falls keine Programme gefunden wurden
+        emptyLabel <- new Gtk.Label [ #label := tr "No programs found in Start Menu", #cssClasses := ["dim-label"] ]
+        #append progBox emptyLabel
+    else do
+        -- Für jeden Link einen Button erstellen
+        forM_ lnkFiles $ \path -> do
+            let name = T.pack $ takeBaseName path
+            progBtn <- new Gtk.Button 
+                [ #label := name
+                , #halign := Gtk.AlignFill 
+                , #tooltipText := T.pack path
+                ]
+            -- Klick führt 'runWindowsLnk' aus Logic.hs aus
+            on progBtn #clicked $ runWindowsLnk bottle path
+            #append progBox progBtn
+            
+            -- Expander standardmäßig öffnen, wenn wir etwas gefunden haben
+            set progExpander [ #expanded := True ]
+
+  #append box progExpander
+  
+  -- -------------------------------
 
   addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle)
   addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle)
