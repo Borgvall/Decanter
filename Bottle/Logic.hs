@@ -150,7 +150,7 @@ runFileManager Bottle{..} = do
 runExecutable :: Bottle -> FilePath -> IO ()
 runExecutable bottle filePath = do
   let ext = takeExtension filePath
-  if ext == ".msi"
+  if ext == ".msi" || ext == ".MSI"
     then runCmd bottle "wine" ["msiexec", "/i", filePath]
     else runCmd bottle "wine" [filePath]
 
