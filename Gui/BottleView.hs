@@ -6,8 +6,10 @@ import qualified GI.Gtk as Gtk
 import qualified GI.Adw as Adw
 import qualified GI.Gio as Gio
 import qualified GI.GLib as GLib
+import qualified GI.Gdk as Gdk
 import GI.Gio.Callbacks (AsyncReadyCallback)
 import Data.GI.Base
+import Data.GI.Base.GValue (fromGValue)
 import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
 import Data.Text (Text)
@@ -126,6 +128,61 @@ buildBottleView window bottle stack refreshCallback = do
   on runBtn #clicked $ do
     openExecutableFileDialog window $ runExecutable bottle
   #append contentBox runBtn
+
+  -- === DROP ZONE ===
+  
+  -- 1. Visueller Container (Box mit "card" Style für Rahmen/Hintergrund)
+  dropZone <- new Gtk.Box 
+    [ #orientation := Gtk.OrientationVertical
+    , #spacing := 5
+    , #cssClasses := ["card", "view"] -- 'card' gibt den Rahmen, 'view' den Hintergrund
+    , #heightRequest := 80            -- Genug Platz zum Droppen
+    , #valign := Gtk.AlignStart
+    , #halign := Gtk.AlignFill
+    , #marginTop := 5
+    ]
+  
+  -- Inhalt der Drop Zone (Icon und Text)
+  dropContent <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #valign := Gtk.AlignCenter ]
+  
+  dropIcon <- new Gtk.Image [ #iconName := "document-open-symbolic", #pixelSize := 32, #cssClasses := ["dim-label"] ]
+  dropLabel <- new Gtk.Label [ #label := tr "Drag & Drop files here to run", #cssClasses := ["dim-label", "caption"] ]
+  
+  #append dropContent dropIcon
+  #append dropContent dropLabel
+  #append dropZone dropContent
+  
+  -- 2. Das DropTarget (Die Logik)
+  -- Wir akzeptieren Gio.File Objekte (das ist Standard bei Drag&Drop aus dem Dateimanager)
+  gTypeFile <- glibType @Gio.File
+  dropTarget <- Gtk.dropTargetNew gTypeFile [Gdk.DragActionCopy]
+  
+  -- Signal-Handler für das Drop-Event
+  on dropTarget #drop $ \value _x _y -> do
+      -- Das 'value' ist ein generisches GValue. Wir müssen es zu einem Gio.File casten.
+      maybeFile <- fromGValue @Gio.File value
+      
+      case maybeFile of
+          Just gFile -> do
+              -- Wenn es eine Datei ist, holen wir den Pfad
+              maybePath <- Gio.fileGetPath gFile
+              case maybePath of
+                  Just path -> do
+                      putStrLn $ "File dropped: " ++ path
+                      -- Unsere neue Logic-Funktion aufrufen
+                      runFileWithStart bottle path
+                      return True -- Erfolg signalisieren
+                  Nothing -> do
+                      putStrLn "Error: Dropped item has no local path."
+                      return False
+          Nothing -> do
+              putStrLn "Error: Dropped item is not a file."
+              return False
+
+  -- Controller zum Widget hinzufügen
+  #addController dropZone dropTarget
+
+  #append contentBox dropZone
 
   -- Trennlinie
   sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]

@@ -36,6 +36,7 @@ executable haskell-bottles
                     
                     -- GUI (GTK4 + Adwaita)
                     , gi-gtk4 == 4.*
+                    , gi-gdk4 == 4.*
                     , gi-adwaita == 1.*
                     , gi-gio
                     , gi-glib

@@ -154,6 +154,11 @@ runExecutable bottle filePath = do
     then runCmd bottle "wine" ["msiexec", "/i", filePath]
     else runCmd bottle "wine" [filePath]
 
+-- | Öffnet eine Datei (vom Host-System) innerhalb der Bottle
+-- Nutzt 'start /unix', damit Wine Linux-Pfade korrekt auflöst.
+runFileWithStart :: Bottle -> FilePath -> IO ()
+runFileWithStart bottle path = runCmd bottle "wine" ["start", "/unix", path]
+
 -- | Beendet alle Prozesse im Wineprefix via 'wineserver -k'
 killBottleProcesses :: Bottle -> IO ()
 killBottleProcesses bottle = runCmd bottle "wineserver" ["-k"]
