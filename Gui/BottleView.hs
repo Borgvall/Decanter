@@ -86,9 +86,7 @@ showKillConfirmationDialog parent bottle = do
 -- | Erstellt die Detailansicht für eine Bottle
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildBottleView window bottle stack refreshCallback = do
-  
-  -- 1. Die innere Box für den Inhalt (Buttons, Titel etc.)
-  -- Wir setzen 'valign' auf Start, damit sie nicht vertikal den ganzen Platz füllt.
+  -- 1. Die innere Box für den Inhalt
   contentBox <- new Gtk.Box 
     [ #orientation := Gtk.OrientationVertical
     , #spacing := 10
@@ -99,7 +97,6 @@ buildBottleView window bottle stack refreshCallback = do
   
   headerBox <- new Gtk.Box [ #spacing := 10, #halign := Gtk.AlignCenter ]
   
-  -- Titel zentriert
   title <- new Gtk.Label 
     [ #label := bottleName bottle
     , #cssClasses := ["title-1"] 
@@ -108,7 +105,6 @@ buildBottleView window bottle stack refreshCallback = do
   #append headerBox title
   #append contentBox headerBox
 
-  -- Helper für Buttons (füllen die Breite des Clamps aus, damit sie einheitlich sind)
   let addBtn label tooltip cssClasses action = do 
         btn <- new Gtk.Button 
             [ #label := label
@@ -120,52 +116,92 @@ buildBottleView window bottle stack refreshCallback = do
         #append contentBox btn
         return btn
 
-  -- 1. Hauptaktion: Run Executable
+  -- === 1. Hauptaktion ===
   runBtn <- new Gtk.Button 
     [ #label := tr "Run Executable / Installer"
     , #tooltipText := tr "Select .exe or .msi file to run inside this bottle" 
-    , #cssClasses := ["suggested-action", "pill"] -- 'pill' macht die Buttons runder (optional)
+    , #cssClasses := ["suggested-action", "pill"]
     , #halign := Gtk.AlignFill
     ]
   on runBtn #clicked $ do
     openExecutableFileDialog window $ runExecutable bottle
   #append contentBox runBtn
 
-  -- === TRENNLINIE OBEN ===
+  -- Trennlinie
   sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep1
 
-  -- 2. Bereich: Installierte Programme
-  lnkFiles <- findWineStartMenuLnks bottle
+  -- === 2. Bereich: Installierte Programme (Dynamisch) ===
   
-  progExpander <- new Gtk.Expander [ #label := tr "Installed Programs" ]
-  set progExpander [ #expanded := not (null lnkFiles) ]
-  
+  -- Container für Expander und Refresh-Button nebeneinander
+  progSectionBox <- new Gtk.Box 
+    [ #orientation := Gtk.OrientationHorizontal
+    , #spacing := 10 
+    ]
+  #append contentBox progSectionBox
+
+  -- Der Expander nimmt den meisten Platz ein (hexpand)
+  progExpander <- new Gtk.Expander [ #label := tr "Installed Programs", #hexpand := True ]
+  #append progSectionBox progExpander
+
+  -- Box im Expander für die Programmliste
   progBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #marginTop := 10 ]
   #setChild progExpander (Just progBox)
-  
-  if null lnkFiles
-    then do
-        emptyLabel <- new Gtk.Label [ #label := tr "No programs found", #cssClasses := ["dim-label"] ]
-        #append progBox emptyLabel
-    else do
-        forM_ lnkFiles $ \path -> do
-            let name = T.pack $ takeBaseName path
-            progBtn <- new Gtk.Button 
-                [ #label := name
-                , #halign := Gtk.AlignFill 
-                , #tooltipText := T.pack path
-                ]
-            on progBtn #clicked $ runWindowsLnk bottle path
-            #append progBox progBtn
 
-  #append contentBox progExpander
+  -- Hilfsfunktion zum Leeren der Box
+  let clearBox box = do
+        mChild <- Gtk.widgetGetFirstChild box
+        case mChild of
+          Just child -> do
+            Gtk.boxRemove box child
+            clearBox box
+          Nothing -> return ()
 
-  -- === TRENNLINIE UNTEN ===
+  -- Die Logik zum Laden/Aktualisieren der Liste
+  let refreshPrograms = do
+        -- 1. Alte Einträge entfernen
+        clearBox progBox
+        
+        -- 2. Neu scannen
+        lnkFiles <- findWineStartMenuLnks bottle
+        
+        -- 3. Befüllen
+        if null lnkFiles
+          then do
+            emptyLabel <- new Gtk.Label [ #label := tr "No programs found", #cssClasses := ["dim-label"] ]
+            #append progBox emptyLabel
+            -- Optional: Zuklappen wenn leer?
+            -- set progExpander [ #expanded := False ]
+          else do
+            forM_ lnkFiles $ \path -> do
+                let name = T.pack $ takeBaseName path
+                progBtn <- new Gtk.Button 
+                    [ #label := name
+                    , #halign := Gtk.AlignFill 
+                    , #tooltipText := T.pack path
+                    ]
+                on progBtn #clicked $ runWindowsLnk bottle path
+                #append progBox progBtn
+            -- Automatisch aufklappen, wenn Programme gefunden wurden
+            set progExpander [ #expanded := True ]
+
+  -- Der Refresh-Button (rechts vom Expander, oben ausgerichtet)
+  refreshBtn <- new Gtk.Button 
+    [ #iconName := "view-refresh-symbolic"
+    , #tooltipText := tr "Refresh program list"
+    , #valign := Gtk.AlignStart -- Wichtig: Damit er auf Höhe des Expander-Headers bleibt
+    ]
+  on refreshBtn #clicked refreshPrograms
+  #append progSectionBox refreshBtn
+
+  -- Initiales Laden der Programme beim Aufbau der View
+  refreshPrograms
+
+  -- Trennlinie
   sep2 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep2
 
-  -- 3. Bereich: System Tools
+  -- === 3. Bereich: System Tools ===
   toolsLabel <- new Gtk.Label [ #label := tr "System Tools", #halign := Gtk.AlignStart, #cssClasses := ["heading"] ]
   #append contentBox toolsLabel
 
@@ -179,7 +215,7 @@ buildBottleView window bottle stack refreshCallback = do
 
   addBtn (tr "Browse Files") (tr "Open drive_c in file manager") [] (runFileManager bottle)
   
-  -- NEU: Stop Button
+  -- Stop Button
   addBtn (tr "Stop all Programs") (tr "Forcefully close all running processes (wineserver -k)") ["destructive-action"] $ do
     showKillConfirmationDialog window bottle
 
@@ -193,21 +229,19 @@ buildBottleView window bottle stack refreshCallback = do
   on backBtn #clicked $ #setVisibleChildName stack "overview"
   #append contentBox backBtn
 
-  -- === LAYOUT STRUKTUR ===
+  -- === LAYOUT STRUKTUR (Clamp & Scroll) ===
   
-  -- 2. Der Clamp: Begrenzt die Breite auf maximal 450px und zentriert den Inhalt
   clamp <- new Adw.Clamp 
     [ #child := contentBox
     , #maximumSize := 450
     , #tighteningThreshold := 300
     ]
 
-  -- 3. Das ScrollWindow: Erlaubt scrollen, füllt das Fenster aus
   scrolledWindow <- new Gtk.ScrolledWindow 
     [ #child := clamp
-    , #hscrollbarPolicy := Gtk.PolicyTypeNever -- Nur vertikal scrollen
+    , #hscrollbarPolicy := Gtk.PolicyTypeNever
     , #vscrollbarPolicy := Gtk.PolicyTypeAutomatic
-    , #vexpand := True -- Füllt den vertikalen Platz im Parent (Window) aus
+    , #vexpand := True
     ]
 
   Gtk.toWidget scrolledWindow
