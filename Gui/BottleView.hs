@@ -73,29 +73,35 @@ buildBottleView window bottle stack refreshCallback = do
         #append box btn
         return btn
 
+  -- 1. Hauptaktion: Run Executable
   runBtn <- new Gtk.Button 
     [ #label := tr "Run Executable / Installer"
     , #tooltipText := tr "Select .exe or .msi file to run inside this bottle" 
+    , #cssClasses := ["suggested-action"] -- Optional: Hebt den Button blau hervor
     ]
   on runBtn #clicked $ do
     openExecutableFileDialog window $ runExecutable bottle
   #append box runBtn
 
-  -- Wir holen die Links. Da dies IO ist, passiert es beim Aufbau der View.
+  -- === TRENNLINIE OBEN ===
+  sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
+  #append box sep1
+
+  -- 2. Bereich: Installierte Programme (Startmenü)
   lnkFiles <- findWineStartMenuLnks bottle
   
-  -- Container für die Programme (Expander, damit es nicht zu voll wird)
   progExpander <- new Gtk.Expander [ #label := tr "Installed Programs" ]
+  -- Wir expandieren standardmäßig, wenn Programme da sind, damit man sie sofort sieht
+  set progExpander [ #expanded := not (null lnkFiles) ]
+  
   progBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #marginTop := 10 ]
   #setChild progExpander (Just progBox)
   
   if null lnkFiles
     then do
-        -- Hinweis, falls keine Programme gefunden wurden
         emptyLabel <- new Gtk.Label [ #label := tr "No programs found in Start Menu", #cssClasses := ["dim-label"] ]
         #append progBox emptyLabel
     else do
-        -- Für jeden Link einen Button erstellen
         forM_ lnkFiles $ \path -> do
             let name = T.pack $ takeBaseName path
             progBtn <- new Gtk.Button 
@@ -103,16 +109,19 @@ buildBottleView window bottle stack refreshCallback = do
                 , #halign := Gtk.AlignFill 
                 , #tooltipText := T.pack path
                 ]
-            -- Klick führt 'runWindowsLnk' aus Logic.hs aus
             on progBtn #clicked $ runWindowsLnk bottle path
             #append progBox progBtn
-            
-            -- Expander standardmäßig öffnen, wenn wir etwas gefunden haben
-            set progExpander [ #expanded := True ]
 
   #append box progExpander
-  
-  -- -------------------------------
+
+  -- === TRENNLINIE UNTEN ===
+  sep2 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
+  #append box sep2
+
+  -- 3. Bereich: System Tools & Management
+  -- Label für den Bereich (Optional, aber hilfreich für Struktur)
+  toolsLabel <- new Gtk.Label [ #label := tr "System Tools", #halign := Gtk.AlignStart, #cssClasses := ["heading"] ]
+  #append box toolsLabel
 
   addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle)
   addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle)
@@ -124,10 +133,14 @@ buildBottleView window bottle stack refreshCallback = do
 
   addBtn (tr "Browse Files") (tr "Open drive_c in file manager") [] (runFileManager bottle)
   
-  addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle and all its contents") ["destructive-action"] $ do
+  -- Abstand vor dem Löschen-Button
+  sep3 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 20, #marginBottom := 10 ]
+  #append box sep3
+
+  addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle") ["destructive-action"] $ do
     showDeleteConfirmationDialog window stack bottle refreshCallback
 
-  backBtn <- new Gtk.Button [ #label := tr "Back to Library", #marginTop := 20 ]
+  backBtn <- new Gtk.Button [ #label := tr "Back to Library", #marginTop := 10 ]
   on backBtn #clicked $ #setVisibleChildName stack "overview"
   #append box backBtn
 
