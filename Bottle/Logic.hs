@@ -154,6 +154,10 @@ runExecutable bottle filePath = do
     then runCmd bottle "wine" ["msiexec", "/i", filePath]
     else runCmd bottle "wine" [filePath]
 
+-- | Beendet alle Prozesse im Wineprefix via 'wineserver -k'
+killBottleProcesses :: Bottle -> IO ()
+killBottleProcesses bottle = runCmd bottle "wineserver" ["-k"]
+
 runWindowsLnk :: Bottle -> FilePath -> IO ()
 runWindowsLnk bottle lnkPath = runCmd bottle "wine" ["start", "/unix", lnkPath]
 

@@ -56,6 +56,33 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
   let notCancellable = Nothing :: Maybe Gio.Cancellable
   Gtk.alertDialogChoose dialog (Just parent) notCancellable (Just handleAlertDialogResult)
 
+-- | Zeigt den Bestätigungsdialog zum Beenden aller Programme
+showKillConfirmationDialog :: Gtk.Window -> Bottle -> IO ()
+showKillConfirmationDialog parent bottle = do
+  let message = tr "Stop all programs in this bottle?"
+  let detail  = tr "This will execute 'wineserver -k' and force all running applications to close. Unsaved data may be lost."
+  
+  dialog <- new Gtk.AlertDialog 
+    [ #message := message
+    , #detail  := detail
+    , #buttons := [ tr "Cancel", tr "Stop All" ]
+    ]
+  
+  let handleResult :: AsyncReadyCallback
+      handleResult _ result = do
+          buttonIndex <- Gtk.alertDialogChooseFinish dialog result
+          -- buttonIndex == 1 -> Bestätigung ("Stop All")
+          if buttonIndex == 1
+          then do
+              res <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
+              case res of
+                  Left err -> putStrLn $ "Fehler beim Beenden der Prozesse: " ++ show err
+                  Right _  -> putStrLn "Alle Prozesse in der Bottle wurden beendet."
+          else return ()
+  
+  let notCancellable = Nothing :: Maybe Gio.Cancellable
+  Gtk.alertDialogChoose dialog (Just parent) notCancellable (Just handleResult)
+
 -- | Erstellt die Detailansicht für eine Bottle
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildBottleView window bottle stack refreshCallback = do
@@ -133,6 +160,9 @@ buildBottleView window bottle stack refreshCallback = do
 
   addBtn (tr "Browse Files") (tr "Open drive_c in file manager") [] (runFileManager bottle)
   
+  addBtn (tr "Stop all Programs") (tr "Forcefully close all running processes (wineserver -k)") ["destructive-action"] $ do
+    showKillConfirmationDialog window bottle
+
   -- Abstand vor dem Löschen-Button
   sep3 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 20, #marginBottom := 10 ]
   #append box sep3
