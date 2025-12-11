@@ -136,7 +136,7 @@ buildBottleView window bottle stack refreshCallback = do
     [ #orientation := Gtk.OrientationVertical
     , #spacing := 5
     , #cssClasses := ["card", "view"] -- 'card' gibt den Rahmen, 'view' den Hintergrund
-    , #heightRequest := 80            -- Genug Platz zum Droppen
+    , #heightRequest := 48
     , #valign := Gtk.AlignStart
     , #halign := Gtk.AlignFill
     , #marginTop := 5
@@ -146,7 +146,7 @@ buildBottleView window bottle stack refreshCallback = do
   dropContent <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #valign := Gtk.AlignCenter ]
   
   dropIcon <- new Gtk.Image [ #iconName := "document-open-symbolic", #pixelSize := 32, #cssClasses := ["dim-label"] ]
-  dropLabel <- new Gtk.Label [ #label := tr "Drag & Drop files here to run", #cssClasses := ["dim-label", "caption"] ]
+  dropLabel <- new Gtk.Label [ #label := tr "Drag & Drop files here to open", #cssClasses := ["dim-label", "caption"] ]
   
   #append dropContent dropIcon
   #append dropContent dropLabel
