@@ -66,7 +66,14 @@ getBottlesBaseDir = do
   createDirectoryIfMissing True base
   return base
 
--- | Scannt das Verzeichnis nach existierenden Bottles
+-- | Erkennt die Architektur anhand des Vorhandenseins von 'syswow64'
+detectBottleArch :: FilePath -> IO Arch
+detectBottleArch path = do
+    let syswow64 = path </> "drive_c" </> "windows" </> "syswow64"
+    is64 <- doesDirectoryExist syswow64
+    return $ if is64 then Win64 else Win32
+
+-- | Scannt das Verzeichnis nach existierenden Bottles und erkennt deren Architektur
 listExistingBottles :: IO [Bottle]
 listExistingBottles = do
   base <- getBottlesBaseDir
@@ -75,9 +82,18 @@ listExistingBottles = do
     then return []
     else do
       entries <- listDirectory base
+      
+      -- Wir bauen den Pfad zusammen und prüfen, ob es ein Verzeichnis ist
       dirs <- filterM (\e -> doesDirectoryExist (base </> e)) entries
+      
+      -- Wir prüfen, ob 'drive_c' existiert (gültiges Prefix)
       validDirs <- filterM (\e -> doesDirectoryExist (base </> e </> "drive_c")) dirs
-      return $ map (\name -> Bottle (T.pack name) (base </> name) SystemWine Win64) validDirs
+      
+      -- Jetzt mappen wir über die validen Verzeichnisse und erkennen die Architektur
+      forM validDirs $ \name -> do
+          let path = base </> name
+          detectedArch <- detectBottleArch path
+          return $ Bottle (T.pack name) path SystemWine detectedArch
 
 createVolume :: FilePath -> IO ()
 createVolume path = do

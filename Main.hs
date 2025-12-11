@@ -16,7 +16,7 @@ main :: IO ()
 main = do
   _ <- Gtk.init
   Adw.init
-  app <- Adw.applicationNew (Just "com.haskell.bottles") []
+  app <- Adw.applicationNew (Just "com.github.borgvall.haskell-bottles") []
   on app #activate (buildUI app)
   void $ #run app Nothing
 
