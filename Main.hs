@@ -23,6 +23,7 @@ main = do
 buildUI :: Adw.Application -> IO ()
 buildUI app = do
   window <- new Adw.ApplicationWindow [ #application := app, #title := "Haskell Bottles" ]
+  set window [#defaultWidth := 640, #defaultHeight := 768 ]
   
   Just windowAsGtk <- castTo Gtk.Window window
 
