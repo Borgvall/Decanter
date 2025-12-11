@@ -16,13 +16,13 @@ main :: IO ()
 main = do
   _ <- Gtk.init
   Adw.init
-  app <- Adw.applicationNew (Just "com.github.borgvall.haskell-bottles") []
+  app <- Adw.applicationNew (Just "com.github.borgvall.Decanter") []
   on app #activate (buildUI app)
   void $ #run app Nothing
 
 buildUI :: Adw.Application -> IO ()
 buildUI app = do
-  window <- new Adw.ApplicationWindow [ #application := app, #title := "Haskell Bottles" ]
+  window <- new Adw.ApplicationWindow [ #application := app, #title := "Decanter" ]
   set window [#defaultWidth := 640, #defaultHeight := 768 ]
   
   Just windowAsGtk <- castTo Gtk.Window window

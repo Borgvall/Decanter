@@ -62,7 +62,7 @@ runCmd bottle cmd args = do
 -- | Bestimmt das Basisverzeichnis für alle Bottles
 getBottlesBaseDir :: IO FilePath
 getBottlesBaseDir = do
-  base <- getXdgDirectory XdgData "haskell-bottles"
+  base <- getXdgDirectory XdgData "Decanter"
   createDirectoryIfMissing True base
   return base
 
