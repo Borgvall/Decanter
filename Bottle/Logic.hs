@@ -154,6 +154,9 @@ runExecutable bottle filePath = do
     then runCmd bottle "wine" ["msiexec", "/i", filePath]
     else runCmd bottle "wine" [filePath]
 
+runWindowsLnk :: Bottle -> FilePath -> IO ()
+runWindowsLnk bottle lnkPath = runCmd bottle "wine" ["start", lnkPath]
+
 -- | Scannt das Startmenü der Bottle nach .lnk Dateien
 findWineStartMenuLnks :: Bottle -> IO [FilePath]
 findWineStartMenuLnks Bottle{..} = do
