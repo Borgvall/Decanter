@@ -160,7 +160,7 @@ buildBottleView window bottle stack refreshCallback = do
   -- Signal-Handler für das Drop-Event
   on dropTarget #drop $ \value _x _y -> do
       -- Das 'value' ist ein generisches GValue. Wir müssen es zu einem Gio.File casten.
-      maybeFile <- fromGValue @Gio.File value
+      maybeFile <- fromGValue @(Maybe Gio.File) value
       
       case maybeFile of
           Just gFile -> do
