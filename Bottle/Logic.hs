@@ -17,7 +17,8 @@ import System.Directory
     )
 import System.FilePath ((</>), takeExtension)
 import Control.Exception (try, IOException)
-import Control.Monad (void, filterM)
+import Control.Monad (void, filterM, forM) -- "forM" hinzugefügt
+import Data.List (isSuffixOf)               -- "isSuffixOf" hinzugefügt
 import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
@@ -32,20 +33,16 @@ getWineOverrides Bottle{..} =
     , ("WINEARCH", archToString arch)
     ]
 
--- | Erstellt die Umgebungsvariablen für Wine, indem die aktuelle Umgebung
--- | gelesen und die Overrides eingefügt werden.
+-- | Erstellt die Umgebungsvariablen für Wine
 getMergedWineEnv :: Bottle -> IO [(String, String)]
 getMergedWineEnv bottle = do
     let wineSpecificEnv = getWineOverrides bottle
-    -- Automatische Ableitung der zu filternden Keys (deine Optimierung)
     let overrideKeys = map fst wineSpecificEnv 
     
     currentEnv <- getEnvironment
     
-    -- Filtern der aktuellen Umgebung, um die Schlüssel zu entfernen,
     let filteredEnv = filter (\(k, _) -> k `notElem` overrideKeys) currentEnv
     
-    -- Neue Umgebung erstellen: Overrides zuerst, dann der Rest der Umgebung.
     return (wineSpecificEnv ++ filteredEnv)
 
 isWinetricksAvailable :: IO Bool
@@ -62,7 +59,7 @@ runCmd bottle cmd args = do
   mergedEnv <- getMergedWineEnv bottle
   void $ startProcess $ setEnv mergedEnv $ proc cmd args
 
--- | Bestimmt das Basisverzeichnis für alle Bottles: ~/.local/share/haskell-bottles
+-- | Bestimmt das Basisverzeichnis für alle Bottles
 getBottlesBaseDir :: IO FilePath
 getBottlesBaseDir = do
   base <- getXdgDirectory XdgData "haskell-bottles"
@@ -98,7 +95,6 @@ data NameValid
   | ContainsSlash
   deriving (Show, Eq)
 
--- | Überprüft, ob ein Bottle-Name gültig ist, und gibt den Grund für die Ungültigkeit zurück.
 checkNameValidity :: T.Text -> NameValid
 checkNameValidity name
   | T.null name = EmptyName
@@ -106,7 +102,6 @@ checkNameValidity name
   | T.elem '/' name = ContainsSlash
   | otherwise = Valid
 
--- | Erklärt den Grund der Ungültigkeit in übersetztem Text.
 explainNameValid :: NameValid -> T.Text
 explainNameValid status = case status of
   Valid         -> ""
@@ -114,35 +109,28 @@ explainNameValid status = case status of
   NameTooLong   -> tr "The name is too long (max 256 characters)."
   ContainsSlash -> tr "The name cannot contain a slash ('/')."
 
--- | Erstellt ein Bottle-Objekt mit korrektem Pfad basierend auf Namen
 createBottleObject :: T.Text -> Arch -> IO Bottle
 createBottleObject name arch = do
   base <- getBottlesBaseDir
   let path = base </> T.unpack name
   return $ Bottle name path SystemWine arch
 
--- Hauptlogik zum Erstellen (FIX: IO-Bindung für mergedEnv)
 createBottleLogic :: Bottle -> IO ()
 createBottleLogic bottle@Bottle{..} = do
-  -- Just in case the GUI prevention is screwed
   case checkNameValidity bottleName of
     Valid -> do
       createVolume bottlePath
-      
       mergedEnv <- getMergedWineEnv bottle
       let procConfig = setEnv mergedEnv $ proc "wineboot" ["-u"]
-      
       runProcess_ procConfig
     invalidName -> do
       putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
--- NEU: Logik zum Löschen des Wine-Prefix
 deleteBottleLogic :: Bottle -> IO ()
 deleteBottleLogic Bottle{..} = do
   putStrLn $ "Lösche Wine-Prefix: " ++ bottlePath
   removePathForcibly bottlePath
   putStrLn "Löschvorgang abgeschlossen."
-
 
 -- Tools
 runWineCfg :: Bottle -> IO ()
@@ -165,3 +153,45 @@ runExecutable bottle filePath = do
   if ext == ".msi"
     then runCmd bottle "wine" ["msiexec", "/i", filePath]
     else runCmd bottle "wine" [filePath]
+
+-- | Scannt das Startmenü der Bottle nach .lnk Dateien
+findWineStartMenuLnks :: Bottle -> IO [FilePath]
+findWineStartMenuLnks Bottle{..} = do
+    let driveC = bottlePath </> "drive_c"
+    
+    -- 1. Pfad für globale Startmenü-Einträge (ProgramData)
+    let commonStartMenu = driveC </> "ProgramData/Microsoft/Windows/Start Menu"
+    
+    -- 2. Pfade für benutzerspezifische Einträge finden (users/*/AppData/...)
+    let usersDir = driveC </> "users"
+    usersExist <- doesDirectoryExist usersDir
+    
+    userStartMenus <- if usersExist
+        then do
+            users <- listDirectory usersDir
+            return [ usersDir </> u </> "AppData/Roaming/Microsoft/Windows/Start Menu" | u <- users ]
+        else return []
+
+    -- Alle potenziellen Startmenü-Ordner zusammenfügen
+    let allSearchPaths = commonStartMenu : userStartMenus
+
+    -- Nur existierende Verzeichnisse durchsuchen
+    validPaths <- filterM doesDirectoryExist allSearchPaths
+    
+    -- Rekursive Suche starten
+    concat <$> mapM findLnksRecursive validPaths
+
+  where
+    -- Lokale Hilfsfunktion für rekursive Suche
+    findLnksRecursive :: FilePath -> IO [FilePath]
+    findLnksRecursive dir = do
+        content <- listDirectory dir
+        paths <- forM content $ \name -> do
+            let path = dir </> name
+            isDir <- doesDirectoryExist path
+            if isDir
+                then findLnksRecursive path -- Rekursiver Abstieg
+                else if ".lnk" `isSuffixOf` name
+                    then return [path]
+                    else return []
+        return (concat paths)
