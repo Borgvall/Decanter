@@ -4,6 +4,11 @@
 
 > **⚠️ Experimental Project**
 > This project is a proof-of-concept created to test the coding capabilities of **Gemini V3** (AI). The code, structure, and logic were largely generated as part of this experiment.
+>
+> **Analyze the Process:**
+> If you look at the **Git commit history**, you will find the original **German prompts and AI responses** in the commit messages. This history serves as a transparent documentation of the development workflow. It allows you to trace exactly:
+> * Where the AI produced flawless, working code immediately.
+> * Where manual intervention was necessary to fix bugs, resolve compiler errors, or adjust the logic.
 
 ## 💡 Inspiration
 
