@@ -22,6 +22,7 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
 * **Architecture Support:** Choose between 32-bit (`win32`) and 64-bit (`win64`) architectures when creating a bottle.
 * **Modern UI:** Built with GTK4 and Libadwaita for a seamless GNOME integration.
 * **Smart Storage (BTRFS):** Automatically attempts to create bottles as BTRFS subvolumes for better storage management. It gracefully falls back to standard directories if BTRFS is unavailable.
+* **Snapshots (BTRFS):** Using BTRFS-subvolume snapshots the state of a battle can be stored and restored fast.
 * **Program Detection:** Automatically scans the bottle's Start Menu to find and list installed applications.
 * **Drag & Drop:** Simply drag `.exe` or `.msi` files into the bottle view to run or install them.
 * **Integrated Tools:** Quick access to essential Wine utilities:
