@@ -45,7 +45,15 @@ showCreateSnapshotDialog parent bottle refreshCallback = do
     , #resizable := False
     ]
     
-  contentBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 20, #marginSub := 20 ] -- marginSub shorthand für top/bottom/start/end
+  -- REPAIRED: Replaced invalid #marginSub with explicit margins
+  contentBox <- new Gtk.Box 
+    [ #orientation := Gtk.OrientationVertical
+    , #spacing := 20
+    , #marginTop := 20
+    , #marginBottom := 20
+    , #marginStart := 20
+    , #marginEnd := 20 
+    ]
   
   group <- new Adw.PreferencesGroup []
   nameEntry <- new Adw.EntryRow [ #title := tr "Snapshot Name" ]
