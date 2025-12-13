@@ -19,8 +19,8 @@ import System.FilePath (takeBaseName)
 
 import Bottle.Types
 import Bottle.Logic
+import Logic.Translation (tr)
 import Gui.BottleSnapshotsView (buildSnapshotView)
-import Logic.Translation (tr) -- Importiere tr
 
 -- | Zeigt den Bestätigungsdialog zum Löschen einer Bottle
 showDeleteConfirmationDialog :: Gtk.Window -> Gtk.Stack -> Bottle -> IO () -> IO ()
@@ -188,22 +188,32 @@ buildBottleView window bottle stack refreshCallback = do
   -- Trennlinie
   sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep1
-
-  -- === BTRFS Snapshot Button ===
-  -- Wir prüfen async oder direkt (hier direkt, da subvol info schnell ist), ob es BTRFS ist
+  
+  -- === NEU (FIXED): BTRFS Snapshot Button ===
   isBtrfs <- isBtrfsSubvolume (bottlePath bottle)
   
   when isBtrfs $ do
+    -- Wir bauen den Button manuell mit Box, Icon und Label, damit beides angezeigt wird.
     snapBtn <- new Gtk.Button 
-        [ #label := tr "Manage Snapshots"
-        , #iconName := "camera-photo-symbolic"
-        , #cssClasses := ["pill"]
+        [ #cssClasses := ["pill"]
         , #halign := Gtk.AlignFill
         , #marginBottom := 10
         ]
     
+    snapBox <- new Gtk.Box 
+        [ #orientation := Gtk.OrientationHorizontal
+        , #spacing := 8 
+        , #halign := Gtk.AlignCenter -- Inhalt zentrieren
+        ]
+        
+    snapIcon <- new Gtk.Image [ #iconName := "camera-photo-symbolic" ]
+    snapLabel <- new Gtk.Label [ #label := tr "Manage Snapshots" ]
+    
+    #append snapBox snapIcon
+    #append snapBox snapLabel
+    #setChild snapBtn (Just snapBox)
+    
     on snapBtn #clicked $ do
-       -- Snapshot View bauen und anzeigen
        snapView <- buildSnapshotView window bottle stack
        let viewName = "snapshots_" <> bottleName bottle
        #addNamed stack snapView (Just viewName)
@@ -211,9 +221,9 @@ buildBottleView window bottle stack refreshCallback = do
        
     #append contentBox snapBtn
     
-    -- Kleiner Separator nach dem Snapshot Button
     sepSnap <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginBottom := 10 ]
     #append contentBox sepSnap
+
 
   -- === 2. Bereich: Installierte Programme (Dynamisch) ===
   
