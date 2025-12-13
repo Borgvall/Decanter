@@ -10,6 +10,7 @@ import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
 import Control.Monad (void, forM_, when)
 import qualified Data.Text as T
+import Data.Text (Text)
 
 import Bottle.Types
 import Bottle.Logic
@@ -98,6 +99,28 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
   #setChild popover (Just contentBox)
   #popup popover
 
+-- | Hilfsfunktion: Erstellt einen Button mit Icon und Text (manuell via Box)
+createMenuBtn :: Text -> Text -> [Text] -> IO Gtk.Button
+createMenuBtn labelText iconName cssClassesList = do
+    btn <- new Gtk.Button 
+        [ #cssClasses := cssClassesList 
+        , #halign := Gtk.AlignFill
+        ]
+    
+    box <- new Gtk.Box 
+        [ #orientation := Gtk.OrientationHorizontal
+        , #spacing := 12 
+        ]
+    
+    img <- new Gtk.Image [ #iconName := iconName ]
+    lbl <- new Gtk.Label [ #label := labelText, #halign := Gtk.AlignStart, #hexpand := True ]
+    
+    #append box img
+    #append box lbl
+    
+    #setChild btn (Just box)
+    return btn
+
 -- | Baut die Snapshot-Liste
 buildSnapshotView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO Gtk.Widget
 buildSnapshotView window bottle stack = do
@@ -129,7 +152,6 @@ buildSnapshotView window bottle stack = do
   #setChild scrolled (Just clamp)
   #append outerBox scrolled
 
-  -- REKURSIV: refreshList ruft sich selbst auf, wenn ein Item gelöscht wird
   let refreshList = do
         let removeAll = do
               child <- Gtk.widgetGetFirstChild listBox
@@ -170,13 +192,8 @@ buildSnapshotView window bottle stack = do
                     , #marginEnd := 6 
                     ]
                
-               -- 1. Browse Files
-               browseBtn <- new Gtk.Button 
-                    [ #label := tr "Browse Files"
-                    , #iconName := "system-file-manager-symbolic" 
-                    , #halign := Gtk.AlignFill
-                    , #cssClasses := ["flat"]
-                    ]
+               -- 1. Browse Files (FIXED: Mit createMenuBtn)
+               browseBtn <- createMenuBtn (tr "Browse Files") "system-file-manager-symbolic" ["flat"]
                on browseBtn #clicked $ do
                    #popdown popover
                    openSnapshotFileManager s
@@ -186,14 +203,8 @@ buildSnapshotView window bottle stack = do
                sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal ]
                #append popBox sep1
                
-               -- 2. Restore
-               restoreBtn <- new Gtk.Button 
-                    [ #label := tr "Restore Bottle"
-                    , #iconName := "document-revert-symbolic"
-                    , #cssClasses := ["destructive-action"] 
-                    , #halign := Gtk.AlignFill
-                    ]
-               
+               -- 2. Restore (FIXED: Mit createMenuBtn)
+               restoreBtn <- createMenuBtn (tr "Restore Bottle") "document-revert-symbolic" ["destructive-action"]
                on restoreBtn #clicked $ do
                    #popdown popover
                    putStrLn "Starting restore..."
@@ -211,21 +222,14 @@ buildSnapshotView window bottle stack = do
 
                #append popBox restoreBtn
                
-               -- 3. Delete Snapshot (NEU)
-               deleteBtn <- new Gtk.Button 
-                    [ #label := tr "Delete Snapshot"
-                    , #iconName := "user-trash-symbolic"
-                    , #cssClasses := ["destructive-action"]
-                    , #halign := Gtk.AlignFill
-                    ]
+               -- 3. Delete Snapshot (FIXED: Mit createMenuBtn)
+               deleteBtn <- createMenuBtn (tr "Delete Snapshot") "user-trash-symbolic" ["destructive-action"]
                on deleteBtn #clicked $ do
                    #popdown popover
                    async $ do
-                       -- Snapshot löschen
                        deleteSnapshotLogic s
-                       -- UI im Main Thread aktualisieren
                        GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
-                           refreshList -- Liste neu laden
+                           refreshList 
                            return False
                    return ()
 
