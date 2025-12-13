@@ -16,7 +16,7 @@ import System.Directory
     )
 import System.FilePath ((</>), takeExtension, takeFileName)
 import Control.Exception (try, IOException)
-import Control.Monad (void, filterM, forM, forM_) -- HINWEIS: forM_ hinzugefügt
+import Control.Monad (void, filterM, forM, forM_)
 import Data.List (isSuffixOf, sortOn)
 import Data.Maybe (isJust, mapMaybe)
 import qualified Data.Text as T
@@ -76,8 +76,6 @@ detectBottleArch path = do
 
 
 -- | Prüft, ob ein Pfad ein BTRFS Subvolume ist
--- Wir nutzen 'getSubvolReadOnly'. Wenn der Pfad kein Subvolume ist (oder kein BTRFS),
--- schlägt der zugrundeliegende ioctl fehl und wirft eine Exception.
 isBtrfsSubvolume :: FilePath -> IO Bool
 isBtrfsSubvolume path = do
     result <- try (Btrfs.getSubvolReadOnly path) :: IO (Either IOException Bool)
@@ -157,14 +155,13 @@ createBottleLogic bottle@Bottle{..} = do
 deleteSubvolumeForcible :: FilePath -> IO ()
 deleteSubvolumeForcible subvolPath = do
   putStrLn $ "Erzwinge Löschen des Subvolumes: " ++ subvolPath
+  -- Erst Read-Only entfernen, sonst darf man nicht löschen
   Btrfs.setSubvolReadOnly subvolPath False
   destroyResult <- try (Btrfs.destroySubvol subvolPath) :: IO (Either IOException ())
   case destroyResult of
     Right () -> pure ()
-    -- In case the btrfs is not mounted with user_subvol_rm_allowed, fallback
-    -- to recursive directory removal:
+    -- Falls es kein Subvolume ist oder andere Fehler auftreten, Ordner rekursiv löschen:
     Left _ioError -> removePathForcibly subvolPath
-
 
 -- | Löscht eine Bottle und alle zugehörigen Snapshots
 deleteBottleLogic :: Bottle -> IO ()
@@ -184,13 +181,7 @@ deleteBottleLogic bottle@Bottle{..} = do
 
   -- 3. Die Bottle selbst löschen
   putStrLn $ "Lösche Wine-Prefix: " ++ bottlePath
-  
-  -- Da wir Bottles (wenn möglich) als Subvolumes anlegen, 
-  -- versuchen wir sie auch sauber als solche zu löschen.
-  isSubvol <- isBtrfsSubvolume bottlePath
-  if isSubvol
-  then deleteSubvolumeForcible bottlePath
-  else removePathForcibly bottlePath
+  deleteSubvolumeForcible bottlePath
   putStrLn "Löschvorgang abgeschlossen."
 
 -- Tools
@@ -215,27 +206,19 @@ runExecutable bottle filePath = do
     then runCmd bottle "wine" ["msiexec", "/i", filePath]
     else runCmd bottle "wine" [filePath]
 
--- | Öffnet eine Datei (vom Host-System) innerhalb der Bottle
--- Nutzt 'start /unix', damit Wine Linux-Pfade korrekt auflöst.
 runFileWithStart :: Bottle -> FilePath -> IO ()
 runFileWithStart bottle path = runCmd bottle "wine" ["start", "/unix", path]
 
--- | Beendet alle Prozesse im Wineprefix via 'wineserver -k'
 killBottleProcesses :: Bottle -> IO ()
 killBottleProcesses bottle = runCmd bottle "wineserver" ["-k"]
 
 runWindowsLnk :: Bottle -> FilePath -> IO ()
 runWindowsLnk bottle lnkPath = runCmd bottle "wine" ["start", "/unix", lnkPath]
 
--- | Scannt das Startmenü der Bottle nach .lnk Dateien
 findWineStartMenuLnks :: Bottle -> IO [FilePath]
 findWineStartMenuLnks Bottle{..} = do
     let driveC = bottlePath </> "drive_c"
-    
-    -- 1. Pfad für globale Startmenü-Einträge (ProgramData)
     let commonStartMenu = driveC </> "ProgramData/Microsoft/Windows/Start Menu"
-    
-    -- 2. Pfade für benutzerspezifische Einträge finden (users/*/AppData/...)
     let usersDir = driveC </> "users"
     usersExist <- doesDirectoryExist usersDir
     
@@ -245,17 +228,11 @@ findWineStartMenuLnks Bottle{..} = do
             return [ usersDir </> u </> "AppData/Roaming/Microsoft/Windows/Start Menu" | u <- users ]
         else return []
 
-    -- Alle potenziellen Startmenü-Ordner zusammenfügen
     let allSearchPaths = commonStartMenu : userStartMenus
-
-    -- Nur existierende Verzeichnisse durchsuchen
     validPaths <- filterM doesDirectoryExist allSearchPaths
-    
-    -- Rekursive Suche starten
     concat <$> mapM findLnksRecursive validPaths
 
   where
-    -- Lokale Hilfsfunktion für rekursive Suche
     findLnksRecursive :: FilePath -> IO [FilePath]
     findLnksRecursive dir = do
         content <- listDirectory dir
@@ -263,13 +240,12 @@ findWineStartMenuLnks Bottle{..} = do
             let path = dir </> name
             isDir <- doesDirectoryExist path
             if isDir
-                then findLnksRecursive path -- Rekursiver Abstieg
+                then findLnksRecursive path 
                 else if ".lnk" `isSuffixOf` name
                     then return [path]
                     else return []
         return (concat paths)
 
--- | Basisverzeichnis für Snapshots
 getSnapshotsDir :: IO FilePath
 getSnapshotsDir = do
     base <- getXdgDirectory XdgData "Decanter"
@@ -277,7 +253,6 @@ getSnapshotsDir = do
     createDirectoryIfMissing True snapDir
     return snapDir
 
--- | Listet Snapshots für eine Bottle auf, sortiert nach ID
 listSnapshots :: Bottle -> IO [BottleSnapshot]
 listSnapshots bottle = do
     baseSnapDir <- getSnapshotsDir
@@ -299,15 +274,13 @@ listSnapshots bottle = do
             then Nothing
             else 
                 let sId = read idPart :: Int
-                    sName = T.pack $ drop 1 rest -- Den Unterstrich entfernen
+                    sName = T.pack $ drop 1 rest
                 in Just $ BottleSnapshot sId sName (parentDir </> filename)
 
--- | Ermittelt die nächste freie ID
 getNextSnapshotId :: [BottleSnapshot] -> Int
 getNextSnapshotId [] = 0
 getNextSnapshotId snaps = maximum (map snapshotId snaps) + 1
 
--- | Erstellt einen neuen Read-Only Snapshot
 createSnapshotLogic :: Bottle -> T.Text -> IO ()
 createSnapshotLogic bottle sName = do
     baseSnapDir <- getSnapshotsDir
@@ -320,23 +293,25 @@ createSnapshotLogic bottle sName = do
     let folderName = show nextId ++ "_" ++ T.unpack sName
     let destPath = bottleSnapDir </> folderName
     
-    -- Argumente: Source -> Dest -> ReadOnly (True)
-    Btrfs.snapshot (bottlePath bottle) destPath True
+    Btrfs.snapshot (bottlePath bottle) destPath True 
 
 -- | Stellt eine Bottle aus einem Snapshot wieder her
 restoreSnapshotLogic :: Bottle -> BottleSnapshot -> IO ()
 restoreSnapshotLogic bottle snapshot = do
     putStrLn $ "Restoring bottle '" ++ T.unpack (bottleName bottle) ++ "' from snapshot " ++ show (snapshotId snapshot)
-    
-    -- 1. Sicherstellen, dass keine Prozesse mehr auf die Dateien zugreifen
     killBottleProcesses bottle
-    
-    -- 2. Das aktuelle Bottle-Verzeichnis (den "ist"-Zustand) löschen
-    -- Wir nutzen die existierende Hilfsfunktion, die BTRFS-Checks macht
     deleteSubvolumeForcible (bottlePath bottle)
-    
-    -- 3. Den Snapshot an die Stelle der Bottle "klonen"
-    -- Wichtig: readOnly = False, damit die Bottle wieder benutzbar ist
     Btrfs.snapshot (snapshotPath snapshot) (bottlePath bottle) False
-    
     putStrLn "Restore erfolgreich."
+
+-- | Löscht einen spezifischen Snapshot
+deleteSnapshotLogic :: BottleSnapshot -> IO ()
+deleteSnapshotLogic snapshot = do
+    putStrLn $ "Lösche Snapshot: " ++ snapshotPath snapshot
+    deleteSubvolumeForcible (snapshotPath snapshot)
+
+-- | Öffnet den Dateimanager im drive_c des Snapshots
+openSnapshotFileManager :: BottleSnapshot -> IO ()
+openSnapshotFileManager snapshot = do
+    let driveC = snapshotPath snapshot </> "drive_c"
+    void $ startProcess $ proc "xdg-open" [driveC]

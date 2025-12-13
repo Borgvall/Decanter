@@ -35,15 +35,11 @@ validateSnapshotName entryRow createBtn errorLabel = do
       #setVisible errorLabel True
 
 -- | Zeigt das Popover zum Erstellen eines Snapshots
--- Wir übergeben den 'parentBtn', an den das Popover angeheftet wird.
 showCreateSnapshotPopover :: Gtk.Button -> Bottle -> IO () -> IO ()
 showCreateSnapshotPopover parentBtn bottle refreshCallback = do
-  
-  -- Popover erstellen
   popover <- new Gtk.Popover []
-  #setParent popover parentBtn  -- Das Popover gehört visuell zum Button
+  #setParent popover parentBtn 
   
-  -- Inhalt des Popovers
   contentBox <- new Gtk.Box 
     [ #orientation := Gtk.OrientationVertical
     , #spacing := 12
@@ -51,25 +47,21 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
     , #marginBottom := 12
     , #marginStart := 12
     , #marginEnd := 12
-    , #widthRequest := 300 -- Eine Mindestbreite sieht besser aus
+    , #widthRequest := 300 
     ]
   
-  -- Titel im Popover (optional, aber hilfreich)
   titleLabel <- new Gtk.Label [ #label := tr "New Snapshot", #cssClasses := ["title-4"], #halign := Gtk.AlignStart ]
   #append contentBox titleLabel
 
-  -- Eingabegruppe
   group <- new Adw.PreferencesGroup []
   nameEntry <- new Adw.EntryRow [ #title := tr "Name" ]
   #add group nameEntry
   #append contentBox group
   
-  -- Fehler-Label
   errorLabel <- new Gtk.Label 
     [ #label := "", #cssClasses := ["error"], #visible := False, #halign := Gtk.AlignStart ]
   #append contentBox errorLabel
   
-  -- Create Button
   createBtn <- new Gtk.Button 
     [ #label := tr "Create"
     , #cssClasses := ["suggested-action"] 
@@ -78,10 +70,8 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
     ]
   #append contentBox createBtn
   
-  -- Validierung bei Änderung
   void $ on nameEntry #changed $ validateSnapshotName nameEntry createBtn errorLabel
   
-  -- Die eigentliche Logik zum Erstellen
   let doCreate = do
         isValid <- #getSensitive createBtn
         when isValid $ do
@@ -93,7 +83,7 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
               GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                 case res of
                   Right _ -> do
-                    #popdown popover -- Popover schließen
+                    #popdown popover 
                     refreshCallback
                   Left err -> do
                      #setLabel errorLabel (T.pack $ "Error: " ++ show err)
@@ -102,28 +92,20 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
                 return False
             return ()
 
-  -- Klick auf Button löst Erstellung aus
   on createBtn #clicked doCreate
-  
-  -- Enter im Eingabefeld löst ebenfalls Erstellung aus
   on nameEntry #entryActivated doCreate
 
   #setChild popover (Just contentBox)
-  
-  -- Popover anzeigen (GTK4: popup)
   #popup popover
 
 -- | Baut die Snapshot-Liste
 buildSnapshotView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO Gtk.Widget
 buildSnapshotView window bottle stack = do
   
-  -- Outer Container
   outerBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 0 ]
   
-  -- Header
   header <- new Adw.HeaderBar []
   
-  -- Back Button
   backBtn <- new Gtk.Button [ #iconName := "go-previous-symbolic" ]
   on backBtn #clicked $ do
       let detailViewName = "detail_" <> bottleName bottle
@@ -139,7 +121,6 @@ buildSnapshotView window bottle stack = do
   
   #append outerBox header
 
-  -- Content Area
   scrolled <- new Gtk.ScrolledWindow [ #vexpand := True ]
   clamp <- new Adw.Clamp [ #maximumSize := 600 ]
   listBox <- new Gtk.ListBox [ #selectionMode := Gtk.SelectionModeNone, #cssClasses := ["boxed-list"], #marginTop := 20, #marginBottom := 20 ]
@@ -148,9 +129,8 @@ buildSnapshotView window bottle stack = do
   #setChild scrolled (Just clamp)
   #append outerBox scrolled
 
-  -- Logic to refresh the list
+  -- REKURSIV: refreshList ruft sich selbst auf, wenn ein Item gelöscht wird
   let refreshList = do
-        -- Clear list
         let removeAll = do
               child <- Gtk.widgetGetFirstChild listBox
               case child of
@@ -169,18 +149,16 @@ buildSnapshotView window bottle stack = do
                let rowTitle = (T.pack . show $ snapshotId s) <> ". " <> snapshotName s
                row <- new Adw.ActionRow [ #title := rowTitle, #subtitle := T.pack (snapshotPath s) ]
                
-               -- Icon indicating read-only (Links)
                icon <- new Gtk.Image [ #iconName := "emblem-readonly-symbolic" ]
                #addPrefix row icon
 
-               -- === NEU: Menu Button (Rechts) ===
+               -- Menu Button
                menuBtn <- new Gtk.MenuButton 
                     [ #iconName := "view-more-symbolic"
                     , #valign := Gtk.AlignCenter
-                    , #cssClasses := ["flat"] -- Damit er sich gut in die Liste einfügt
+                    , #cssClasses := ["flat"] 
                     ]
                
-               -- Das Popover für diesen Button
                popover <- new Gtk.Popover []
                
                popBox <- new Gtk.Box 
@@ -192,37 +170,68 @@ buildSnapshotView window bottle stack = do
                     , #marginEnd := 6 
                     ]
                
-               -- Restore Button
+               -- 1. Browse Files
+               browseBtn <- new Gtk.Button 
+                    [ #label := tr "Browse Files"
+                    , #iconName := "system-file-manager-symbolic" 
+                    , #halign := Gtk.AlignFill
+                    , #cssClasses := ["flat"]
+                    ]
+               on browseBtn #clicked $ do
+                   #popdown popover
+                   openSnapshotFileManager s
+               #append popBox browseBtn
+               
+               -- Separator
+               sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal ]
+               #append popBox sep1
+               
+               -- 2. Restore
                restoreBtn <- new Gtk.Button 
-                    [ #label := tr "Restore Bottle to this Snapshot"
-                    , #cssClasses := ["destructive-action"] -- Rot markiert
+                    [ #label := tr "Restore Bottle"
+                    , #iconName := "document-revert-symbolic"
+                    , #cssClasses := ["destructive-action"] 
+                    , #halign := Gtk.AlignFill
                     ]
                
                on restoreBtn #clicked $ do
-                   -- Popover schließen
                    #popdown popover
-                   
-                   -- UI sperren (optional, hier einfach async start)
                    putStrLn "Starting restore..."
                    async $ do
                        res <- try (restoreSnapshotLogic bottle s) :: IO (Either SomeException ())
                        GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                            case res of
                                Right _ -> do
-                                   -- Wir navigieren zurück zur Detailansicht, da sich der Status geändert hat
                                    let detailViewName = "detail_" <> bottleName bottle
                                    #setVisibleChildName stack detailViewName
-                                   putStrLn "Restore finished, navigated back."
                                Left err -> do
                                    putStrLn $ "Error during restore: " ++ show err
-                                   -- Hier könnte man noch einen Fehlerdialog anzeigen
                            return False
                    return ()
 
                #append popBox restoreBtn
-               #setChild popover (Just popBox)
                
-               -- Popover dem Button zuweisen
+               -- 3. Delete Snapshot (NEU)
+               deleteBtn <- new Gtk.Button 
+                    [ #label := tr "Delete Snapshot"
+                    , #iconName := "user-trash-symbolic"
+                    , #cssClasses := ["destructive-action"]
+                    , #halign := Gtk.AlignFill
+                    ]
+               on deleteBtn #clicked $ do
+                   #popdown popover
+                   async $ do
+                       -- Snapshot löschen
+                       deleteSnapshotLogic s
+                       -- UI im Main Thread aktualisieren
+                       GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+                           refreshList -- Liste neu laden
+                           return False
+                   return ()
+
+               #append popBox deleteBtn
+               
+               #setChild popover (Just popBox)
                #setPopover menuBtn (Just popover)
                
                #addSuffix row menuBtn
