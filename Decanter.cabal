@@ -20,6 +20,7 @@ executable decanter
                     , Bottle.Logic
                     , Logic.Translation
                     , Gui.BottleView
+                    , Gui.BottleSnapshotsView
                     , Gui.NewBottleDialog
                     , Gui.OverviewView
     

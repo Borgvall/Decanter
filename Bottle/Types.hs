@@ -24,3 +24,9 @@ data Bottle = Bottle
   , runner     :: RunnerType
   , arch       :: Arch
   } deriving (Show, Eq)
+
+data BottleSnapshot = BottleSnapshot
+  { snapshotId   :: Int
+  , snapshotName :: Text
+  , snapshotPath :: FilePath
+  } deriving (Show, Eq)

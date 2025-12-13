@@ -13,16 +13,17 @@ import System.Directory
     , doesDirectoryExist
     , removePathForcibly
     , findExecutable
-    , doesFileExist
     )
-import System.FilePath ((</>), takeExtension)
+import System.FilePath ((</>), takeFileName)
 import Control.Exception (try, IOException)
-import Control.Monad (void, filterM, forM) -- "forM" hinzugefügt
-import Data.List (isSuffixOf)               -- "isSuffixOf" hinzugefügt
-import Data.Maybe (isJust)
+import Control.Monad (void, filterM, forM)
+import Data.List (isSuffixOf, sortOn)
+import Data.Maybe (isJust, mapMaybe)
 import qualified Data.Text as T
+import qualified Data.Text.Read as TR
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
+import Data.Char (isDigit)
 
 import Logic.Translation (tr)
 
@@ -72,6 +73,17 @@ detectBottleArch path = do
     let syswow64 = path </> "drive_c" </> "windows" </> "syswow64"
     is64 <- doesDirectoryExist syswow64
     return $ if is64 then Win64 else Win32
+
+
+-- | Prüft, ob ein Pfad ein BTRFS Subvolume ist
+isBtrfsSubvolume :: FilePath -> IO Bool
+isBtrfsSubvolume path = do
+    -- Wir versuchen Informationen über das Subvolumen abzurufen.
+    -- Wenn das fehlschlägt (z.B. kein BTRFS oder kein Subvol), geben wir False zurück.
+    result <- try (Btrfs.getSubvolInfo path) :: IO (Either IOException Btrfs.SubvolInfo)
+    case result of
+        Right _ -> return True
+        Left _  -> return False
 
 -- | Scannt das Verzeichnis nach existierenden Bottles und erkennt deren Architektur
 listExistingBottles :: IO [Bottle]
@@ -223,3 +235,57 @@ findWineStartMenuLnks Bottle{..} = do
                     then return [path]
                     else return []
         return (concat paths)
+
+-- | Basisverzeichnis für Snapshots
+getSnapshotsDir :: IO FilePath
+getSnapshotsDir = do
+    base <- getXdgDirectory XdgData "Decanter"
+    let snapDir = base </> "BottleSnapshots"
+    createDirectoryIfMissing True snapDir
+    return snapDir
+
+-- | Listet Snapshots für eine Bottle auf, sortiert nach ID
+listSnapshots :: Bottle -> IO [BottleSnapshot]
+listSnapshots bottle = do
+    baseSnapDir <- getSnapshotsDir
+    let bottleSnapDir = baseSnapDir </> T.unpack (bottleName bottle)
+    
+    exists <- doesDirectoryExist bottleSnapDir
+    if not exists
+        then return []
+        else do
+            entries <- listDirectory bottleSnapDir
+            let snapshots = mapMaybe (parseSnapshotName bottleSnapDir) entries
+            return $ sortOn snapshotId snapshots
+
+  where
+    parseSnapshotName :: FilePath -> String -> Maybe BottleSnapshot
+    parseSnapshotName parentDir filename = 
+        let (idPart, rest) = span isDigit filename
+        in if null idPart || null rest || head rest /= '_'
+            then Nothing
+            else 
+                let sId = read idPart :: Int
+                    sName = T.pack $ drop 1 rest -- Den Unterstrich entfernen
+                in Just $ BottleSnapshot sId sName (parentDir </> filename)
+
+-- | Ermittelt die nächste freie ID
+getNextSnapshotId :: [BottleSnapshot] -> Int
+getNextSnapshotId [] = 0
+getNextSnapshotId snaps = maximum (map snapshotId snaps) + 1
+
+-- | Erstellt einen neuen Read-Only Snapshot
+createSnapshotLogic :: Bottle -> T.Text -> IO ()
+createSnapshotLogic bottle sName = do
+    baseSnapDir <- getSnapshotsDir
+    let bottleSnapDir = baseSnapDir </> T.unpack (bottleName bottle)
+    createDirectoryIfMissing True bottleSnapDir
+    
+    currentSnaps <- listSnapshots bottle
+    let nextId = getNextSnapshotId currentSnaps
+    
+    let folderName = show nextId ++ "_" ++ T.unpack sName
+    let destPath = bottleSnapDir </> folderName
+    
+    -- Erstelle Read-Only Snapshot (True = readOnly)
+    Btrfs.snapshot True (bottlePath bottle) destPath

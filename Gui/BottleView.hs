@@ -19,6 +19,7 @@ import System.FilePath (takeBaseName)
 
 import Bottle.Types
 import Bottle.Logic
+import Gui.BottleSnapshotsView (buildSnapshotView)
 import Logic.Translation (tr) -- Importiere tr
 
 -- | Zeigt den Bestätigungsdialog zum Löschen einer Bottle
@@ -187,6 +188,32 @@ buildBottleView window bottle stack refreshCallback = do
   -- Trennlinie
   sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep1
+
+  -- === BTRFS Snapshot Button ===
+  -- Wir prüfen async oder direkt (hier direkt, da subvol info schnell ist), ob es BTRFS ist
+  isBtrfs <- isBtrfsSubvolume (bottlePath bottle)
+  
+  when isBtrfs $ do
+    snapBtn <- new Gtk.Button 
+        [ #label := tr "Manage Snapshots"
+        , #iconName := "camera-photo-symbolic"
+        , #cssClasses := ["pill"]
+        , #halign := Gtk.AlignFill
+        , #marginBottom := 10
+        ]
+    
+    on snapBtn #clicked $ do
+       -- Snapshot View bauen und anzeigen
+       snapView <- buildSnapshotView window bottle stack
+       let viewName = "snapshots_" <> bottleName bottle
+       #addNamed stack snapView (Just viewName)
+       #setVisibleChildName stack viewName
+       
+    #append contentBox snapBtn
+    
+    -- Kleiner Separator nach dem Snapshot Button
+    sepSnap <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginBottom := 10 ]
+    #append contentBox sepSnap
 
   -- === 2. Bereich: Installierte Programme (Dynamisch) ===
   
