@@ -187,7 +187,10 @@ deleteBottleLogic bottle@Bottle{..} = do
   
   -- Da wir Bottles (wenn möglich) als Subvolumes anlegen, 
   -- versuchen wir sie auch sauber als solche zu löschen.
-  deleteSubvolumeForcible bottlePath
+  isSubvol <- isBtrfsSubvolume bottlePath
+  if isSubvol
+  then deleteSubvolumeForcible bottlePath
+  else removePathForcibly bottlePath
   putStrLn "Löschvorgang abgeschlossen."
 
 -- Tools
@@ -319,3 +322,21 @@ createSnapshotLogic bottle sName = do
     
     -- Argumente: Source -> Dest -> ReadOnly (True)
     Btrfs.snapshot (bottlePath bottle) destPath True
+
+-- | Stellt eine Bottle aus einem Snapshot wieder her
+restoreSnapshotLogic :: Bottle -> BottleSnapshot -> IO ()
+restoreSnapshotLogic bottle snapshot = do
+    putStrLn $ "Restoring bottle '" ++ T.unpack (bottleName bottle) ++ "' from snapshot " ++ show (snapshotId snapshot)
+    
+    -- 1. Sicherstellen, dass keine Prozesse mehr auf die Dateien zugreifen
+    killBottleProcesses bottle
+    
+    -- 2. Das aktuelle Bottle-Verzeichnis (den "ist"-Zustand) löschen
+    -- Wir nutzen die existierende Hilfsfunktion, die BTRFS-Checks macht
+    deleteSubvolumeForcible (bottlePath bottle)
+    
+    -- 3. Den Snapshot an die Stelle der Bottle "klonen"
+    -- Wichtig: readOnly = False, damit die Bottle wieder benutzbar ist
+    Btrfs.snapshot (snapshotPath snapshot) (bottlePath bottle) False
+    
+    putStrLn "Restore erfolgreich."

@@ -123,7 +123,7 @@ buildSnapshotView window bottle stack = do
   -- Header
   header <- new Adw.HeaderBar []
   
-  -- Back Button Logic
+  -- Back Button
   backBtn <- new Gtk.Button [ #iconName := "go-previous-symbolic" ]
   on backBtn #clicked $ do
       let detailViewName = "detail_" <> bottleName bottle
@@ -134,7 +134,6 @@ buildSnapshotView window bottle stack = do
   title <- new Adw.WindowTitle [ #title := tr "Snapshots", #subtitle := bottleName bottle ]
   #setTitleWidget header (Just title)
   
-  -- Add Button (hier heften wir später das Popover an)
   addBtn <- new Gtk.Button [ #iconName := "list-add-symbolic", #cssClasses := ["suggested-action"] ]
   #packEnd header addBtn
   
@@ -170,14 +169,67 @@ buildSnapshotView window bottle stack = do
                let rowTitle = (T.pack . show $ snapshotId s) <> ". " <> snapshotName s
                row <- new Adw.ActionRow [ #title := rowTitle, #subtitle := T.pack (snapshotPath s) ]
                
+               -- Icon indicating read-only (Links)
                icon <- new Gtk.Image [ #iconName := "emblem-readonly-symbolic" ]
                #addPrefix row icon
+
+               -- === NEU: Menu Button (Rechts) ===
+               menuBtn <- new Gtk.MenuButton 
+                    [ #iconName := "view-more-symbolic"
+                    , #valign := Gtk.AlignCenter
+                    , #cssClasses := ["flat"] -- Damit er sich gut in die Liste einfügt
+                    ]
                
+               -- Das Popover für diesen Button
+               popover <- new Gtk.Popover []
+               
+               popBox <- new Gtk.Box 
+                    [ #orientation := Gtk.OrientationVertical
+                    , #spacing := 6
+                    , #marginTop := 6
+                    , #marginBottom := 6
+                    , #marginStart := 6
+                    , #marginEnd := 6 
+                    ]
+               
+               -- Restore Button
+               restoreBtn <- new Gtk.Button 
+                    [ #label := tr "Restore Bottle to this Snapshot"
+                    , #cssClasses := ["destructive-action"] -- Rot markiert
+                    ]
+               
+               on restoreBtn #clicked $ do
+                   -- Popover schließen
+                   #popdown popover
+                   
+                   -- UI sperren (optional, hier einfach async start)
+                   putStrLn "Starting restore..."
+                   async $ do
+                       res <- try (restoreSnapshotLogic bottle s) :: IO (Either SomeException ())
+                       GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+                           case res of
+                               Right _ -> do
+                                   -- Wir navigieren zurück zur Detailansicht, da sich der Status geändert hat
+                                   let detailViewName = "detail_" <> bottleName bottle
+                                   #setVisibleChildName stack detailViewName
+                                   putStrLn "Restore finished, navigated back."
+                               Left err -> do
+                                   putStrLn $ "Error during restore: " ++ show err
+                                   -- Hier könnte man noch einen Fehlerdialog anzeigen
+                           return False
+                   return ()
+
+               #append popBox restoreBtn
+               #setChild popover (Just popBox)
+               
+               -- Popover dem Button zuweisen
+               #setPopover menuBtn (Just popover)
+               
+               #addSuffix row menuBtn
                #append listBox row
 
   refreshList
   
-  -- Connect Add Button -> Popover
   on addBtn #clicked $ showCreateSnapshotPopover addBtn bottle refreshList
 
   Gtk.toWidget outerBox
