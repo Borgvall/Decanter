@@ -24,6 +24,7 @@ import qualified Data.Text.Read as TR
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
 import Data.Char (isDigit)
+import System.Exit (ExitCode(..)) -- HINZUGEFÜGT
 
 import Logic.Translation (tr)
 
@@ -76,15 +77,18 @@ detectBottleArch path = do
 
 
 -- | Prüft, ob ein Pfad ein BTRFS Subvolume ist
+-- Wir nutzen das Kommandozeilen-Tool 'btrfs', um Kompatibilitätsprobleme 
+-- mit der Haskell-Library zu vermeiden.
 isBtrfsSubvolume :: FilePath -> IO Bool
 isBtrfsSubvolume path = do
-    -- Wir nutzen die dedizierte Funktion isSubvolume aus der Library (ab v0.2)
-    -- Falls die Library-Version doch älter ist oder der Check fehlschlägt,
-    -- fangen wir Exceptions ab und geben False zurück.
-    result <- try (Btrfs.isSubvolume path) :: IO (Either IOException Bool)
-    case result of
-        Right isSub -> return isSub
-        Left _      -> return False
+    -- 'btrfs subvolume show' gibt 0 zurück, wenn es ein Subvolumen ist, sonst Fehler.
+    -- Wir unterdrücken stdout/stderr, da wir nur am ExitCode interessiert sind.
+    let process = setStdout nullStream 
+                $ setStderr nullStream 
+                $ proc "btrfs" ["subvolume", "show", path]
+    
+    (exitCode, _, _) <- readProcess process
+    return (exitCode == ExitSuccess)
 
 -- | Scannt das Verzeichnis nach existierenden Bottles und erkennt deren Architektur
 listExistingBottles :: IO [Bottle]
@@ -288,5 +292,5 @@ createSnapshotLogic bottle sName = do
     let folderName = show nextId ++ "_" ++ T.unpack sName
     let destPath = bottleSnapDir </> folderName
     
-    -- Korrigierter Aufruf: Source -> Dest -> ReadOnly
+    -- Argumente: Source -> Dest -> ReadOnly (True)
     Btrfs.snapshot (bottlePath bottle) destPath True
