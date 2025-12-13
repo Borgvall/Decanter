@@ -154,6 +154,18 @@ createBottleLogic bottle@Bottle{..} = do
     invalidName -> do
       putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
+deleteSubvolumeForcible :: FilePath -> IO ()
+deleteSubvolumeForcible subvolPath = do
+  putStrLn $ "Erzwinge Löschen des Subvolumes: " ++ subvolPath
+  Btrfs.setSubvolReadOnly subvolPath False
+  destroyResult <- try (Btrfs.destroySubvol subvolPath) :: IO (Either IOException ())
+  case destroyResult of
+    Right () -> pure ()
+    -- In case the btrfs is not mounted with user_subvol_rm_allowed, fallback
+    -- to recursive directory removal:
+    Left _ioError -> removePathForcibly subvolPath
+
+
 -- | Löscht eine Bottle und alle zugehörigen Snapshots
 deleteBottleLogic :: Bottle -> IO ()
 deleteBottleLogic bottle@Bottle{..} = do
@@ -163,12 +175,7 @@ deleteBottleLogic bottle@Bottle{..} = do
   snaps <- listSnapshots bottle
   forM_ snaps $ \s -> do
       let path = snapshotPath s
-      putStrLn $ "Lösche Snapshot: " ++ path
-      -- Versuch als Subvolume zu löschen
-      res <- try (Btrfs.deleteSubvol path) :: IO (Either IOException ())
-      case res of
-          Right _ -> return ()
-          Left _  -> removePathForcibly path -- Fallback für normale Ordner
+      deleteSubvolumeForcible path
 
   -- 2. Den leeren Snapshot-Ordner der Bottle entfernen
   baseSnapDir <- getSnapshotsDir
@@ -180,14 +187,7 @@ deleteBottleLogic bottle@Bottle{..} = do
   
   -- Da wir Bottles (wenn möglich) als Subvolumes anlegen, 
   -- versuchen wir sie auch sauber als solche zu löschen.
-  resBottle <- try (Btrfs.deleteSubvol bottlePath) :: IO (Either IOException ())
-  case resBottle of
-      Right _ -> putStrLn "Bottle (Subvolume) erfolgreich entfernt."
-      Left _  -> do
-          -- Fallback, falls kein Subvolume oder Fehler
-          removePathForcibly bottlePath
-          putStrLn "Bottle (Verzeichnis) entfernt."
-          
+  deleteSubvolumeForcible bottlePath
   putStrLn "Löschvorgang abgeschlossen."
 
 -- Tools
