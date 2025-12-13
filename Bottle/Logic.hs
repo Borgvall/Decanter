@@ -14,7 +14,7 @@ import System.Directory
     , removePathForcibly
     , findExecutable
     )
-import System.FilePath ((</>), takeFileName)
+import System.FilePath ((</>), takeExtension, takeFileName)
 import Control.Exception (try, IOException)
 import Control.Monad (void, filterM, forM)
 import Data.List (isSuffixOf, sortOn)
@@ -78,12 +78,13 @@ detectBottleArch path = do
 -- | Prüft, ob ein Pfad ein BTRFS Subvolume ist
 isBtrfsSubvolume :: FilePath -> IO Bool
 isBtrfsSubvolume path = do
-    -- Wir versuchen Informationen über das Subvolumen abzurufen.
-    -- Wenn das fehlschlägt (z.B. kein BTRFS oder kein Subvol), geben wir False zurück.
-    result <- try (Btrfs.getSubvolInfo path) :: IO (Either IOException Btrfs.SubvolInfo)
+    -- Wir nutzen die dedizierte Funktion isSubvolume aus der Library (ab v0.2)
+    -- Falls die Library-Version doch älter ist oder der Check fehlschlägt,
+    -- fangen wir Exceptions ab und geben False zurück.
+    result <- try (Btrfs.isSubvolume path) :: IO (Either IOException Bool)
     case result of
-        Right _ -> return True
-        Left _  -> return False
+        Right isSub -> return isSub
+        Left _      -> return False
 
 -- | Scannt das Verzeichnis nach existierenden Bottles und erkennt deren Architektur
 listExistingBottles :: IO [Bottle]
@@ -287,5 +288,5 @@ createSnapshotLogic bottle sName = do
     let folderName = show nextId ++ "_" ++ T.unpack sName
     let destPath = bottleSnapDir </> folderName
     
-    -- Erstelle Read-Only Snapshot (True = readOnly)
-    Btrfs.snapshot True (bottlePath bottle) destPath
+    -- Korrigierter Aufruf: Source -> Dest -> ReadOnly
+    Btrfs.snapshot (bottlePath bottle) destPath True
