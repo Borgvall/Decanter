@@ -16,7 +16,7 @@ import System.Directory
     )
 import System.FilePath ((</>), takeExtension, takeFileName)
 import Control.Exception (try, IOException)
-import Control.Monad (void, filterM, forM)
+import Control.Monad (void, filterM, forM, forM_) -- HINWEIS: forM_ hinzugefügt
 import Data.List (isSuffixOf, sortOn)
 import Data.Maybe (isJust, mapMaybe)
 import qualified Data.Text as T
@@ -154,10 +154,40 @@ createBottleLogic bottle@Bottle{..} = do
     invalidName -> do
       putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
+-- | Löscht eine Bottle und alle zugehörigen Snapshots
 deleteBottleLogic :: Bottle -> IO ()
-deleteBottleLogic Bottle{..} = do
+deleteBottleLogic bottle@Bottle{..} = do
+  putStrLn $ "Starte Löschvorgang für: " ++ T.unpack bottleName
+  
+  -- 1. Snapshots löschen
+  snaps <- listSnapshots bottle
+  forM_ snaps $ \s -> do
+      let path = snapshotPath s
+      putStrLn $ "Lösche Snapshot: " ++ path
+      -- Versuch als Subvolume zu löschen
+      res <- try (Btrfs.deleteSubvol path) :: IO (Either IOException ())
+      case res of
+          Right _ -> return ()
+          Left _  -> removePathForcibly path -- Fallback für normale Ordner
+
+  -- 2. Den leeren Snapshot-Ordner der Bottle entfernen
+  baseSnapDir <- getSnapshotsDir
+  let bottleSnapDir = baseSnapDir </> T.unpack bottleName
+  removePathForcibly bottleSnapDir
+
+  -- 3. Die Bottle selbst löschen
   putStrLn $ "Lösche Wine-Prefix: " ++ bottlePath
-  removePathForcibly bottlePath
+  
+  -- Da wir Bottles (wenn möglich) als Subvolumes anlegen, 
+  -- versuchen wir sie auch sauber als solche zu löschen.
+  resBottle <- try (Btrfs.deleteSubvol bottlePath) :: IO (Either IOException ())
+  case resBottle of
+      Right _ -> putStrLn "Bottle (Subvolume) erfolgreich entfernt."
+      Left _  -> do
+          -- Fallback, falls kein Subvolume oder Fehler
+          removePathForcibly bottlePath
+          putStrLn "Bottle (Verzeichnis) entfernt."
+          
   putStrLn "Löschvorgang abgeschlossen."
 
 -- Tools
@@ -288,5 +318,4 @@ createSnapshotLogic bottle sName = do
     let destPath = bottleSnapDir </> folderName
     
     -- Argumente: Source -> Dest -> ReadOnly (True)
-    -- Hinweis: Btrfs.snapshot erwartet (Source Path) (Dest Path) (ReadOnly Bool)
     Btrfs.snapshot (bottlePath bottle) destPath True
