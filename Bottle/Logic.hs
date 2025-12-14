@@ -181,7 +181,10 @@ deleteBottleLogic bottle@Bottle{..} = do
 
   -- 3. Die Bottle selbst löschen
   putStrLn $ "Lösche Wine-Prefix: " ++ bottlePath
-  deleteSubvolumeForcible bottlePath
+  isSubvol <- isBtrfsSubvolume bottlePath
+  if isSubvol
+  then deleteSubvolumeForcible bottlePath
+  else removePathForcibly bottlePath
   putStrLn "Löschvorgang abgeschlossen."
 
 -- Tools
