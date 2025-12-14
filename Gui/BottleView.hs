@@ -22,9 +22,7 @@ import Bottle.Logic
 import Logic.Translation (tr)
 import Gui.BottleSnapshotsView (buildSnapshotView)
 
--- ... (showDeleteConfirmationDialog und showKillConfirmationDialog bleiben unverändert) ...
--- (Kopiere diese Funktionen aus dem vorherigen Code, sie sind hier der Übersichtlichkeit halber nicht nochmal komplett eingefügt, 
--- da sich nichts an ihnen geändert hat. Wichtig ist buildBottleView unten.)
+-- | Zeigt den Bestätigungsdialog zum Löschen einer Bottle
 showDeleteConfirmationDialog :: Gtk.Window -> Gtk.Stack -> Bottle -> IO () -> IO ()
 showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
   let fullMessage = T.concat 
@@ -53,8 +51,10 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
               return ()
           else return ()
   
-  Gtk.alertDialogChoose dialog (Just parent) Nothing (Just handleAlertDialogResult)
+  -- FIX: Explizite Typannotation für Nothing
+  Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleAlertDialogResult)
 
+-- | Zeigt den Bestätigungsdialog zum Beenden aller Programme
 showKillConfirmationDialog :: Gtk.Window -> Bottle -> IO ()
 showKillConfirmationDialog parent bottle = do
   let message = tr "Stop all programs in this bottle?"
@@ -69,7 +69,9 @@ showKillConfirmationDialog parent bottle = do
                   Left err -> putStrLn $ "Error: " ++ show err
                   Right _  -> putStrLn "Processes killed."
           else return ()
-  Gtk.alertDialogChoose dialog (Just parent) Nothing (Just handleResult)
+  
+  -- FIX: Explizite Typannotation für Nothing
+  Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleResult)
 
 
 -- | Erstellt die Detailansicht für eine Bottle
