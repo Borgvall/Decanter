@@ -89,7 +89,39 @@ showKillConfirmationDialog parent bottle = do
 -- | Erstellt die Detailansicht für eine Bottle
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildBottleView window bottle stack refreshCallback = do
-  -- 1. Die innere Box für den Inhalt
+  
+  -- === NEU: Outer Box für Header + Content ===
+  outerBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 0 ]
+
+  -- === NEU: HeaderBar mit Back-Button ===
+  header <- new Adw.HeaderBar []
+  
+  backBtn <- new Gtk.Button [ #iconName := "go-previous-symbolic", #tooltipText := tr "Back to Library" ]
+  on backBtn #clicked $ #setVisibleChildName stack "overview"
+  #packStart header backBtn
+  
+  -- Titel im Header statt im Content
+  winTitle <- new Adw.WindowTitle [ #title := bottleName bottle, #subtitle := tr "Bottle Details" ]
+  #setTitleWidget header (Just winTitle)
+  
+  #append outerBox header
+
+  -- === Content Bereich ===
+  -- Scrollbares Fenster für den Inhalt
+  scrolledWindow <- new Gtk.ScrolledWindow 
+    [ #hscrollbarPolicy := Gtk.PolicyTypeNever
+    , #vscrollbarPolicy := Gtk.PolicyTypeAutomatic
+    , #vexpand := True
+    ]
+  #append outerBox scrolledWindow
+  
+  clamp <- new Adw.Clamp 
+    [ #maximumSize := 450
+    , #tighteningThreshold := 300
+    ]
+  #setChild scrolledWindow (Just clamp)
+
+  -- Die innere Box für den Inhalt
   contentBox <- new Gtk.Box 
     [ #orientation := Gtk.OrientationVertical
     , #spacing := 10
@@ -97,16 +129,9 @@ buildBottleView window bottle stack refreshCallback = do
     , #marginBottom := 20
     , #valign := Gtk.AlignStart 
     ]
+  #setChild clamp (Just contentBox)
   
-  headerBox <- new Gtk.Box [ #spacing := 10, #halign := Gtk.AlignCenter ]
-  
-  title <- new Gtk.Label 
-    [ #label := bottleName bottle
-    , #cssClasses := ["title-1"] 
-    , #halign := Gtk.AlignCenter
-    ]
-  #append headerBox title
-  #append contentBox headerBox
+  -- HINWEIS: Der alte Title-Label Code wurde entfernt, da der Titel nun im Header steht.
 
   let addBtn label tooltip cssClasses action = do 
         btn <- new Gtk.Button 
@@ -189,7 +214,7 @@ buildBottleView window bottle stack refreshCallback = do
   sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep1
   
-  -- === NEU (FIXED): BTRFS Snapshot Button ===
+  -- === BTRFS Snapshot Button ===
   isBtrfs <- isBtrfsSubvolume (bottlePath bottle)
   
   when isBtrfs $ do
@@ -264,8 +289,6 @@ buildBottleView window bottle stack refreshCallback = do
           then do
             emptyLabel <- new Gtk.Label [ #label := tr "No programs found", #cssClasses := ["dim-label"] ]
             #append progBox emptyLabel
-            -- Optional: Zuklappen wenn leer?
-            -- set progExpander [ #expanded := False ]
           else do
             forM_ lnkFiles $ \path -> do
                 let name = T.pack $ takeBaseName path
@@ -319,26 +342,9 @@ buildBottleView window bottle stack refreshCallback = do
   addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle") ["destructive-action"] $ do
     showDeleteConfirmationDialog window stack bottle refreshCallback
 
-  backBtn <- new Gtk.Button [ #label := tr "Back to Library", #marginTop := 10 ]
-  on backBtn #clicked $ #setVisibleChildName stack "overview"
-  #append contentBox backBtn
+  -- HINWEIS: Der alte "Back to Library" Button am Ende wurde entfernt.
 
-  -- === LAYOUT STRUKTUR (Clamp & Scroll) ===
-  
-  clamp <- new Adw.Clamp 
-    [ #child := contentBox
-    , #maximumSize := 450
-    , #tighteningThreshold := 300
-    ]
-
-  scrolledWindow <- new Gtk.ScrolledWindow 
-    [ #child := clamp
-    , #hscrollbarPolicy := Gtk.PolicyTypeNever
-    , #vscrollbarPolicy := Gtk.PolicyTypeAutomatic
-    , #vexpand := True
-    ]
-
-  Gtk.toWidget scrolledWindow
+  Gtk.toWidget outerBox
 
 -- | Typ für den Datei-Auswahl-Callback
 type FileSelectedCallback = FilePath -> IO ()
