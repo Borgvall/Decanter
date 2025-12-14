@@ -23,6 +23,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Read as TR
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
+import System.IO.Error
 import Data.Char (isDigit)
 
 import Logic.Translation (tr)
@@ -152,16 +153,29 @@ createBottleLogic bottle@Bottle{..} = do
     invalidName -> do
       putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
+-- | Safely deletes a BTRFS subvolume.
+--
+-- The initial 'setSubvolReadOnly' acts as a guard: it throws an exception
+-- if the path is not a subvolume, preventing accidental deletion of
+-- standard directories. If 'destroySubvol' fails with "Permission Denied"
+-- (typical for non-root users), we fall back to standard recursive
+-- directory deletion.
 deleteSubvolumeForcible :: FilePath -> IO ()
 deleteSubvolumeForcible subvolPath = do
   putStrLn $ "Erzwinge Löschen des Subvolumes: " ++ subvolPath
   -- Erst Read-Only entfernen, sonst darf man nicht löschen
   Btrfs.setSubvolReadOnly subvolPath False
-  destroyResult <- try (Btrfs.destroySubvol subvolPath) :: IO (Either IOException ())
+  destroyResult <- tryIOError (Btrfs.destroySubvol subvolPath)
   case destroyResult of
     Right () -> pure ()
-    -- Falls es kein Subvolume ist oder andere Fehler auftreten, Ordner rekursiv löschen:
-    Left _ioError -> removePathForcibly subvolPath
+    Left exception
+      -- In case BTRFS is not mounted with user_subvol_rm_allowed,
+      -- destroySubvol fails with "Permission Denied". The only work-around
+      -- as a normal user is to delete the subvolume recursively as a
+      -- directory.
+      | isPermissionError exception -> removePathForcibly subvolPath
+      -- Something unexpected happened, rethrow this error
+      | otherwise -> ioError exception
 
 -- | Löscht eine Bottle und alle zugehörigen Snapshots
 deleteBottleLogic :: Bottle -> IO ()
