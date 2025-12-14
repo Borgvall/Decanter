@@ -10,7 +10,7 @@ import Control.Monad (void)
 
 import Logic.Translation (tr)
 import Gui.OverviewView (buildOverviewPage)
-import Gui.NewBottleDialog (showNewBottleDialog)
+-- Gui.NewBottleDialog wird hier nicht mehr gebraucht, das macht jetzt die OverviewView
 
 main :: IO ()
 main = do
@@ -27,23 +27,17 @@ buildUI app = do
   
   Just windowAsGtk <- castTo Gtk.Window window
 
-  content <- new Adw.ToolbarView []
-  
-  header <- new Adw.HeaderBar []
-  addBtn <- new Gtk.Button [ #iconName := "list-add-symbolic", #tooltipText := tr "Create new Bottle" ]
-  #packEnd header addBtn
-  #addTopBar content header
-
-  stack <- new Gtk.Stack []
+  -- HIER GEÄNDERT: Kein globales ToolbarView/HeaderBar mehr.
+  -- Wir erstellen direkt den Stack.
+  stack <- new Gtk.Stack [ #transitionType := Gtk.StackTransitionTypeSlideLeftRight ]
   
   (overviewWidget, refreshList) <- buildOverviewPage windowAsGtk stack
   #addNamed stack overviewWidget (Just "overview")
   
-  #setContent content (Just stack)
-  #setContent window (Just content)
+  -- Der Stack ist jetzt direkt der Inhalt des Fensters
+  #setContent window (Just stack)
   
-  on addBtn #clicked $ showNewBottleDialog windowAsGtk refreshList
-  
+  -- Initiales Laden
   refreshList
 
   #present window
