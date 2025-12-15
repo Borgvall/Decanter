@@ -1,7 +1,41 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Bottle.Logic where
+module Bottle.Logic 
+  ( -- * Bottle Management
+    listExistingBottles
+  , createBottleObject
+  , createBottleLogic
+  , deleteBottleLogic
+  
+    -- * Validation
+  , checkNameValidity
+  , NameValid(Valid)
+  , explainNameValid
+  
+    -- * Running Programs
+  , runExecutable
+  , runFileWithStart
+  , runWindowsLnk
+  , killBottleProcesses
+  
+    -- * System Tools
+  , runWineCfg
+  , runRegedit
+  , runUninstaller
+  , isWinetricksAvailable
+  , runWinetricks
+  , runFileManager
+  , findWineStartMenuLnks
+  
+    -- * Snapshots & BTRFS
+  , isBtrfsSubvolume
+  , listSnapshots
+  , createSnapshotLogic
+  , restoreSnapshotLogic
+  , deleteSnapshotLogic
+  , openSnapshotFileManager
+  ) where
 
 import Bottle.Types
 import System.Process.Typed
