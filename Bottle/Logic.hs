@@ -29,7 +29,7 @@ module Bottle.Logic
   , findWineStartMenuLnks
   
     -- * Snapshots & BTRFS
-  , isBtrfsSubvolume
+  , isSnapshotableBottle
   , listSnapshots
   , createSnapshotLogic
   , restoreSnapshotLogic
@@ -303,6 +303,9 @@ getSnapshotsDir = do
     let snapDir = base </> "BottleSnapshots"
     createDirectoryIfMissing True snapDir
     return snapDir
+
+isSnapshotableBottle :: Bottle -> IO Bool
+isSnapshotableBottle = isBtrfsSubvolume . bottlePath
 
 listSnapshots :: Bottle -> IO [BottleSnapshot]
 listSnapshots bottle = do
