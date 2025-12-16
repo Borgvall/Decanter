@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Decanter
+Comment=Manage Wine bottles with BTRFS snapshots
+Comment[de]=Verwalte Wine-Bottles mit BTRFS-Snapshots
+Exec=decanter
+Icon=com.github.borgvall.decanter
+Terminal=false
+Categories=System;Utility;Emulator;
