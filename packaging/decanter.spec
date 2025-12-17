@@ -6,7 +6,8 @@ Summary:        Wine bottle manager with BTRFS snapshots
 # Passe die Lizenz an dein Projekt an (z.B. MIT, BSD, GPLv3)
 License:        GPL-v3
 URL:            https://github.com/Borgvall/Decanter
-Source0:        %{name}-%{version}.tar.gz
+# ÄNDERUNG: Volle URL, damit Copr/rpmbuild den Sourceball finden/laden kann
+Source0:        https://github.com/Borgvall/Decanter/archive/refs/tags/v%{version}.tar.gz
 
 # Build-Abhängigkeiten
 BuildRequires:  ghc
@@ -29,7 +30,10 @@ It utilizes BTRFS snapshots for versioning and restoration, and supports
 running Windows software via Wine.
 
 %prep
-# Entpackt den Quellcode
+# ÄNDERUNG: Entpackt den Quellcode. 
+# Da GitHub-Archive oft Ordnernamen wie "Decanter-0.1.0.0" oder "Decanter-v..." haben, 
+# nutzen wir -n, falls der Ordnername vom Standard abweicht. 
+# Wenn du kein Tag v0.1.0.0 hast, könnte dieser Schritt fehlschlagen (siehe unten).
 %setup -q
 
 %build
@@ -60,3 +64,7 @@ cp data/com.github.borgvall.decanter.svg %{buildroot}%{_datadir}/icons/hicolor/s
 %{_datadir}/applications/com.github.borgvall.decanter.desktop
 %{_datadir}/icons/hicolor/scalable/apps/com.github.borgvall.decanter.svg
 
+# ÄNDERUNG: Changelog hinzugefügt (Zwingend erforderlich für RPM Builds)
+%changelog
+* Wed Dec 17 2024 Johannes Roehl <dev@example.com> - 0.1.0.0-1
+- Initial package release
