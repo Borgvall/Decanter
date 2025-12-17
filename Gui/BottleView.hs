@@ -152,8 +152,8 @@ buildBottleView window bottle stack refreshCallback = do
   #append contentBox sep1
   
   -- Snapshot Button
-  isBtrfs <- isSnapshotableBottle bottle
-  when isBtrfs $ do
+  supportsSnapshots <- isSnapshotableBottle bottle
+  when supportsSnapshots $ do
     snapBtn <- new Gtk.Button [ #cssClasses := ["pill"], #halign := Gtk.AlignFill, #marginBottom := 10 ]
     snapBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 8, #halign := Gtk.AlignCenter ]
     snapIcon <- new Gtk.Image [ #iconName := "camera-photo-symbolic" ]
