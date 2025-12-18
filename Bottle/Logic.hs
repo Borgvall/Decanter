@@ -323,12 +323,14 @@ listSnapshots bottle = do
     parseSnapshotName :: FilePath -> String -> Maybe BottleSnapshot
     parseSnapshotName parentDir filename = 
         let (idPart, rest) = span isDigit filename
-        in if null idPart || null rest || head rest /= '_'
+        in if null idPart
             then Nothing
-            else 
-                let sId = read idPart :: Int
-                    sName = T.pack $ drop 1 rest
-                in Just $ BottleSnapshot sId sName (parentDir </> filename)
+            else case rest of
+                ('_':name) -> 
+                    let sId = read idPart :: Int
+                        sName = T.pack name
+                    in Just $ BottleSnapshot sId sName (parentDir </> filename)
+                _ -> Nothing
 
 getNextSnapshotId :: [BottleSnapshot] -> Int
 getNextSnapshotId [] = 0
