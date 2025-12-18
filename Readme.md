@@ -50,6 +50,8 @@ To build and run Decanter, you need the following system dependencies:
     * **Fedora:** `gtk4-devel libadwaita-devel`
     * **Arch:** `gtk4 libadwaita`
 
+**Note:** GTK 4.20 or newer is needed, because the return type of `Gtk.fileDialogOpenFinish` has changed.
+
 ## 🔨 Build & Run
 
 Clone the repository and use Cabal to run the project:
