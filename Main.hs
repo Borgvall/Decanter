@@ -4,11 +4,9 @@ module Main where
 
 import qualified GI.Gtk as Gtk
 import qualified GI.Adw as Adw
-import qualified GI.GLib as GLib
 import Data.GI.Base
 import Control.Monad (void)
 
-import Logic.Translation (tr)
 import Gui.OverviewView (buildOverviewPage)
 -- Gui.NewBottleDialog wird hier nicht mehr gebraucht, das macht jetzt die OverviewView
 
@@ -17,7 +15,7 @@ main = do
   _ <- Gtk.init
   Adw.init
   app <- Adw.applicationNew (Just "com.github.borgvall.Decanter") []
-  on app #activate (buildUI app)
+  void $ on app #activate (buildUI app)
   void $ #run app Nothing
 
 buildUI :: Adw.Application -> IO ()
@@ -32,7 +30,7 @@ buildUI app = do
   stack <- new Gtk.Stack [ #transitionType := Gtk.StackTransitionTypeSlideLeftRight ]
   
   (overviewWidget, refreshList) <- buildOverviewPage windowAsGtk stack
-  #addNamed stack overviewWidget (Just "overview")
+  void $ #addNamed stack overviewWidget (Just "overview")
   
   -- Der Stack ist jetzt direkt der Inhalt des Fensters
   #setContent window (Just stack)

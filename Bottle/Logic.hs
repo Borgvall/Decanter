@@ -48,13 +48,12 @@ import System.Directory
     , removePathForcibly
     , findExecutable
     )
-import System.FilePath ((</>), takeExtension, takeFileName)
+import System.FilePath ((</>), takeExtension)
 import Control.Exception (try, IOException)
 import Control.Monad (void, filterM, forM, forM_)
 import Data.List (isSuffixOf, sortOn)
 import Data.Maybe (isJust, mapMaybe)
 import qualified Data.Text as T
-import qualified Data.Text.Read as TR
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
 import System.IO.Error

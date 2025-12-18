@@ -9,10 +9,8 @@ import qualified GI.GLib as GLib
 import qualified GI.Gdk as Gdk
 import GI.Gio.Callbacks (AsyncReadyCallback)
 import Data.GI.Base
-import Data.GI.Base.GValue (fromGValue)
 import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
-import Data.Text (Text)
 import qualified Data.Text as T
 import Control.Monad (forM_, when, void)
 import System.FilePath (takeBaseName)
@@ -41,7 +39,7 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
           if buttonIndex == 1
           then do
               #setVisibleChildName windowStack "overview"
-              async $ do
+              void $ async $ do
                   res <- try (deleteBottleLogic bottle) :: IO (Either SomeException ())
                   GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                     case res of
@@ -85,7 +83,7 @@ buildBottleView window bottle stack refreshCallback = do
   header <- new Adw.HeaderBar []
   
   backBtn <- new Gtk.Button [ #iconName := "go-previous-symbolic", #tooltipText := tr "Back to Library" ]
-  on backBtn #clicked $ #setVisibleChildName stack "overview"
+  void $ on backBtn #clicked $ #setVisibleChildName stack "overview"
   #packStart header backBtn
   
   winTitle <- new Adw.WindowTitle [ #title := bottleName bottle, #subtitle := tr "Bottle Details" ]
@@ -118,13 +116,13 @@ buildBottleView window bottle stack refreshCallback = do
   
   let addBtn label tooltip cssClasses action = do 
         btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip, #cssClasses := cssClasses, #halign := Gtk.AlignFill ]
-        on btn #clicked action
+        void $ on btn #clicked action
         #append contentBox btn
         return btn
 
   -- Buttons & Content (Run, DropZone, etc. wie gehabt)
   runBtn <- new Gtk.Button [ #label := tr "Run Executable / Installer", #cssClasses := ["suggested-action", "pill"], #halign := Gtk.AlignFill ]
-  on runBtn #clicked $ openExecutableFileDialog window $ runExecutable bottle
+  void $ on runBtn #clicked $ openExecutableFileDialog window $ runExecutable bottle
   #append contentBox runBtn
 
   -- Drop Zone
@@ -136,7 +134,7 @@ buildBottleView window bottle stack refreshCallback = do
   
   gTypeFile <- glibType @Gio.File
   dropTarget <- Gtk.dropTargetNew gTypeFile [Gdk.DragActionCopy]
-  on dropTarget #drop $ \value _ _ -> do
+  void $ on dropTarget #drop $ \value _ _ -> do
       maybeFile <- fromGValue @(Maybe Gio.File) value
       case maybeFile of
           Just gFile -> do
@@ -160,10 +158,10 @@ buildBottleView window bottle stack refreshCallback = do
     snapLabel <- new Gtk.Label [ #label := tr "Manage Snapshots" ]
     #append snapBox snapIcon >> #append snapBox snapLabel >> #setChild snapBtn (Just snapBox)
     
-    on snapBtn #clicked $ do
+    void $ on snapBtn #clicked $ do
        snapView <- buildSnapshotView window bottle stack
        let viewName = "snapshots_" <> bottleName bottle
-       #addNamed stack snapView (Just viewName)
+       void $ #addNamed stack snapView (Just viewName)
        #setVisibleChildName stack viewName
     #append contentBox snapBtn
     sepSnap <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginBottom := 10 ]
@@ -194,12 +192,12 @@ buildBottleView window bottle stack refreshCallback = do
             forM_ lnkFiles $ \path -> do
                 let name = T.pack $ takeBaseName path
                 progBtn <- new Gtk.Button [ #label := name, #halign := Gtk.AlignFill, #tooltipText := T.pack path ]
-                on progBtn #clicked $ runWindowsLnk bottle path
+                void $ on progBtn #clicked $ runWindowsLnk bottle path
                 #append progBox progBtn
             set progExpander [ #expanded := True ]
 
   refreshBtn <- new Gtk.Button [ #iconName := "view-refresh-symbolic", #tooltipText := tr "Refresh program list", #valign := Gtk.AlignStart ]
-  on refreshBtn #clicked refreshPrograms
+  void $ on refreshBtn #clicked refreshPrograms
   #append progSectionBox refreshBtn
   refreshPrograms
 
@@ -209,17 +207,17 @@ buildBottleView window bottle stack refreshCallback = do
   -- Tools
   toolsLabel <- new Gtk.Label [ #label := tr "System Tools", #halign := Gtk.AlignStart, #cssClasses := ["heading"] ]
   #append contentBox toolsLabel
-  addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle)
-  addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle)
-  addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (runUninstaller bottle)
+  void $ addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle)
+  void $ addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle)
+  void $ addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (runUninstaller bottle)
   hasWinetricks <- isWinetricksAvailable
   when hasWinetricks $ void $ addBtn (tr "Winetricks") (tr "Manage packages") [] (runWinetricks bottle)
-  addBtn (tr "Browse Files") (tr "Open drive_c") [] (runFileManager bottle)
+  void $ addBtn (tr "Browse Files") (tr "Open drive_c") [] (runFileManager bottle)
   
-  addBtn (tr "Stop all Programs") (tr "Forcefully close all running processes") ["destructive-action"] $ showKillConfirmationDialog window bottle
+  void $ addBtn (tr "Stop all Programs") (tr "Forcefully close all running processes") ["destructive-action"] $ showKillConfirmationDialog window bottle
   sep3 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 20, #marginBottom := 10 ]
   #append contentBox sep3
-  addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle") ["destructive-action"] $ showDeleteConfirmationDialog window stack bottle refreshCallback
+  void $ addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle") ["destructive-action"] $ showDeleteConfirmationDialog window stack bottle refreshCallback
 
   Gtk.toWidget toolbarView
 

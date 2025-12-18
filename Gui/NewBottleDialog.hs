@@ -85,7 +85,7 @@ showNewBottleDialog parent refreshCallback = do
   btnBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10, #halign := Gtk.AlignEnd ]
   
   cancelBtn <- new Gtk.Button [ #label := tr "Cancel" ]
-  on cancelBtn #clicked $ #close dialog
+  void $ on cancelBtn #clicked $ #close dialog
   
   createBtn <- new Gtk.Button [ #label := tr "Create", #cssClasses := ["suggested-action"] ]
   
@@ -99,7 +99,7 @@ showNewBottleDialog parent refreshCallback = do
   void $ on nameEntry #changed $
     validateName nameEntry createBtn errorLabel
 
-  on createBtn #clicked $ do
+  void $ on createBtn #clicked $ do
     nameText <- #getText nameEntry
     
     #setSensitive createBtn False
@@ -109,7 +109,7 @@ showNewBottleDialog parent refreshCallback = do
     selectedIdx <- #getSelected archRow
     let selectedArch = if selectedIdx == 0 then Win64 else Win32
     
-    async $ do
+    void $ async $ do
       bottleObj <- createBottleObject nameText selectedArch
       res <- try (createBottleLogic bottleObj) :: IO (Either IOError ())
       

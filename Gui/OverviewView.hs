@@ -5,9 +5,8 @@ module Gui.OverviewView where
 import qualified GI.Gtk as Gtk
 import qualified GI.Adw as Adw
 import Data.GI.Base
-import Data.Text (Text)
 import qualified Data.Text as T
-import Control.Monad (forM_)
+import Control.Monad (forM_, void)
 
 import Bottle.Types
 import Bottle.Logic
@@ -72,18 +71,18 @@ buildOverviewPage window stack = do
                #addSuffix row icon
                
                #setActivatableWidget row (Just icon) 
-               on row #activated $ do
+               void $ on row #activated $ do
                  -- Navigation zur Detailansicht
                  detailView <- buildBottleView window b stack refreshAction
                  let viewName = "detail_" <> bottleName b
                  
-                 #addNamed stack detailView (Just viewName)
+                 void $ #addNamed stack detailView (Just viewName)
                  #setVisibleChildName stack viewName
                
                #append listBox row
   
   -- Action für Add Button verbinden
-  on addBtn #clicked $ showNewBottleDialog window refreshAction
+  void $ on addBtn #clicked $ showNewBottleDialog window refreshAction
   
   -- Das Widget zurückgeben (muss gecastet werden, ToolbarView ist ein Widget)
   widget <- Gtk.toWidget toolbarView

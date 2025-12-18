@@ -47,7 +47,7 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
         when isValid $ do
             sName <- #getText nameEntry
             #setSensitive createBtn False
-            async $ do
+            void $ async $ do
               res <- try (createSnapshotLogic bottle sName) :: IO (Either SomeException ())
               GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                 case res of
@@ -55,7 +55,7 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
                   Left err -> #setLabel errorLabel (T.pack $ "Error: " ++ show err) >> #setVisible errorLabel True >> #setSensitive createBtn True
                 return False
             return ()
-  on createBtn #clicked doCreate >> on nameEntry #entryActivated doCreate
+  void $ on createBtn #clicked doCreate >> on nameEntry #entryActivated doCreate
   #setChild popover (Just contentBox) >> #popup popover
 
 createMenuBtn :: Text -> Text -> [Text] -> IO Gtk.Button
@@ -70,7 +70,7 @@ createMenuBtn labelText iconName cssClassesList = do
 
 -- | Baut die Snapshot-Liste
 buildSnapshotView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO Gtk.Widget
-buildSnapshotView window bottle stack = do
+buildSnapshotView _window bottle stack = do
   
   -- === KONSISTENZ: Adw.ToolbarView statt Gtk.Box ===
   toolbarView <- new Adw.ToolbarView []
@@ -79,7 +79,7 @@ buildSnapshotView window bottle stack = do
   header <- new Adw.HeaderBar []
   
   backBtn <- new Gtk.Button [ #iconName := "go-previous-symbolic" ]
-  on backBtn #clicked $ do
+  void $ on backBtn #clicked $ do
       let detailViewName = "detail_" <> bottleName bottle
       #setVisibleChildName stack detailViewName
   #packStart header backBtn
@@ -131,7 +131,7 @@ buildSnapshotView window bottle stack = do
                
                -- 1. Browse Files
                browseBtn <- createMenuBtn (tr "Browse Files") "system-file-manager-symbolic" ["flat"]
-               on browseBtn #clicked $ #popdown popover >> openSnapshotFileManager s
+               void $ on browseBtn #clicked $ #popdown popover >> openSnapshotFileManager s
                #append popBox browseBtn
                
                sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal ]
@@ -139,9 +139,9 @@ buildSnapshotView window bottle stack = do
                
                -- 2. Restore
                restoreBtn <- createMenuBtn (tr "Restore Bottle") "document-revert-symbolic" ["destructive-action"]
-               on restoreBtn #clicked $ do
+               void $ on restoreBtn #clicked $ do
                    #popdown popover
-                   async $ do
+                   void $ async $ do
                        res <- try (restoreSnapshotLogic bottle s) :: IO (Either SomeException ())
                        GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                            case res of
@@ -155,9 +155,9 @@ buildSnapshotView window bottle stack = do
                
                -- 3. Delete Snapshot
                deleteBtn <- createMenuBtn (tr "Delete Snapshot") "user-trash-symbolic" ["destructive-action"]
-               on deleteBtn #clicked $ do
+               void $ on deleteBtn #clicked $ do
                    #popdown popover
-                   async $ do
+                   void $ async $ do
                        deleteSnapshotLogic s
                        GLib.idleAdd GLib.PRIORITY_DEFAULT $ (refreshList >> return False)
                    return ()
@@ -169,6 +169,8 @@ buildSnapshotView window bottle stack = do
                #append listBox row
 
   refreshList
-  on addBtn #clicked $ showCreateSnapshotPopover addBtn bottle refreshList
+  void $ on addBtn #clicked $ showCreateSnapshotPopover addBtn bottle refreshList
 
   Gtk.toWidget toolbarView
+
+}

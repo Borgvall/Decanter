@@ -9,7 +9,7 @@ data Arch = Win32 | Win64
   deriving (Show, Eq, Enum)
 
 archToString :: Arch -> String
-archToString arch = case arch of
+archToString a = case a of
   Win32 -> "win32"
   Win64 -> "win64"
 
