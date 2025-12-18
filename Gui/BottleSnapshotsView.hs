@@ -172,5 +172,3 @@ buildSnapshotView _window bottle stack = do
   void $ on addBtn #clicked $ showCreateSnapshotPopover addBtn bottle refreshList
 
   Gtk.toWidget toolbarView
-
-}
