@@ -1,4 +1,4 @@
-name: Haskell CI
+name: Build Decanter
 
 on:
   push:
@@ -13,20 +13,22 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    container: debian:trixie
 
     steps:
-    - uses: actions/checkout@v4
 
     - name: Install System Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ghc cabal-install libgtk-4-dev libadwaita-1-dev libgirepository1.0-dev
+        sudo apt-get install -y git ghc cabal-install libgtk-4-dev libadwaita-1-dev libgirepository1.0-dev
 
     - name: Print Installed Versions
       run: |
         sudo apt show libgtk-4-dev
         ghc --version
         cabal --version
+
+    - uses: actions/checkout@v4
 
     - name: Cache
       uses: actions/cache@v3
@@ -44,6 +46,7 @@ jobs:
       run: |
         cabal update
         cabal build --only-dependencies --enable-tests --enable-benchmarks
+
     - name: Build
       run: cabal build --enable-tests --enable-benchmarks all
 
