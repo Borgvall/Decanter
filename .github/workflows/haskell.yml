@@ -20,13 +20,14 @@ jobs:
     - name: Install System Dependencies
       run: |
         apt-get update
-        apt-get install -y git ghc cabal-install libgtk-4-dev libadwaita-1-dev libgirepository1.0-dev
+        apt-get install -y git ghc cabal-install libgtk-4-dev libadwaita-1-dev libgirepository1.0-dev wine
 
     - name: Print Installed Versions
       run: |
         apt show libgtk-4-dev
         ghc --version
         cabal --version
+        wine --version
 
     - uses: actions/checkout@v4
 
@@ -49,4 +50,7 @@ jobs:
 
     - name: Build
       run: cabal build --enable-tests --enable-benchmarks all
+
+    - name: Run Tests
+      run: cabal test
 
