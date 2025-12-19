@@ -44,3 +44,39 @@ executable decanter
                     , haskell-gi-base
 
     default-language: Haskell2010
+
+test-suite decanter-test
+    import:           warnings
+    default-language: Haskell2010
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test, .
+    main-is:          Spec.hs
+    
+    -- Module, die getestet werden sollen (aus dem Hauptprogramm)
+    other-modules:    Bottle.Logic
+                    , Bottle.Types
+                    , Logic.Translation
+                    , Bottle.LogicSpec
+    
+    build-depends:    base >= 4.16 && < 5
+                    , hspec
+                    , hspec-discover
+                    , text
+                    , directory
+                    , filepath
+                    , typed-process
+                    , btrfs
+                    -- Wir brauchen keine GUI-Deps für Logik-Tests, 
+                    -- aber da die Module im selben Ordner liegen, 
+                    -- könnte GHC meckern, wenn wir . als source-dir nutzen.
+                    -- Für reine Logik-Tests ist es sauberer, Logic.* von Gui.* zu trennen.
+                    -- Hier vereinfacht:
+                    , gi-gtk4
+                    , gi-adwaita
+                    , gi-gio
+                    , gi-glib
+                    , haskell-gi-base
+                    , async
+
+    -- Automatisches Finden von Spec-Dateien
+    build-tool-depends: hspec-discover:hspec-discover
