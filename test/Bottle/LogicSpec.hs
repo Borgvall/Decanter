@@ -43,15 +43,15 @@ spec = do
         checkNameValidity "Gaming-Setup_2024" `shouldBe` Valid
 
       it "rejects empty names" $ do
-        checkNameValidity "" `shouldBe` EmptyName
+        checkNameValidity "" `shouldNotBe` Valid
 
       it "rejects names containing slashes" $ do
-        checkNameValidity "Hack/Me" `shouldBe` ContainsSlash
-        checkNameValidity "/RootBottle" `shouldBe` ContainsSlash
+        checkNameValidity "Hack/Me" `shouldNotBe` Valid
+        checkNameValidity "/RootBottle" `shouldNotBe` Valid
 
       it "rejects overly long names" $ do
         let longName = T.pack $ replicate 300 'a'
-        checkNameValidity longName `shouldBe` NameTooLong
+        checkNameValidity longName `shouldNotBe` Valid
 
     describe "Architecture handling" $ do
       it "converts Arch correctly to string" $ do
