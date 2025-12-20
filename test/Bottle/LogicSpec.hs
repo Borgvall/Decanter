@@ -6,7 +6,7 @@ import Test.Hspec
 import Bottle.Logic
 import Bottle.Types
 import qualified Data.Text as T
-import System.Directory (createDirectoryIfMissing, removePathForcibly, getCurrentDirectory, setCurrentDirectory, writeFile, readFile, doesFileExist)
+import System.Directory (createDirectoryIfMissing, removePathForcibly, getCurrentDirectory, setCurrentDirectory, doesFileExist)
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import Control.Exception (bracket)
