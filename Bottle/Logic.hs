@@ -182,9 +182,9 @@ createBottleLogic bottle@Bottle{..} = do
       createVolume bottlePath
       mergedEnv <- getMergedWineEnv bottle
       
-      -- Wir entfernen DISPLAY aus dem Environment, damit wineboot
+      -- Wir entfernen DISPLAY und WAYLAND_DISPLAY aus dem Environment, damit wineboot
       -- keine Fenster (wie den Gecko/Mono-Installer Dialog) öffnet.
-      let headlessEnv = filter (\(k, _) -> k /= "DISPLAY") mergedEnv
+      let headlessEnv = filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) mergedEnv
       
       let procConfig = setEnv headlessEnv $ proc "wineboot" ["-u"]
       runProcess_ procConfig
