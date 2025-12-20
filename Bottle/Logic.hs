@@ -181,7 +181,12 @@ createBottleLogic bottle@Bottle{..} = do
     Valid -> do
       createVolume bottlePath
       mergedEnv <- getMergedWineEnv bottle
-      let procConfig = setEnv mergedEnv $ proc "wineboot" ["-u"]
+      
+      -- Wir entfernen DISPLAY aus dem Environment, damit wineboot
+      -- keine Fenster (wie den Gecko/Mono-Installer Dialog) öffnet.
+      let headlessEnv = filter (\(k, _) -> k /= "DISPLAY") mergedEnv
+      
+      let procConfig = setEnv headlessEnv $ proc "wineboot" ["-u"]
       runProcess_ procConfig
     invalidName -> do
       putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
