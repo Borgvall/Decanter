@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings, OverloadedLabels, TypeApplications #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLabels, TypeApplications #-}
 
 module Gui.BottleView where
 
@@ -36,8 +36,7 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
   let handleAlertDialogResult :: AsyncReadyCallback
       handleAlertDialogResult _dialog result = do
           buttonIndex <- Gtk.alertDialogChooseFinish dialog result
-          if buttonIndex == 1
-          then do
+          when (buttonIndex == 1) $ do
               #setVisibleChildName windowStack "overview"
               void $ async $ do
                   res <- try (deleteBottleLogic bottle) :: IO (Either SomeException ())
@@ -46,8 +45,6 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
                       Right _ -> refreshCallback
                       Left err -> putStrLn $ "Error: " ++ show err
                     return False
-              return ()
-          else return ()
   
   -- FIX: Explizite Typannotation für Nothing
   Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleAlertDialogResult)
@@ -60,13 +57,11 @@ showKillConfirmationDialog parent bottle = do
   dialog <- new Gtk.AlertDialog [ #message := message, #detail  := detail, #buttons := [ tr "Cancel", tr "Stop All" ] ]
   let handleResult _ result = do
           buttonIndex <- Gtk.alertDialogChooseFinish dialog result
-          if buttonIndex == 1
-          then do
+          when (buttonIndex == 1) $ do
               res <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
               case res of
                   Left err -> putStrLn $ "Error: " ++ show err
                   Right _  -> putStrLn "Processes killed."
-          else return ()
   
   -- FIX: Explizite Typannotation für Nothing
   Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleResult)

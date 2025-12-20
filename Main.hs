@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings, OverloadedLabels, TypeApplications #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 module Main where
 

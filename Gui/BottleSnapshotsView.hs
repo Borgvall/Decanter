@@ -54,7 +54,6 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
                   Right _ -> #popdown popover >> refreshCallback
                   Left err -> #setLabel errorLabel (T.pack $ "Error: " ++ show err) >> #setVisible errorLabel True >> #setSensitive createBtn True
                 return False
-            return ()
   void $ on createBtn #clicked doCreate >> on nameEntry #entryActivated doCreate
   #setChild popover (Just contentBox) >> #popup popover
 
@@ -150,7 +149,6 @@ buildSnapshotView _window bottle stack = do
                                    #setVisibleChildName stack detailViewName
                                Left err -> putStrLn $ "Error during restore: " ++ show err
                            return False
-                   return ()
                #append popBox restoreBtn
                
                -- 3. Delete Snapshot
@@ -159,8 +157,7 @@ buildSnapshotView _window bottle stack = do
                    #popdown popover
                    void $ async $ do
                        deleteSnapshotLogic s
-                       GLib.idleAdd GLib.PRIORITY_DEFAULT $ (refreshList >> return False)
-                   return ()
+                       GLib.idleAdd GLib.PRIORITY_DEFAULT (refreshList >> return False)
                #append popBox deleteBtn
                
                #setChild popover (Just popBox)

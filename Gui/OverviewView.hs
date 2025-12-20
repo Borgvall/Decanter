@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings, OverloadedLabels #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 module Gui.OverviewView where
 

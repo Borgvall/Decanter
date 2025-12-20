@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Logic.Translation where
 
 import Data.Text (Text)

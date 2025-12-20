@@ -122,7 +122,6 @@ showNewBottleDialog parent refreshCallback = do
              #setLabel statusLabel (T.pack $ "Error: " ++ show err)
              #setSensitive createBtn True
          return False
-    return ()
 
   #append btnBox cancelBtn
   #append btnBox createBtn
