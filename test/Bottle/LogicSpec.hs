@@ -10,6 +10,7 @@ import System.Directory (createDirectoryIfMissing, removePathForcibly, getCurren
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import Control.Exception (bracket)
+import GHC.IO.Encoding (setLocaleEncoding, utf8)
 
 -- | Hilfsfunktion: Setzt eine isolierte Testumgebung auf
 withTestEnvironment :: IO () -> IO ()
@@ -35,6 +36,9 @@ withTestEnvironment action = do
 
 spec :: Spec
 spec = do
+  -- Fix für CI/CD Umgebungen, die oft auf ASCII (C/POSIX) stehen
+  runIO $ setLocaleEncoding utf8
+  
   describe "Bottle.Logic" $ do
     
     describe "checkNameValidity" $ do
