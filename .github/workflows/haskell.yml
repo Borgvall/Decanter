@@ -52,5 +52,26 @@ jobs:
       run: cabal build --enable-tests --enable-benchmarks all
 
     - name: Run Tests
-      run: cabal test
+      shell: bash
+      run: |
+        set -o pipefail
+        cabal test | tee test-log.txt
 
+    - name: Locate Executable
+      run: |
+        mkdir -p build-artifacts
+        # Finde das kompilierte Binary (executable permission) und kopiere es
+        find dist-newstyle -name decanter -type f -perm -u+x -exec cp {} build-artifacts/ \;
+
+    - name: Upload Executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: decanter-executable
+        path: build-artifacts/decanter
+
+    - name: Upload Test Logs
+      if: always() # Logs auch bei Fehlschlag hochladen
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-logs
+        path: test-log.txt
