@@ -11,21 +11,29 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
+        # --- KONFIGURATION ---
+        # Wähle hier die gewünschte Wine-Version.
+        # Optionen in nixpkgs:
+        # - pkgs.wineWowPackages.stable      (Stabil, älter)
+        # - pkgs.wineWowPackages.staging     (Aktueller, Patchset für Gaming/Kompatibilität)
+        # - pkgs.wineWowPackages.unstable    (Bleeding Edge)
+        # - pkgs.wineWowPackages.wayland     (Experimentell)
+        
+        selectedWine = pkgs.wineWowPackages.staging; 
+        # Ich empfehle 'staging' für Decanter, da es oft bessere Kompatibilität 
+        # für moderne Windows-Apps hat als 'stable'.
+
         runtimeDeps = with pkgs; [
-          wineWowPackages.stable
+          selectedWine           # Nutzt die oben gewählte Version
           winetricks
           xdg-utils
           btrfs-progs
         ];
 
-        # 1. Das "rohe" Paket, wie es aus der Cabal-Datei gelesen wird.
-        # Wir definieren es hier separat, damit wir es sowohl für das fertige Paket
-        # als auch für die Entwicklungsumgebung nutzen können.
         rawDecanterPkg = pkgs.haskellPackages.callCabal2nix "decanter" ./. {};
 
       in
       {
-        # 2. Das fertige Paket für `nix build` / `nix run`
         packages.default = rawDecanterPkg.overrideAttrs (oldAttrs: {
           doCheck = false;
 
@@ -55,33 +63,24 @@
           '';
         });
 
-        # 3. Die Entwicklungsumgebung (nix develop)
-        # Wir nutzen `shellFor`. Das registriert alle Abhängigkeiten von `rawDecanterPkg`
-        # (also gi-gtk4, text, typed-process etc.) in der GHC-Datenbank der Shell.
         devShells.default = pkgs.haskellPackages.shellFor {
           packages = p: [ rawDecanterPkg ];
-          
-          # Optional: Baut auch die Dokumentation für alle Deps (nice to have)
           withHoogle = true; 
 
-          # Build-Tools (laufen auf dem Host)
           nativeBuildInputs = with pkgs; [
             cabal-install
             haskell-language-server
             hlint
-            pkg-config # Wichtig! Damit Cabal die C-Libs (GTK4) findet
+            pkg-config
           ];
 
-          # System-Bibliotheken (gegen die gelinkt wird)
-          # Da callCabal2nix manchmal C-Deps nicht automatisch in die Shell propagiert,
-          # fügen wir sie hier sicherheitshalber hinzu.
           buildInputs = with pkgs; [
             gtk4
             libadwaita
             adwaita-icon-theme
             
-            # Runtime-Tools (damit du sie beim Testen direkt hast)
-            wineWowPackages.stable
+            # Auch in der Dev-Shell nutzen wir jetzt exakt die gewählte Wine-Version
+            selectedWine
             winetricks
           ];
         };
