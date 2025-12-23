@@ -25,9 +25,12 @@
 
       in
       {
-        # Wir nutzen overrideAttrs statt overrideCabal, um den Builder-Fehler zu umgehen.
-        # Dies modifiziert direkt die Umgebung des Derivats (mkDerivation), was robuster ist.
         packages.default = decanterPkg.overrideAttrs (oldAttrs: {
+          # Deaktiviere Tests während des Builds.
+          # Grund: Die Tests benötigen eine laufende Wine-Instanz und BTRFS,
+          # was in der Nix-Build-Sandbox nicht oder nur schwer möglich ist.
+          doCheck = false;
+
           # Build-Tools für die Umgebung (pkg-config findet libs, Hooks wrappen die App)
           nativeBuildInputs = (oldAttrs.nativeBuildInputs or []) ++ [
             pkgs.pkg-config
@@ -60,14 +63,13 @@
 
         # Entwicklungsumgebung
         devShells.default = pkgs.mkShell {
-          # Wir erben alle Inputs vom fertigen Paket, damit alles da ist
           inputsFrom = [ self.packages.${system}.default ];
           
           packages = with pkgs; [
             cabal-install
             haskell-language-server
             hlint
-            # Runtime-Tools auch in der Shell verfügbar machen
+            # Runtime-Tools für manuelle Tests in der Shell ('cabal test')
             wineWowPackages.stable
             winetricks
           ];
