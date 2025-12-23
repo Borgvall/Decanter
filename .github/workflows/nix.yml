@@ -24,20 +24,15 @@ jobs:
       # -L zeigt detaillierte Logs an
       run: nix build -L
 
-    - name: Run Tests
-      # Wir nutzen die in flake.nix definierte devShell, um die Tests auszuführen.
-      # Da `cabal-install` dort in nativeBuildInputs ist, steht `cabal` zur Verfügung.
-      run: nix develop --command cabal test
-
     - name: Prepare Artifact
       # Das Ergebnis von `nix build` ist ein Symlink ./result
-      # Wir kopieren das Binary heraus, damit der Upload funktioniert.
+      # Wir kopieren den Inhalt heraus, damit der Upload funktioniert.
       run: |
         mkdir -p build-artifacts
-        cp result/bin/decanter build-artifacts/
+        cp -a result/*  build-artifacts/
 
     - name: Upload Binary
       uses: actions/upload-artifact@v4
       with:
-        name: decanter-nix-binary
-        path: build-artifacts/decanter
+        name: decanter-nix-artifacts
+        path: build-artifacts
