@@ -36,3 +36,4 @@ jobs:
       with:
         name: decanter-nix-artifacts
         path: build-artifacts
+        include-hidden-files: true
