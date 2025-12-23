@@ -13,42 +13,43 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         # Laufzeit-Programme, die Decanter aufruft.
-        # Diese werden in den PATH des Wrappers aufgenommen.
         runtimeDeps = with pkgs; [
-          wineWowPackages.stable # Wine (32/64 bit support)
+          wineWowPackages.stable
           winetricks
-          xdg-utils              # Für xdg-open
-          btrfs-progs            # Für btrfs CLI calls (Fallback/Checks)
+          xdg-utils
+          btrfs-progs
         ];
 
-        # Definiere das Haskell-Paket
+        # Definiere das Basis-Haskell-Paket
         decanterPkg = pkgs.haskellPackages.callCabal2nix "decanter" ./. {};
 
       in
       {
-        packages.default = pkgs.haskell.lib.overrideCabal decanterPkg (old: {
-          # Build-Tools für das Kompilieren und Wrappen
-          nativeBuildInputs = (old.nativeBuildInputs or []) ++ [
+        # Wir nutzen overrideAttrs statt overrideCabal, um den Builder-Fehler zu umgehen.
+        # Dies modifiziert direkt die Umgebung des Derivats (mkDerivation), was robuster ist.
+        packages.default = decanterPkg.overrideAttrs (oldAttrs: {
+          # Build-Tools für die Umgebung (pkg-config findet libs, Hooks wrappen die App)
+          nativeBuildInputs = (oldAttrs.nativeBuildInputs or []) ++ [
             pkgs.pkg-config
-            pkgs.wrapGAppsHook4      # Wichtig für GTK4/Adwaita Umgebung
+            pkgs.wrapGAppsHook4
             pkgs.gobject-introspection
-            pkgs.copyDesktopItems    # Um die .desktop Datei automatisch zu installieren (optional)
+            pkgs.copyDesktopItems
           ];
 
-          # C-Bibliotheken, gegen die gelinkt wird
-          buildInputs = (old.buildInputs or []) ++ [
+          # C-Bibliotheken, die via pkg-config gefunden werden müssen
+          buildInputs = (oldAttrs.buildInputs or []) ++ [
             pkgs.gtk4
             pkgs.libadwaita
-            pkgs.adwaita-icon-theme  # Icons für die GUI
+            pkgs.adwaita-icon-theme
           ];
 
-          # Hier injizieren wir den PATH für Wine etc. in den GTK-Wrapper
-          preFixup = ''
+          # Wrapper-Argumente setzen (Wine & Co. in den Pfad aufnehmen)
+          preFixup = (oldAttrs.preFixup or "") + ''
             gappsWrapperArgs+=(--prefix PATH : "${pkgs.lib.makeBinPath runtimeDeps}")
           '';
 
-          # Installiere die .desktop Datei und das Icon manuell oder via Hook
-          postInstall = ''
+          # Desktop-File und Icon installieren
+          postInstall = (oldAttrs.postInstall or "") + ''
             mkdir -p $out/share/applications
             cp data/com.github.borgvall.decanter.desktop $out/share/applications/
             
@@ -57,15 +58,16 @@
           '';
         });
 
-        # Entwicklungsumgebung (nix develop)
+        # Entwicklungsumgebung
         devShells.default = pkgs.mkShell {
+          # Wir erben alle Inputs vom fertigen Paket, damit alles da ist
           inputsFrom = [ self.packages.${system}.default ];
           
           packages = with pkgs; [
             cabal-install
             haskell-language-server
             hlint
-            # Damit man Wine/Winetricks auch in der Dev-Shell hat
+            # Runtime-Tools auch in der Shell verfügbar machen
             wineWowPackages.stable
             winetricks
           ];
