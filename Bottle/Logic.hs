@@ -260,10 +260,6 @@ runSystemTool tool args = do
         [ "GI_TYPELIB_PATH"
         , "GIO_EXTRA_MODULES"
         , "GDK_PIXBUF_MODULE_FILE"
-        , "GSETTINGS_SCHEMA_DIR"
-        , "XDG_DATA_DIRS"
-        , "GTK_PATH"
-        , "GST_PLUGIN_SYSTEM_PATH_1_0"
         ]
   forM_ varsToUnset $ \var -> case lookup var currentEnv of
     Just value -> putStrLn $ var ++ " is set to " ++ value
