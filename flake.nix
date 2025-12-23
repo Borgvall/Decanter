@@ -35,7 +35,7 @@
       in
       {
         packages.default = rawDecanterPkg.overrideAttrs (oldAttrs: {
-          doCheck = false;
+          doCheck = true;
 
           nativeBuildInputs = (oldAttrs.nativeBuildInputs or []) ++ [
             pkgs.pkg-config
@@ -45,6 +45,7 @@
           ];
 
           buildInputs = (oldAttrs.buildInputs or []) ++ [
+            selectedWine
             pkgs.gtk4
             pkgs.libadwaita
             pkgs.adwaita-icon-theme
