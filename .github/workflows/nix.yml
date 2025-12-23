@@ -1,0 +1,43 @@
+name: Nix Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  nix-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v27
+      with:
+        # Optional: GitHub Access Token, um Rate-Limits zu vermeiden
+        github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build package
+      # -L zeigt detaillierte Logs an
+      run: nix build -L
+
+    - name: Run Tests
+      # Wir nutzen die in flake.nix definierte devShell, um die Tests auszuführen.
+      # Da `cabal-install` dort in nativeBuildInputs ist, steht `cabal` zur Verfügung.
+      run: nix develop --command cabal test
+
+    - name: Prepare Artifact
+      # Das Ergebnis von `nix build` ist ein Symlink ./result
+      # Wir kopieren das Binary heraus, damit der Upload funktioniert.
+      run: |
+        mkdir -p build-artifacts
+        cp result/bin/decanter build-artifacts/
+
+    - name: Upload Binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: decanter-nix-binary
+        path: build-artifacts/decanter
