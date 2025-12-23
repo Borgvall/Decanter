@@ -39,7 +39,40 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
 * **Build System:** Cabal
 * **Dependencies:** `typed-process`, `directory`, `btrfs`, `text`
 
-## 📦 Prerequisites
+## Build with Nix
+
+Decanter provides a reproducible development environment and build process using Nix Flakes. This is the easiest way to run or develop Decanter without manually installing dependencies like GHC, GTK4, or Wine.
+
+### Run immediately
+
+To run Decanter without installing it (download, build, and run in one go):
+
+```bash
+nix run
+```
+
+### Install in user profile
+
+To install Decanter in your user profile:
+
+```bash
+nix profile add .
+```
+
+In order to remove it afterwards:
+
+```bash
+nix profile remove Decanter
+```
+
+### Development Environment
+
+```bash
+nix develop
+cabal run
+```
+
+## 📦 Prerequisites (Building without Nix)
 
 To build and run Decanter, you need the following system dependencies:
 
@@ -52,7 +85,7 @@ To build and run Decanter, you need the following system dependencies:
 
 **Note:** GTK 4.20 or newer is needed, because the return type of `Gtk.fileDialogOpenFinish` has changed.
 
-## 🔨 Build & Run
+## 🔨 Build & Run (Cabal)
 
 Clone the repository and use Cabal to run the project:
 
