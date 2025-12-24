@@ -265,9 +265,6 @@ runSystemTool tool args = do
         , "GTK_PATH"
         , "GST_PLUGIN_SYSTEM_PATH_1_0"
         ]
-  forM_ varsToUnset $ \var -> case lookup var currentEnv of
-    Just value -> putStrLn $ var ++ " is set to " ++ value
-    Nothing -> putStrLn $ var ++ " is not set in environment."
   
   let cleanEnv = filter (\(k, _) -> k `notElem` varsToUnset) currentEnv
   
