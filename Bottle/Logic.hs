@@ -249,22 +249,10 @@ runRegedit bottle = runCmd bottle "wine" ["regedit"]
 runUninstaller :: Bottle -> IO ()
 runUninstaller bottle = runCmd bottle "wine" ["uninstaller"]
 
--- | Führt xdg-open aus, aber bereinigt vorher das Environment von Nix-spezifischen
--- Variablen wie GI_TYPELIB_PATH. Dies verhindert, dass System-Anwendungen (wie Nautilus)
--- abstürzen, weil sie versuchen, inkompatible Bibliotheken aus dem Nix Store zu laden.
-runSystemTool :: String -> [String] -> IO ()
-runSystemTool tool args = do
-  currentEnv <- getEnvironment
-  -- Wir filtern GI_TYPELIB_PATH heraus. Dies ist der Hauptverursacher für
-  -- "Namespace ... not available" Fehler in Python/GObject-Apps (Nautilus).
-  let cleanEnv = filter (\(k, _) -> k /= "GI_TYPELIB_PATH") currentEnv
-  
-  void $ startProcess $ setEnv cleanEnv $ proc tool args
-
 runFileManager :: Bottle -> IO ()
 runFileManager Bottle{..} = do
   let driveC = bottlePath </> "drive_c"
-  runSystemTool "xdg-open" [driveC]
+  void $ startProcess $ proc "xdg-open" [driveC]
 
 runExecutable :: Bottle -> FilePath -> IO ()
 runExecutable bottle filePath = do
@@ -386,4 +374,4 @@ deleteSnapshotLogic snapshot = do
 openSnapshotFileManager :: BottleSnapshot -> IO ()
 openSnapshotFileManager snapshot = do
     let driveC = snapshotPath snapshot </> "drive_c"
-    runSystemTool "xdg-open" [driveC]
+    void $ startProcess $ proc "xdg-open" [driveC]
