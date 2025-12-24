@@ -255,18 +255,9 @@ runUninstaller bottle = runCmd bottle "wine" ["uninstaller"]
 runSystemTool :: String -> [String] -> IO ()
 runSystemTool tool args = do
   currentEnv <- getEnvironment
-
-  let varsToUnset = 
-        [ "GI_TYPELIB_PATH"
-        , "GIO_EXTRA_MODULES"
-        , "GDK_PIXBUF_MODULE_FILE"
-        , "GSETTINGS_SCHEMA_DIR"
-        , "XDG_DATA_DIRS"
-        , "GTK_PATH"
-        , "GST_PLUGIN_SYSTEM_PATH_1_0"
-        ]
-  
-  let cleanEnv = filter (\(k, _) -> k `notElem` varsToUnset) currentEnv
+  -- Wir filtern GI_TYPELIB_PATH heraus. Dies ist der Hauptverursacher für
+  -- "Namespace ... not available" Fehler in Python/GObject-Apps (Nautilus).
+  let cleanEnv = filter (\(k, _) -> k /= "GI_TYPELIB_PATH") currentEnv
   
   void $ startProcess $ setEnv cleanEnv $ proc tool args
 
