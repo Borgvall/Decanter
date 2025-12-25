@@ -74,6 +74,24 @@ spec = do
         bottles <- listExistingBottles
         bottles `shouldBe` []
 
+      let createAndDeleteBottle bottle = do
+            createBottleLogic bottle
+            bottles <- listExistingBottles
+            case bottles of
+              [listedBottle] -> listedBottle `shouldBe` bottle
+              _ -> expectationFailure $ "Expecting exactly one bottle, got :" ++ show bottles
+            deleteBottleLogic bottle
+            noBottles <- listExistingBottles
+            noBottles `shouldBe` []
+
+      it "create and delete 32 bit prefix" $ do
+        bottle <- createBottleObject "32bitTest" Win32
+        createAndDeleteBottle bottle
+
+      it "create and delete 64 bit prefix" $ do
+        bottle <- createBottleObject "64bitTest" Win64
+        createAndDeleteBottle bottle
+
       it "handles snapshots if supported" $ do
         bottle <- createBottleObject "SnapshotTestBottle" Win64
         
