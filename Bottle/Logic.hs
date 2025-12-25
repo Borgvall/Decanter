@@ -49,7 +49,7 @@ import System.Directory
     , findExecutable
     )
 import System.FilePath ((</>), takeExtension)
-import Control.Exception (try, IOException)
+import Control.Exception (try, IOException, SomeException)
 import Control.Monad (void, filterM, forM, forM_)
 import Data.List (isSuffixOf, sortOn)
 import Data.Maybe (isJust, mapMaybe)
@@ -88,7 +88,7 @@ isWinetricksAvailable = do
 runWinetricks :: Bottle -> IO ()
 runWinetricks bottle = runCmd bottle "winetricks" []
 
--- | Helper um Prozesse zu starten
+-- | Helper um Prozesse zu starten (asynchron)
 runCmd :: Bottle -> String -> [String] -> IO ()
 runCmd bottle cmd args = do
   mergedEnv <- getMergedWineEnv bottle
@@ -220,6 +220,11 @@ deleteBottleLogic :: Bottle -> IO ()
 deleteBottleLogic bottle@Bottle{..} = do
   putStrLn $ "Starting deletion process for: " ++ T.unpack bottleName
   
+  -- WICHTIG: Laufende Prozesse beenden, bevor wir Dateien löschen.
+  -- Dies verhindert Zombie-Wineserver, die spätere Tests oder Neuerstellungen blockieren.
+  putStrLn "Stopping running processes..."
+  _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
+
   -- 1. Snapshots löschen
   snaps <- listSnapshots bottle
   forM_ snaps $ \s -> do
@@ -258,7 +263,6 @@ runSystemTool tool args = do
   -- Wir filtern GI_TYPELIB_PATH heraus. Dies ist der Hauptverursacher für
   -- "Namespace ... not available" Fehler in Python/GObject-Apps (Nautilus).
   let cleanEnv = filter (\(k, _) -> k /= "GI_TYPELIB_PATH") currentEnv
-  
   void $ startProcess $ setEnv cleanEnv $ proc tool args
 
 runFileManager :: Bottle -> IO ()
@@ -276,8 +280,13 @@ runExecutable bottle filePath = do
 runFileWithStart :: Bottle -> FilePath -> IO ()
 runFileWithStart bottle path = runCmd bottle "wine" ["start", "/unix", path]
 
+-- | Beendet alle Prozesse in der Bottle (wineserver -k).
+-- Dies sollte synchron geschehen, damit nachfolgende Operationen (wie Löschen) sicher sind.
 killBottleProcesses :: Bottle -> IO ()
-killBottleProcesses bottle = runCmd bottle "wineserver" ["-k"]
+killBottleProcesses bottle = do
+  mergedEnv <- getMergedWineEnv bottle
+  -- Wir nutzen runProcess_ statt startProcess, um zu warten bis der Befehl fertig ist.
+  runProcess_ $ setEnv mergedEnv $ proc "wineserver" ["-k"]
 
 runWindowsLnk :: Bottle -> FilePath -> IO ()
 runWindowsLnk bottle lnkPath = runCmd bottle "wine" ["start", "/unix", lnkPath]
@@ -371,7 +380,11 @@ createSnapshotLogic bottle sName = do
 restoreSnapshotLogic :: Bottle -> BottleSnapshot -> IO ()
 restoreSnapshotLogic bottle snapshot = do
     putStrLn $ "Restoring bottle '" ++ T.unpack (bottleName bottle) ++ "' from snapshot " ++ show (snapshotId snapshot)
-    killBottleProcesses bottle
+    
+    -- Auch hier: Erst Prozess sicher beenden, bevor wir das Filesystem anfassen
+    -- killBottleProcesses ist jetzt synchron und wartet auf Abschluss.
+    _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
+    
     deleteSubvolumeForcible (bottlePath bottle)
     Btrfs.snapshot (snapshotPath snapshot) (bottlePath bottle) False
     putStrLn "Restore successful."
