@@ -7,6 +7,8 @@ module Bottle.Logic
   , createBottleObject
   , createBottleLogic
   , deleteBottleLogic
+  , checkSystemWine32Support
+  , getSupportedArchitectures
   
     -- * Validation
   , checkNameValidity
@@ -58,6 +60,7 @@ import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
 import System.IO.Error
 import Data.Char (isDigit)
+import System.Exit (ExitCode(..))
 
 import Logic.Translation (tr)
 
@@ -192,12 +195,6 @@ createBottleLogic bottle@Bottle{..} = do
       putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
 -- | Safely deletes a BTRFS subvolume.
---
--- The initial 'setSubvolReadOnly' acts as a guard: it throws an exception
--- if the path is not a subvolume, preventing accidental deletion of
--- standard directories. If 'destroySubvol' fails with "Permission Denied"
--- (typical for non-root users), we fall back to standard recursive
--- directory deletion.
 deleteSubvolumeForcible :: FilePath -> IO ()
 deleteSubvolumeForcible subvolPath = do
   putStrLn $ "Forcing deletion of subvolume: " ++ subvolPath
@@ -207,12 +204,7 @@ deleteSubvolumeForcible subvolPath = do
   case destroyResult of
     Right () -> pure ()
     Left exception
-      -- In case BTRFS is not mounted with user_subvol_rm_allowed,
-      -- destroySubvol fails with "Permission Denied". The only work-around
-      -- as a normal user is to delete the subvolume recursively as a
-      -- directory.
       | isPermissionError exception -> removePathForcibly subvolPath
-      -- Something unexpected happened, rethrow this error
       | otherwise -> ioError exception
 
 -- | Löscht eine Bottle und alle zugehörigen Snapshots
@@ -254,14 +246,9 @@ runRegedit bottle = runCmd bottle "wine" ["regedit"]
 runUninstaller :: Bottle -> IO ()
 runUninstaller bottle = runCmd bottle "wine" ["uninstaller"]
 
--- | Führt xdg-open aus, aber bereinigt vorher das Environment von Nix-spezifischen
--- Variablen wie GI_TYPELIB_PATH. Dies verhindert, dass System-Anwendungen (wie Nautilus)
--- abstürzen, weil sie versuchen, inkompatible Bibliotheken aus dem Nix Store zu laden.
 runSystemTool :: String -> [String] -> IO ()
 runSystemTool tool args = do
   currentEnv <- getEnvironment
-  -- Wir filtern GI_TYPELIB_PATH heraus. Dies ist der Hauptverursacher für
-  -- "Namespace ... not available" Fehler in Python/GObject-Apps (Nautilus).
   let cleanEnv = filter (\(k, _) -> k /= "GI_TYPELIB_PATH") currentEnv
   void $ startProcess $ setEnv cleanEnv $ proc tool args
 
@@ -400,3 +387,28 @@ openSnapshotFileManager :: BottleSnapshot -> IO ()
 openSnapshotFileManager snapshot = do
     let driveC = snapshotPath snapshot </> "drive_c"
     runSystemTool "xdg-open" [driveC]
+
+-- | Prüft, ob das System 32-Bit Prefixe unterstützt.
+-- Führt 'WINEARCH=win32 wine --version' aus. Wenn wine32 fehlt, gibt dies meist ExitCode 1 zurück.
+checkSystemWine32Support :: IO Bool
+checkSystemWine32Support = do
+    currentEnv <- getEnvironment
+    -- Wir überschreiben WINEARCH, behalten aber den Rest bei (z.B. PATH)
+    let newEnv = ("WINEARCH", "win32") : filter ((/= "WINEARCH") . fst) currentEnv
+    
+    let procConfig = setEnv newEnv 
+                   $ setStderr closed 
+                   $ setStdout closed 
+                   $ proc "wine" ["--version"]
+                   
+    result <- runProcess procConfig
+    return (result == ExitSuccess)
+
+-- | Gibt eine Liste der vom System unterstützten Architekturen zurück.
+-- Win64 wird als immer verfügbar angenommen.
+getSupportedArchitectures :: IO [Arch]
+getSupportedArchitectures = do
+    win32Support <- checkSystemWine32Support
+    if win32Support 
+       then return [Win64, Win32]
+       else return [Win64]
