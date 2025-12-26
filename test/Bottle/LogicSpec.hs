@@ -6,10 +6,10 @@ import Test.Hspec
 import Bottle.Logic
 import Bottle.Types
 import qualified Data.Text as T
-import System.Directory (createDirectoryIfMissing, removePathForcibly, getCurrentDirectory, setCurrentDirectory, doesFileExist)
+import System.Directory (createDirectoryIfMissing, removePathForcibly, getCurrentDirectory, doesFileExist)
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
-import Control.Exception (bracket)
+import Control.Exception (finally)
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 
 -- | Hilfsfunktion: Setzt eine isolierte Testumgebung auf
@@ -28,11 +28,9 @@ withTestEnvironment action = do
     
     -- Führe den Test aus
     action `finally` do
-        -- Teardown: Aufräumen (optional, falls man Ergebnisse inspizieren will, auskommentieren)
+        -- Teardown: Aufräumen
         removePathForcibly testDir
         unsetEnv "XDG_DATA_HOME"
-  where
-    finally a b = a >> b -- Vereinfachtes finally
 
 spec :: Spec
 spec = do
@@ -85,8 +83,13 @@ spec = do
             noBottles `shouldBe` []
 
       it "create and delete 32 bit prefix" $ do
-        bottle <- createBottleObject "32bitTest" Win32
-        createAndDeleteBottle bottle
+        -- Check if system supports 32-bit Wine
+        hasWin32 <- checkSystemWine32Support
+        if hasWin32 
+          then do
+            bottle <- createBottleObject "32bitTest" Win32
+            createAndDeleteBottle bottle
+          else pendingWith "Skipping 32-bit test: Wine 32-bit not supported on this system."
 
       it "create and delete 64 bit prefix" $ do
         bottle <- createBottleObject "64bitTest" Win64
