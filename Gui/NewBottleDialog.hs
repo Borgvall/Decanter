@@ -60,21 +60,24 @@ showNewBottleDialog parent refreshCallback = do
   
   archRow <- new Adw.ComboRow [ #title := tr "Architecture" ]
   
-  model <- Gtk.stringListNew (Just $ map (T.pack . show) [Win64, Win32])
+  -- NEU: Unterstützte Architekturen dynamisch abrufen
+  supportedArchs <- getSupportedArchitectures
+  
+  -- Konvertiere die Architekturen in Strings für die Anzeige (nutze show für "Win64"/"Win32")
+  let archStrings = map (T.pack . show) supportedArchs
+  model <- Gtk.stringListNew (Just archStrings)
   
   #setModel archRow (Just model)
   #add group archRow
   
   #append contentBox group
   
-  -- NEU: Das Label für die Fehlermeldung, platziert nach der PreferencesGroup
+  -- Das Label für die Fehlermeldung
   errorLabel <- new Gtk.Label 
     [ #label := ""
     , #halign := Gtk.AlignStart
     , #vexpand := False
     , #visible := False
-    -- Die Klasse 'error' sorgt dafür, dass das Label rot dargestellt wird, 
-    -- vorausgesetzt das Theme unterstützt dies für Gtk.Label.
     , #cssClasses := [T.pack "error"]
     , #marginStart := 20 
     , #marginEnd := 20
@@ -91,11 +94,9 @@ showNewBottleDialog parent refreshCallback = do
   
   statusLabel <- new Gtk.Label [ #label := "", #visible := False ]
 
-  -- **NEUE LOGIK: On-the-fly Validierung**
-  -- 1. Initialer Aufruf der Validierung
+  -- Validierung initialisieren
   validateName nameEntry createBtn errorLabel
 
-  -- 2. Hinzufügen des Handlers für Textänderungen
   void $ on nameEntry #changed $
     validateName nameEntry createBtn errorLabel
 
@@ -107,7 +108,12 @@ showNewBottleDialog parent refreshCallback = do
     #setVisible statusLabel True
     
     selectedIdx <- #getSelected archRow
-    let selectedArch = if selectedIdx == 0 then Win64 else Win32
+    
+    -- NEU: Sicherer Zugriff auf die Architektur basierend auf dem Index
+    -- Da die Liste supportedArchs genau der Reihenfolge im Model entspricht, passt der Index.
+    let selectedArch = if fromIntegral selectedIdx < length supportedArchs
+                       then supportedArchs !! fromIntegral selectedIdx
+                       else Win64 -- Fallback (sollte nie eintreten)
     
     void $ async $ do
       bottleObj <- createBottleObject nameText selectedArch
