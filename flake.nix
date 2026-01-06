@@ -18,16 +18,14 @@
         # - pkgs.wineWowPackages.staging     (Aktueller, Patchset für Gaming/Kompatibilität)
         # - pkgs.wineWowPackages.unstable    (Bleeding Edge)
         # - pkgs.wineWowPackages.wayland     (Experimentell)
-        
         selectedWine = pkgs.wineWowPackages.staging; 
-        # Ich empfehle 'staging' für Decanter, da es oft bessere Kompatibilität 
-        # für moderne Windows-Apps hat als 'stable'.
 
         runtimeDeps = with pkgs; [
-          selectedWine           # Nutzt die oben gewählte Version
+          selectedWine
           winetricks
           xdg-utils
           btrfs-progs
+          umu-launcher
         ];
 
         rawDecanterPkg = pkgs.haskellPackages.callCabal2nix "decanter" ./. {};
@@ -80,9 +78,9 @@
             libadwaita
             adwaita-icon-theme
             
-            # Auch in der Dev-Shell nutzen wir jetzt exakt die gewählte Wine-Version
             selectedWine
             winetricks
+            umu-launcher
           ];
         };
       }
