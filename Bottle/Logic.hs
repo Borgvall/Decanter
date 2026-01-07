@@ -4,6 +4,7 @@
 module Bottle.Logic 
   ( -- * Bottle Management
     listExistingBottles
+  , getAvailableRunners
   , createBottleObject
   , createBottleLogic
   , deleteBottleLogic
@@ -50,6 +51,7 @@ import System.Directory
     , doesFileExist
     , removePathForcibly
     , findExecutable
+    , getHomeDirectory
     )
 import System.FilePath ((</>), takeExtension)
 import Control.Exception (try, IOException, SomeException)
@@ -89,7 +91,7 @@ loadBottleConfig bottleDir = do
                 _              -> return Nothing
         else return Nothing
 
--- | Wine-spezifische Umgebungsvariablen
+-- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
 getWineOverrides :: Bottle -> [(String, String)]
 getWineOverrides Bottle{..} =
     [ ("WINEPREFIX", bottlePath)
@@ -108,9 +110,9 @@ getMergedWineEnv bottle = do
     
     -- Für Proton/umu: GAMEID ist oft notwendig (setzen wir auf generisch "nonsteam")
     -- WINEPREFIX wird bereits durch wineSpecificEnv gesetzt.
-    let extraEnv = if runner bottle /= SystemWine 
-                   then [("GAMEID", "nonsteam")] 
-                   else []
+    let extraEnv = case runner bottle of
+                     SystemWine -> []
+                     Proton p   -> [("GAMEID", "nonsteam"), ("PROTONPATH", p)]
 
     return (wineSpecificEnv ++ extraEnv ++ filteredEnv)
 
@@ -132,7 +134,7 @@ runCmd bottle cmd args = do
     SystemWine -> 
         void $ startProcess $ setEnv mergedEnv $ proc cmd args
         
-    _ -> do -- Proton oder GeProton
+    Proton _ -> do -- Proton
         -- Wenn der Befehl "wine" ist, ersetzen wir ihn durch "umu-run".
         -- Andere Tools (wie winetricks) müssen eventuell gesondert behandelt werden,
         -- aber umu-run kann oft auch einfach davor gesetzt werden.
@@ -157,6 +159,7 @@ detectBottleArch path = do
     is64 <- doesDirectoryExist syswow64
     return $ if is64 then Win64 else Win32
 
+
 -- | Prüft, ob ein Pfad ein BTRFS Subvolume ist
 isBtrfsSubvolume :: FilePath -> IO Bool
 isBtrfsSubvolume path = do
@@ -165,8 +168,7 @@ isBtrfsSubvolume path = do
         Right _ -> return True  -- Aufruf erfolgreich -> Es ist ein Subvolume
         Left _  -> return False -- Fehler -> Kein Subvolume (oder FS Error)
 
--- | Scannt das Verzeichnis nach existierenden Bottles
--- Versucht Config zu lesen, Fallback auf Auto-Detect.
+-- | Scannt das Verzeichnis nach existierenden Bottles und erkennt deren Architektur
 listExistingBottles :: IO [Bottle]
 listExistingBottles = do
   base <- getBottlesBaseDir
@@ -175,11 +177,14 @@ listExistingBottles = do
     then return []
     else do
       entries <- listDirectory base
+      
+      -- Wir bauen den Pfad zusammen und prüfen, ob es ein Verzeichnis ist
       dirs <- filterM (\e -> doesDirectoryExist (base </> e)) entries
       
       -- Wir prüfen, ob 'drive_c' existiert (gültiges Prefix)
       validDirs <- filterM (\e -> doesDirectoryExist (base </> e </> "drive_c")) dirs
       
+      -- Jetzt mappen wir über die validen Verzeichnisse und erkennen die Architektur
       forM validDirs $ \name -> do
           let path = base </> name
           
@@ -192,6 +197,26 @@ listExistingBottles = do
                 -- Fallback für alte Bottles ohne Config
                 detectedArch <- detectBottleArch path
                 return $ Bottle (T.pack name) path SystemWine detectedArch
+
+getAvailableRunners :: IO [RunnerType]
+getAvailableRunners = do
+  sysWine <- findExecutable "wine"
+  let wineList = if isJust sysWine then [SystemWine] else []
+
+  home <- getHomeDirectory
+  let compatDir = home </> ".local/share/Steam/compatibilitytools.d"
+  
+  protonList <- do
+    exists <- doesDirectoryExist compatDir
+    if exists
+      then do
+        entries <- listDirectory compatDir
+        -- Einfache Prüfung: Ist es ein Verzeichnis?
+        paths <- filterM (\e -> doesDirectoryExist (compatDir </> e)) entries
+        return [ Proton (compatDir </> p) | p <- paths ]
+      else return []
+
+  return (wineList ++ protonList)
 
 createVolume :: FilePath -> IO ()
 createVolume path = do
@@ -239,19 +264,26 @@ createBottleLogic bottle@Bottle{..} = do
       saveBottleConfig bottle
       
       mergedEnv <- getMergedWineEnv bottle
+      
+      -- Wir entfernen DISPLAY und WAYLAND_DISPLAY aus dem Environment, damit wineboot
+      -- keine Fenster (wie den Gecko/Mono-Installer Dialog) öffnet.
       let headlessEnv = filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) mergedEnv
       
       -- Bei Proton nutzen wir auch wineboot (via umu-run wineboot?), 
       -- aber umu-run initialisiert das Prefix oft selbst beim ersten Start.
       -- Für Konsistenz rufen wir wineboot auf, passen aber den Befehl an.
-      let bootCmd = if runner == SystemWine then "wineboot" else "umu-run"
-      let bootArgs = if runner == SystemWine then ["-u"] else ["wineboot", "-u"]
+      let bootCmd = case runner of
+            SystemWine -> "wineboot"
+            Proton _   -> "umu-run"
+            
+      let bootArgs = case runner of
+            SystemWine -> ["-u"]
+            Proton _   -> ["wineboot", "-u"]
       
       let procConfig = setEnv headlessEnv $ proc bootCmd bootArgs
       runProcess_ procConfig
-      
     invalidName -> do
-      putStrLn $ "Ignoring creation with invalid bottle name."
+      putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
 -- | Safely deletes a BTRFS subvolume.
 --
@@ -263,6 +295,7 @@ createBottleLogic bottle@Bottle{..} = do
 deleteSubvolumeForcible :: FilePath -> IO ()
 deleteSubvolumeForcible subvolPath = do
   putStrLn $ "Forcing deletion of subvolume: " ++ subvolPath
+  -- Erst Read-Only entfernen, sonst darf man nicht löschen
   Btrfs.setSubvolReadOnly subvolPath False
   destroyResult <- tryIOError (Btrfs.destroySubvol subvolPath)
   case destroyResult of
@@ -276,21 +309,28 @@ deleteSubvolumeForcible subvolPath = do
       -- Something unexpected happened, rethrow this error
       | otherwise -> ioError exception
 
+-- | Löscht eine Bottle und alle zugehörigen Snapshots
 deleteBottleLogic :: Bottle -> IO ()
 deleteBottleLogic bottle@Bottle{..} = do
   putStrLn $ "Starting deletion process for: " ++ T.unpack bottleName
+  
+  -- WICHTIG: Laufende Prozesse beenden, bevor wir Dateien löschen.
+  -- Dies verhindert Zombie-Wineserver, die spätere Tests oder Neuerstellungen blockieren.
   putStrLn "Stopping running processes..."
   _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
 
+  -- 1. Snapshots löschen
   snaps <- listSnapshots bottle
   forM_ snaps $ \s -> do
       let path = snapshotPath s
       deleteSubvolumeForcible path
 
+  -- 2. Den leeren Snapshot-Ordner der Bottle entfernen
   baseSnapDir <- getSnapshotsDir
   let bottleSnapDir = baseSnapDir </> T.unpack bottleName
   removePathForcibly bottleSnapDir
 
+  -- 3. Die Bottle selbst löschen
   putStrLn $ "Deleting Wine prefix: " ++ bottlePath
   isSubvol <- isBtrfsSubvolume bottlePath
   if isSubvol
@@ -339,9 +379,7 @@ runFileWithStart bottle path = runCmd bottle "wine" ["start", "/unix", path]
 killBottleProcesses :: Bottle -> IO ()
 killBottleProcesses bottle = do
   mergedEnv <- getMergedWineEnv bottle
-  -- wineserver ist spezifisch für System-Wine. 
-  -- Proton hat eigene wineserver Prozesse, oft aber im Prefix-Kontext gleich.
-  -- TODO: Prüfen ob umu-run wineserver -k unterstützt.
+  -- Wir nutzen runProcess_ statt startProcess, um zu warten bis der Befehl fertig ist.
   runProcess_ $ setEnv mergedEnv $ proc "wineserver" ["-k"]
 
 runWindowsLnk :: Bottle -> FilePath -> IO ()
@@ -436,7 +474,11 @@ createSnapshotLogic bottle sName = do
 restoreSnapshotLogic :: Bottle -> BottleSnapshot -> IO ()
 restoreSnapshotLogic bottle snapshot = do
     putStrLn $ "Restoring bottle '" ++ T.unpack (bottleName bottle) ++ "' from snapshot " ++ show (snapshotId snapshot)
+    
+    -- Auch hier: Erst Prozess sicher beenden, bevor wir das Filesystem anfassen
+    -- killBottleProcesses ist jetzt synchron und wartet auf Abschluss.
     _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
+    
     deleteSubvolumeForcible (bottlePath bottle)
     Btrfs.snapshot (snapshotPath snapshot) (bottlePath bottle) False
     putStrLn "Restore successful."
@@ -458,6 +500,7 @@ openSnapshotFileManager snapshot = do
 checkSystemWine32Support :: IO Bool
 checkSystemWine32Support = do
     currentEnv <- getEnvironment
+    -- Wir überschreiben WINEARCH, behalten aber den Rest bei (z.B. PATH)
     let newEnv = ("WINEARCH", "win32") : filter ((/= "WINEARCH") . fst) currentEnv
     
     let procConfig = setEnv newEnv 

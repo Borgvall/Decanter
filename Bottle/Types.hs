@@ -14,8 +14,8 @@ archToString a = case a of
   Win64 -> "win64"
 
 -- Runner
-data RunnerType = SystemWine | Proton | GeProton
-  deriving (Show, Eq, Enum, Read)
+data RunnerType = SystemWine | Proton FilePath
+  deriving (Show, Eq, Read)
 
 -- Bottle Definition
 data Bottle = Bottle
