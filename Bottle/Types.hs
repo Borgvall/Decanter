@@ -6,7 +6,7 @@ import Data.Text (Text)
 
 -- Architekturen
 data Arch = Win32 | Win64
-  deriving (Show, Eq, Enum)
+  deriving (Show, Eq, Enum, Read)
 
 archToString :: Arch -> String
 archToString a = case a of
@@ -15,7 +15,7 @@ archToString a = case a of
 
 -- Runner
 data RunnerType = SystemWine | Proton | GeProton
-  deriving (Show, Eq, Enum)
+  deriving (Show, Eq, Enum, Read)
 
 -- Bottle Definition
 data Bottle = Bottle
