@@ -64,7 +64,7 @@ spec = do
     describe "Bottle Management (Integration)" $ around_ withTestEnvironment $ do
       
       it "creates a bottle object with correct paths" $ do
-        bottle <- createBottleObject "TestBottle" Win64
+        bottle <- createBottleObject "TestBottle" Win64 SystemWine
         bottleName bottle `shouldBe` "TestBottle"
         return () 
 
@@ -87,16 +87,37 @@ spec = do
         hasWin32 <- checkSystemWine32Support
         if hasWin32 
           then do
-            bottle <- createBottleObject "32bitTest" Win32
+            bottle <- createBottleObject "32bitTest" Win32 SystemWine
             createAndDeleteBottle bottle
           else pendingWith "Skipping 32-bit test: Wine 32-bit not supported on this system."
 
       it "create and delete 64 bit prefix" $ do
-        bottle <- createBottleObject "64bitTest" Win64
+        bottle <- createBottleObject "64bitTest" Win64 SystemWine
         createAndDeleteBottle bottle
 
+      it "persists runner configuration (Proton)" $ do
+        let name = "ProtonConfigTest"
+        bottle <- createBottleObject name Win64 Proton
+        
+        -- Erstellen (schreibt Config)
+        createBottleLogic bottle
+        
+        -- Listen (lädt Config)
+        bottles <- listExistingBottles
+        let loadedBottles = filter (\b -> bottleName b == name) bottles
+        
+        length loadedBottles `shouldBe` 1
+        let loaded = head loadedBottles
+        
+        -- Prüfung: Ist der Runner immer noch Proton?
+        runner loaded `shouldBe` Proton
+        arch loaded `shouldBe` Win64
+        
+        -- Cleanup
+        deleteBottleLogic bottle
+
       it "handles snapshots if supported" $ do
-        bottle <- createBottleObject "SnapshotTestBottle" Win64
+        bottle <- createBottleObject "SnapshotTestBottle" Win64 SystemWine
         
         -- Erstelle die Bottle (dies führt wineboot aus, falls Wine installiert ist)
         createBottleLogic bottle
