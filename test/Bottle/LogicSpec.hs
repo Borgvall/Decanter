@@ -96,6 +96,8 @@ spec = do
         createAndDeleteBottle bottle
 
       it "persists runner configuration (Proton)" $ do
+        pendingWith "UMU-Launcher and Proton currently not available in test environment."
+
         let name = "ProtonConfigTest"
         bottle <- createBottleObject name Win64 (Proton "/Test/Path")
         
