@@ -10,6 +10,7 @@ import Control.Concurrent.Async (async)
 import Control.Exception (try)
 import Control.Monad (void)
 import qualified Data.Text as T
+import System.FilePath (takeBaseName)
 
 import Bottle.Types
 import Bottle.Logic
@@ -65,10 +66,23 @@ showNewBottleDialog parent refreshCallback = do
   
   -- Konvertiere die Architekturen in Strings für die Anzeige (nutze show für "Win64"/"Win32")
   let archStrings = map (T.pack . show) supportedArchs
-  model <- Gtk.stringListNew (Just archStrings)
+  archModel <- Gtk.stringListNew (Just archStrings)
   
-  #setModel archRow (Just model)
+  #setModel archRow (Just archModel)
   #add group archRow
+
+  -- NEU: Runner Auswahl
+  runnerRow <- new Adw.ComboRow [ #title := tr "Runner" ]
+  availableRunners <- getAvailableRunners
+
+  let formatRunner r = case r of
+        SystemWine -> "System Wine"
+        Proton p   -> "Proton " <> T.pack (takeBaseName p)
+
+  let runnerStrings = map formatRunner availableRunners
+  runnerModel <- Gtk.stringListNew (Just runnerStrings)
+  #setModel runnerRow (Just runnerModel)
+  #add group runnerRow
   
   #append contentBox group
   
@@ -107,16 +121,21 @@ showNewBottleDialog parent refreshCallback = do
     #setLabel statusLabel (tr "Creating prefix (this may take a while)...")
     #setVisible statusLabel True
     
-    selectedIdx <- #getSelected archRow
+    -- Architektur bestimmen
+    selectedArchIdx <- #getSelected archRow
+    let selectedArch = if fromIntegral selectedArchIdx < length supportedArchs
+                       then supportedArchs !! fromIntegral selectedArchIdx
+                       else Win64 
     
-    -- NEU: Sicherer Zugriff auf die Architektur basierend auf dem Index
-    -- Da die Liste supportedArchs genau der Reihenfolge im Model entspricht, passt der Index.
-    let selectedArch = if fromIntegral selectedIdx < length supportedArchs
-                       then supportedArchs !! fromIntegral selectedIdx
-                       else Win64 -- Fallback (sollte nie eintreten)
-    
+    -- Runner bestimmen
+    selectedRunnerIdx <- #getSelected runnerRow
+    let selectedRunner = if fromIntegral selectedRunnerIdx < length availableRunners
+                         then availableRunners !! fromIntegral selectedRunnerIdx
+                         else SystemWine
+
     void $ async $ do
-      bottleObj <- createBottleObject nameText selectedArch
+      -- Wir übergeben jetzt auch den ausgewählten Runner
+      bottleObj <- createBottleObject nameText selectedArch selectedRunner
       res <- try (createBottleLogic bottleObj) :: IO (Either IOError ())
       
       GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
