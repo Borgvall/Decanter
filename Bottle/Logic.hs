@@ -379,8 +379,13 @@ runFileWithStart bottle path = runCmd bottle "wine" ["start", "/unix", path]
 killBottleProcesses :: Bottle -> IO ()
 killBottleProcesses bottle = do
   mergedEnv <- getMergedWineEnv bottle
+  
+  let (cmd, args) = case runner bottle of
+        SystemWine -> ("wineserver", ["-k"])
+        Proton _   -> ("umu-run", ["wineboot", "-k"])
+
   -- Wir nutzen runProcess_ statt startProcess, um zu warten bis der Befehl fertig ist.
-  runProcess_ $ setEnv mergedEnv $ proc "wineserver" ["-k"]
+  runProcess_ $ setEnv mergedEnv $ proc cmd args
 
 runWindowsLnk :: Bottle -> FilePath -> IO ()
 runWindowsLnk bottle lnkPath = runCmd bottle "wine" ["start", "/unix", lnkPath]
