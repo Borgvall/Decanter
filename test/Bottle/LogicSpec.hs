@@ -97,7 +97,7 @@ spec = do
 
       it "persists runner configuration (Proton)" $ do
         let name = "ProtonConfigTest"
-        bottle <- createBottleObject name Win64 Proton
+        bottle <- createBottleObject name Win64 (Proton "/Test/Path")
         
         -- Erstellen (schreibt Config)
         createBottleLogic bottle
@@ -110,7 +110,7 @@ spec = do
         let loaded = head loadedBottles
         
         -- Prüfung: Ist der Runner immer noch Proton?
-        runner loaded `shouldBe` Proton
+        runner loaded `shouldBe` runner bottle
         arch loaded `shouldBe` Win64
         
         -- Cleanup
