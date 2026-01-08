@@ -23,6 +23,7 @@ executable decanter
                     , Gui.BottleSnapshotsView
                     , Gui.NewBottleDialog
                     , Gui.OverviewView
+                    , Data.Vdf
     
     -- Dependencies
     build-depends:    base >= 4.16 && < 5
@@ -57,6 +58,7 @@ test-suite decanter-test
                     , Bottle.Types
                     , Logic.Translation
                     , Bottle.LogicSpec
+                    , Data.Vdf
     
     build-depends:    base >= 4.16 && < 5
                     , hspec
