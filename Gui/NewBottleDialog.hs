@@ -75,12 +75,10 @@ showNewBottleDialog parent refreshCallback = do
   runnerRow <- new Adw.ComboRow [ #title := tr "Runner" ]
   availableRunners <- getAvailableRunners
 
-  let formatRunner r = case r of
-        SystemWine -> "System Wine"
-        Proton p   -> "Proton " <> T.pack (takeBaseName p)
-
-  let runnerStrings = map formatRunner availableRunners
+  -- NEU: Echte Anzeigenamen abrufen
+  runnerStrings <- mapM getRunnerTypeDisplayName availableRunners
   runnerModel <- Gtk.stringListNew (Just runnerStrings)
+  
   #setModel runnerRow (Just runnerModel)
   #add group runnerRow
   

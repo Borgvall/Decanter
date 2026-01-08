@@ -5,6 +5,7 @@ module Bottle.Logic
   ( -- * Bottle Management
     listExistingBottles
   , getAvailableRunners
+  , getRunnerTypeDisplayName -- NEU exportiert
   , createBottleObject
   , createBottleLogic
   , deleteBottleLogic
@@ -53,7 +54,7 @@ import System.Directory
     , findExecutable
     , getHomeDirectory
     )
-import System.FilePath ((</>), takeExtension)
+import System.FilePath ((</>), takeExtension, takeBaseName)
 import Control.Exception (try, IOException, SomeException)
 import Control.Monad (void, filterM, forM, forM_)
 import Data.List (isSuffixOf, sortOn)
@@ -64,8 +65,10 @@ import System.Environment (getEnvironment)
 import System.IO.Error
 import Data.Char (isDigit)
 import System.Exit (ExitCode(..))
+import qualified Data.ByteString.Lazy.Char8 as LBS8 -- Für einfache Konvertierung von Prozess-Output
 
 import Logic.Translation (tr)
+import Data.Vdf (extractDisplayName) -- NEU
 
 -- | Pfad zur Konfigurationsdatei innerhalb einer Bottle
 getConfigPath :: FilePath -> FilePath
@@ -211,12 +214,39 @@ getAvailableRunners = do
     if exists
       then do
         entries <- listDirectory compatDir
-        -- Einfache Prüfung: Ist es ein Verzeichnis?
-        paths <- filterM (\e -> doesDirectoryExist (compatDir </> e)) entries
+        -- Filter: Muss ein Verzeichnis sein UND compatibilitytools.vdf enthalten
+        paths <- filterM (\e -> do
+            let fullPath = compatDir </> e
+            isDir <- doesDirectoryExist fullPath
+            hasVdf <- doesFileExist (fullPath </> "compatibilitytools.vdf")
+            return (isDir && hasVdf)
+            ) entries
         return [ Proton (compatDir </> p) | p <- paths ]
       else return []
 
   return (wineList ++ protonList)
+
+-- | Ermittelt den Anzeigenamen für einen Runner
+getRunnerTypeDisplayName :: RunnerType -> IO T.Text
+getRunnerTypeDisplayName SystemWine = do
+    -- Führt 'wine --version' aus
+    (exitCode, out) <- readProcessStdout (proc "wine" ["--version"])
+    case exitCode of
+        ExitSuccess -> return $ T.strip $ T.pack $ LBS8.unpack out
+        _           -> return "System Wine (Unknown Version)"
+
+getRunnerTypeDisplayName (Proton path) = do
+    let vdfPath = path </> "compatibilitytools.vdf"
+    exists <- doesFileExist vdfPath
+    if exists
+        then do
+            -- VDF parsen
+            content <- readFile vdfPath
+            let name = extractDisplayName (T.pack content)
+            if T.null name
+                then return $ "Proton (" <> T.pack (takeBaseName path) <> ")" -- Fallback
+                else return name
+        else return $ "Proton (" <> T.pack (takeBaseName path) <> ")"
 
 createVolume :: FilePath -> IO ()
 createVolume path = do
