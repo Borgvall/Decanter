@@ -207,7 +207,7 @@ getAvailableRunners = do
   let wineList = if isJust sysWine then [SystemWine] else []
 
   home <- getHomeDirectory
-  let compatDir = home </> ".local/share/Steam/compatibilitytools.d"
+  let compatDir = home </> ".steam/root/compatibilitytools.d"
   
   protonList <- do
     exists <- doesDirectoryExist compatDir
