@@ -218,7 +218,7 @@ getAvailableRunners = do
         paths <- filterM (\e -> do
             let fullPath = compatDir </> e
             isDir <- doesDirectoryExist fullPath
-            hasVdf <- doesFileExist (fullPath </> "compatibilitytools.vdf")
+            hasVdf <- doesFileExist (fullPath </> "compatibilitytool.vdf")
             return (isDir && hasVdf)
             ) entries
         return [ Proton (compatDir </> p) | p <- paths ]
@@ -236,7 +236,7 @@ getRunnerTypeDisplayName SystemWine = do
         _           -> return "System Wine (Unknown Version)"
 
 getRunnerTypeDisplayName (Proton path) = do
-    let vdfPath = path </> "compatibilitytools.vdf"
+    let vdfPath = path </> "compatibilitytool.vdf"
     exists <- doesFileExist vdfPath
     if exists
         then do
