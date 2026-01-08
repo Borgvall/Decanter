@@ -28,6 +28,7 @@ executable decanter
     -- Dependencies
     build-depends:    base >= 4.16 && < 5
                     , text
+                    , bytestring == 0.12.*
                     , directory
                     , filepath
                     , typed-process
@@ -64,6 +65,7 @@ test-suite decanter-test
                     , hspec
                     , hspec-discover
                     , text
+                    , bytestring == 0.12.*
                     , directory
                     , filepath
                     , typed-process
