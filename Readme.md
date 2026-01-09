@@ -67,10 +67,24 @@ nix profile remove Decanter
 
 ### Development Environment
 
+To start a shell with all dependencies (GHC, Language Server, libraries) pre-configured:
+
 ```bash
 nix develop
 cabal run
+
 ```
+
+### Direnv
+
+This project supports [direnv](https://direnv.net/) to automatically load the development environment. Since an `.envrc` file is already included, you can simply run:
+
+```bash
+direnv allow
+
+```
+
+Now, whenever you enter the project directory, the Nix environment will be loaded automatically.
 
 ## 📦 Prerequisites (Building without Nix)
 
