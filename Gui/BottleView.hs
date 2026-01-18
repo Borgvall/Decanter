@@ -137,7 +137,7 @@ buildBottleView window bottle stack refreshCallback = do
   #append runnerInfoBox runnerLabel
   
   archLabel <- new Gtk.Label 
-    [ #label := "(" <> archToString (arch bottle) <> ")"
+    [ #label := "(" <> T.pack (archToString (arch bottle)) <> ")"
     , #cssClasses := ["dim-label", "caption"]
     , #halign := Gtk.AlignStart
     , #marginStart := 5
