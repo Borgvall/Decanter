@@ -109,6 +109,41 @@ buildBottleView window bottle stack refreshCallback = do
     ]
   #setChild clamp (Just contentBox)
   
+  runnerInfoBox <- new Gtk.Box 
+    [ #orientation := Gtk.OrientationHorizontal
+    , #spacing := 8
+    , #halign := Gtk.AlignStart
+    , #marginBottom := 15
+    ]
+  #append contentBox runnerInfoBox
+  
+  let runnerIconName = case runner bottle of
+        SystemWine -> "system-run-symbolic"
+        Proton _ -> "input-gaming-symbolic"
+  
+  runnerIcon <- new Gtk.Image 
+    [ #iconName := runnerIconName
+    , #pixelSize := 16
+    , #cssClasses := ["dim-label"]
+    ]
+  #append runnerInfoBox runnerIcon
+  
+  runnerDisplayName <- getRunnerTypeDisplayName (runner bottle)
+  runnerLabel <- new Gtk.Label 
+    [ #label := runnerDisplayName
+    , #cssClasses := ["dim-label", "caption"]
+    , #halign := Gtk.AlignStart
+    ]
+  #append runnerInfoBox runnerLabel
+  
+  archLabel <- new Gtk.Label 
+    [ #label := "(" <> archToString (arch bottle) <> ")"
+    , #cssClasses := ["dim-label", "caption"]
+    , #halign := Gtk.AlignStart
+    , #marginStart := 5
+    ]
+  #append runnerInfoBox archLabel
+  
   let addBtn label tooltip cssClasses action = do 
         btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip, #cssClasses := cssClasses, #halign := Gtk.AlignFill ]
         void $ on btn #clicked action
