@@ -90,7 +90,7 @@ loadBottleConfig bottleDir = do
             content <- readFile path
             -- Einfaches 'reads' für sicheres Parsen
             case reads content of
-                [((r, a), "")] -> return (Just (r, a))
+                [((r, a), _)] -> return (Just (r, a))
                 _              -> return Nothing
         else return Nothing
 
