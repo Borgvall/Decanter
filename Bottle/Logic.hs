@@ -91,7 +91,9 @@ loadBottleConfig bottleDir = do
             -- Einfaches 'reads' für sicheres Parsen
             case reads content of
                 [((r, a), _)] -> return (Just (r, a))
-                _              -> return Nothing
+                _              -> do
+                    putStrLn $ "Could not parse: " ++ path
+                    return Nothing
         else return Nothing
 
 -- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
