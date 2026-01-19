@@ -66,6 +66,88 @@ showKillConfirmationDialog parent bottle = do
   -- FIX: Explizite Typannotation für Nothing
   Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleResult)
 
+-- | Ändert den Runner für eine Bottle
+changeBottleRunner :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO ()
+changeBottleRunner window bottle stack refreshCallback = do
+  -- Verfügbare Runner abrufen
+  availableRunners <- getAvailableRunners
+  if null availableRunners
+    then do
+      -- Keine Runner verfügbar - Fehlermeldung anzeigen
+      errorDialog <- new Gtk.AlertDialog 
+        [ #message := tr "No runners available. Please install Wine or Proton."
+        , #buttons := [ tr "OK" ]
+        ]
+      Gtk.alertDialogChoose errorDialog (Just window) Nothing Nothing
+    else do
+      -- Dialog zum Auswählen des Runners
+      runnerDialog <- new Adw.MessageDialog 
+        [ #transientFor := Just window
+        , #heading := tr "Change Runner"
+        , #body := tr "Select a new runner for this bottle. Changing the runner may affect compatibility with installed programs."
+        , #closeResponse := "cancel"
+        ]
+      
+      -- Aktuellen Runner markieren
+      let currentRunner = runner bottle
+      
+      -- Action Row für jeden verfügbaren Runner erstellen
+      runnerGroup <- new Adw.PreferencesGroup []
+      #add runnerDialog runnerGroup
+      
+      forM_ availableRunners $ \runnerType -> do
+        displayName <- getRunnerTypeDisplayName runnerType
+        row <- new Adw.ActionRow 
+          [ #title := displayName
+          , #subtitle := runnerTypeToString runnerType
+          , #activatable := True
+          ]
+        
+        -- Aktuellen Runner markieren
+        when (runnerType == currentRunner) $ do
+          icon <- new Gtk.Image [ #iconName := "object-select-symbolic", #cssClasses := ["dim-label"] ]
+          #addSuffix row icon
+        
+        void $ on row #activated $ do
+          -- Runner ändern
+          putStrLn $ "Changing runner to: " ++ runnerTypeToString runnerType
+          updatedBottle <- changeBottleRunnerLogic bottle runnerType
+          -- decanter.cfg speichern
+          saveBottleConfig updatedBottle
+          -- Stack-Eintrag neu laden
+          reloadBottleView window updatedBottle stack refreshCallback
+          #close runnerDialog
+        
+        #add runnerGroup row
+      
+      -- Cancel Button
+      #addResponse runnerDialog "cancel" (tr "Cancel")
+      #setResponseAppearance runnerDialog "cancel" Adw.ResponseAppearanceDefault
+      
+      #show runnerDialog
+
+-- | Lädt die Bottle-Ansicht neu
+reloadBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO ()
+reloadBottleView window bottle stack refreshCallback = do
+  -- Aktuelle View aus dem Stack entfernen
+  let viewName = "bottle_" <> bottleName bottle
+  mOldChild <- #getChildByName stack (Just viewName)
+  case mOldChild of
+    Just oldChild -> #remove stack oldChild
+    Nothing -> return ()
+  
+  -- Neue View erstellen und hinzufügen
+  newView <- buildBottleView window bottle stack refreshCallback
+  #addNamed stack newView (Just viewName)
+  #setVisibleChildName stack viewName
+  
+  -- Übersicht aktualisieren
+  refreshCallback
+
+-- | Hilfsfunktion zur Konvertierung von RunnerType zu String
+runnerTypeToString :: RunnerType -> T.Text
+runnerTypeToString SystemWine = tr "System Wine"
+runnerTypeToString (Proton path) = T.pack ("Proton (" ++ takeBaseName path ++ ")")
 
 -- | Erstellt die Detailansicht für eine Bottle
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
@@ -109,40 +191,58 @@ buildBottleView window bottle stack refreshCallback = do
     ]
   #setChild clamp (Just contentBox)
   
-  runnerInfoBox <- new Gtk.Box 
+  -- NEU: Runner-Information anzeigen mit Änderungs-Button
+  runnerSectionBox <- new Gtk.Box 
     [ #orientation := Gtk.OrientationHorizontal
     , #spacing := 8
     , #halign := Gtk.AlignStart
     , #marginBottom := 15
     ]
-  #append contentBox runnerInfoBox
+  #append contentBox runnerSectionBox
   
-  let runnerIconName = case runner bottle of
-        SystemWine -> "system-run-symbolic"
-        Proton _ -> "input-gaming-symbolic"
-  
-  runnerIcon <- new Gtk.Image 
-    [ #iconName := runnerIconName
-    , #pixelSize := 16
-    , #cssClasses := ["dim-label"]
+  runnerInfoBox <- new Gtk.Box 
+    [ #orientation := Gtk.OrientationVertical
+    , #spacing := 2
+    , #hexpand := True
+    , #halign := Gtk.AlignStart
     ]
-  #append runnerInfoBox runnerIcon
+  #append runnerSectionBox runnerInfoBox
   
+  -- Runner-Text anzeigen
   runnerDisplayName <- getRunnerTypeDisplayName (runner bottle)
   runnerLabel <- new Gtk.Label 
     [ #label := runnerDisplayName
-    , #cssClasses := ["dim-label", "caption"]
     , #halign := Gtk.AlignStart
+    , #cssClasses := ["title-4"]
     ]
   #append runnerInfoBox runnerLabel
   
+  -- Architektur anzeigen
   archLabel <- new Gtk.Label 
-    [ #label := "(" <> T.pack (archToString (arch bottle)) <> ")"
+    [ #label := "Architecture: " <> archToString (arch bottle)
     , #cssClasses := ["dim-label", "caption"]
     , #halign := Gtk.AlignStart
-    , #marginStart := 5
     ]
   #append runnerInfoBox archLabel
+  
+  -- Runner-Typ anzeigen
+  runnerTypeLabel <- new Gtk.Label 
+    [ #label := runnerTypeToString (runner bottle)
+    , #cssClasses := ["dim-label", "caption"]
+    , #halign := Gtk.AlignStart
+    ]
+  #append runnerInfoBox runnerTypeLabel
+  
+  -- Änderungs-Button
+  changeRunnerBtn <- new Gtk.Button 
+    [ #iconName := "edit-symbolic"
+    , #tooltipText := tr "Change Runner"
+    , #valign := Gtk.AlignCenter
+    , #cssClasses := ["flat"]
+    ]
+  void $ on changeRunnerBtn #clicked $ 
+    changeBottleRunner window bottle stack refreshCallback
+  #append runnerSectionBox changeRunnerBtn
   
   let addBtn label tooltip cssClasses action = do 
         btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip, #cssClasses := cssClasses, #halign := Gtk.AlignFill ]

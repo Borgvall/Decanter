@@ -8,6 +8,7 @@ module Bottle.Logic
   , getRunnerTypeDisplayName -- NEU exportiert
   , createBottleObject
   , createBottleLogic
+  , changeBottleRunnerLogic
   , deleteBottleLogic
   , checkSystemWine32Support
   , getSupportedArchitectures
@@ -95,6 +96,14 @@ loadBottleConfig bottleDir = do
                     putStrLn $ "Could not parse: " ++ path
                     return Nothing
         else return Nothing
+
+-- | Ändert den Runner einer Bottle (nur Bottle-Objekt, speichert nicht)
+changeBottleRunnerLogic :: Bottle -> RunnerType -> IO Bottle
+changeBottleRunnerLogic bottle newRunner = do
+  putStrLn $ "Changing runner for bottle '" ++ T.unpack (bottleName bottle) 
+             ++ "' from " ++ show (runner bottle) 
+             ++ " to " ++ show newRunner
+  return bottle { runner = newRunner }
 
 -- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
 getWineOverrides :: Bottle -> [(String, String)]
