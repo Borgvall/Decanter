@@ -21,7 +21,7 @@ jobs:
       run: |
         apt-get update
         apt-get install -y git ghc cabal-install libgtk-4-dev libadwaita-1-dev libgirepository1.0-dev wine
-        apt-get install -y libghc-haskell-gi-base-dev libghc-gi-gio-dev libghc-gi-glib-dev libghc-typed-process-dev libghc-async-dev
+        apt-get install -y libghc-haskell-gi-base-dev libghc-gi-gio-dev libghc-gi-glib-dev libghc-typed-process-dev libghc-async-dev libghc-hspec-dev hspec-discover
 
     - name: Print Installed Versions
       run: |
