@@ -111,11 +111,9 @@ getMergedWineEnv bottle = do
     
     let filteredEnv = filter (\(k, _) -> k `notElem` overrideKeys) currentEnv
     
-    -- Für Proton/umu: GAMEID ist oft notwendig (setzen wir auf generisch "nonsteam")
-    -- WINEPREFIX wird bereits durch wineSpecificEnv gesetzt.
     let extraEnv = case runner bottle of
                      SystemWine -> []
-                     Proton p   -> [("GAMEID", "nonsteam"), ("PROTONPATH", p)]
+                     Proton p   -> [("PROTONPATH", p)]
 
     return (wineSpecificEnv ++ extraEnv ++ filteredEnv)
 
