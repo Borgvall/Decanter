@@ -3,8 +3,8 @@ name:               decanter
 version:            0.1.0.0
 synopsis:           A Wine prefix manager written in Haskell
 license:            GPL-3.0-only
-author:             Haskell Dev
-maintainer:         dev@example.com
+author:             Johannes Röhl
+maintainer:         joroehl@gmx.de
 category:           System
 build-type:         Simple
 
