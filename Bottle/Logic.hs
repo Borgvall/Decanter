@@ -103,7 +103,10 @@ changeBottleRunnerLogic bottle newRunner = do
   putStrLn $ "Changing runner for bottle '" ++ T.unpack (bottleName bottle) 
              ++ "' from " ++ show (runner bottle) 
              ++ " to " ++ show newRunner
-  return bottle { runner = newRunner }
+  let updatedBottle = bottle { runner = newRunner }
+  -- decanter.cfg speichern
+  saveBottleConfig updatedBottle
+  pure updatedBottle
 
 -- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
 getWineOverrides :: Bottle -> [(String, String)]

@@ -78,11 +78,13 @@ changeBottleRunner window bottle stack refreshCallback = do
         [ #message := tr "No runners available. Please install Wine or Proton."
         , #buttons := [ tr "OK" ]
         ]
-      Gtk.alertDialogChoose errorDialog (Just window) Nothing Nothing
+      Gtk.alertDialogChoose errorDialog (Just window) 
+        (Nothing :: Maybe Gio.Cancellable) 
+        (Nothing :: Maybe (AsyncReadyCallback))
     else do
       -- Dialog zum Auswählen des Runners
       runnerDialog <- new Adw.MessageDialog 
-        [ #transientFor := Just window
+        [ #transientFor := window
         , #heading := tr "Change Runner"
         , #body := tr "Select a new runner for this bottle. Changing the runner may affect compatibility with installed programs."
         , #closeResponse := "cancel"
@@ -93,7 +95,7 @@ changeBottleRunner window bottle stack refreshCallback = do
       
       -- Action Row für jeden verfügbaren Runner erstellen
       runnerGroup <- new Adw.PreferencesGroup []
-      #add runnerDialog runnerGroup
+      #setExtraChild runnerDialog $ Just runnerGroup
       
       forM_ availableRunners $ \runnerType -> do
         displayName <- getRunnerTypeDisplayName runnerType
@@ -110,10 +112,7 @@ changeBottleRunner window bottle stack refreshCallback = do
         
         void $ on row #activated $ do
           -- Runner ändern
-          putStrLn $ "Changing runner to: " ++ runnerTypeToString runnerType
           updatedBottle <- changeBottleRunnerLogic bottle runnerType
-          -- decanter.cfg speichern
-          saveBottleConfig updatedBottle
           -- Stack-Eintrag neu laden
           reloadBottleView window updatedBottle stack refreshCallback
           #close runnerDialog
@@ -131,7 +130,7 @@ reloadBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO ()
 reloadBottleView window bottle stack refreshCallback = do
   -- Aktuelle View aus dem Stack entfernen
   let viewName = "bottle_" <> bottleName bottle
-  mOldChild <- #getChildByName stack (Just viewName)
+  mOldChild <- #getChildByName stack viewName
   case mOldChild of
     Just oldChild -> #remove stack oldChild
     Nothing -> return ()
@@ -219,7 +218,7 @@ buildBottleView window bottle stack refreshCallback = do
   
   -- Architektur anzeigen
   archLabel <- new Gtk.Label 
-    [ #label := "Architecture: " <> archToString (arch bottle)
+    [ #label := "Architecture: " <> T.pack (archToString (arch bottle))
     , #cssClasses := ["dim-label", "caption"]
     , #halign := Gtk.AlignStart
     ]
