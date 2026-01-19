@@ -70,17 +70,6 @@ test-suite decanter-test
                     , filepath
                     , typed-process
                     , btrfs
-                    -- Wir brauchen keine GUI-Deps für Logik-Tests, 
-                    -- aber da die Module im selben Ordner liegen, 
-                    -- könnte GHC meckern, wenn wir . als source-dir nutzen.
-                    -- Für reine Logik-Tests ist es sauberer, Logic.* von Gui.* zu trennen.
-                    -- Hier vereinfacht:
-                    , gi-gtk4
-                    , gi-adwaita
-                    , gi-gio
-                    , gi-glib
-                    , haskell-gi-base
-                    , async
 
     -- Automatisches Finden von Spec-Dateien
     build-tool-depends: hspec-discover:hspec-discover
