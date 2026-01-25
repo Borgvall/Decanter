@@ -113,7 +113,9 @@ getWineOverrides :: Bottle -> [(String, String)]
 getWineOverrides Bottle{..} =
     [ ("WINEPREFIX", bottlePath)
     , ("WINEARCH", archToString arch)
-    ]
+    ] ++ case runner of
+               Proton p -> [("PROTONPATH", p)]
+               _ -> []
 
 -- | Erstellt die Umgebungsvariablen für Wine/Proton
 getMergedWineEnv :: Bottle -> IO [(String, String)]
@@ -130,11 +132,7 @@ getMergedWineEnv bottle = do
     
     let filteredEnv = filter (\(k, _) -> k `notElem` overrideKeys) eaHack
     
-    let extraEnv = case runner bottle of
-                     SystemWine -> []
-                     Proton p   -> [("PROTONPATH", p)]
-
-    return (wineSpecificEnv ++ extraEnv ++ filteredEnv)
+    return (wineSpecificEnv ++ filteredEnv)
 
 isWinetricksAvailable :: IO Bool
 isWinetricksAvailable = do
