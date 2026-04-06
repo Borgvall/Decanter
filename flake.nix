@@ -14,11 +14,11 @@
         # --- KONFIGURATION ---
         # Wähle hier die gewünschte Wine-Version.
         # Optionen in nixpkgs:
-        # - pkgs.wineWowPackages.stable      (Stabil, älter)
-        # - pkgs.wineWowPackages.staging     (Aktueller, Patchset für Gaming/Kompatibilität)
-        # - pkgs.wineWowPackages.unstable    (Bleeding Edge)
-        # - pkgs.wineWowPackages.wayland     (Experimentell)
-        selectedWine = pkgs.wineWowPackages.staging; 
+        # - pkgs.wineWow64Packages.stable      (Stabil, älter)
+        # - pkgs.wineWow64Packages.staging     (Aktueller, Patchset für Gaming/Kompatibilität)
+        # - pkgs.wineWow64Packages.unstable    (Bleeding Edge)
+        # - pkgs.wineWow64Packages.wayland     (Experimentell)
+        selectedWine = pkgs.wineWow64Packages.staging; 
 
         runtimeDeps = with pkgs; [
           selectedWine
