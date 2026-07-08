@@ -120,6 +120,29 @@ Decanter stores its bottles in the standard XDG Data directory:
 
  * `~/.local/share/Decanter/`
 
+## 🧪 Pre-Commit Checks (auch für Claude Code)
+
+Dieses Repository erzwingt zwei Regeln vor jedem Commit, sowohl für
+menschliche Beiträge als auch für Claude Code:
+
+1. `cabal build` muss erfolgreich durchlaufen.
+2. Neu **exportierte** Funktionen in `Bottle/Logic.hs` (also Funktionen, die
+   im Export-Header des Moduls auftauchen) benötigen mindestens einen
+   passenden Testfall in `test/Bottle/LogicSpec.hs`.
+
+Die Prüf-Logik ist als Haskell-Skript in
+[`.githooks/pre-commit`](.githooks/pre-commit) implementiert und wird
+zweifach eingebunden:
+
+* als echter Git-Hook, sobald `core.hooksPath` auf `.githooks` zeigt
+  (wird automatisch beim Betreten von `nix develop` per `shellHook` in
+  `flake.nix` gesetzt, inklusive `chmod +x` auf das Hook-Skript), und
+* als [Claude Code `PreToolUse`-Hook](.claude/settings.json), der
+  `git commit`-Aufrufe von Claude Code abfängt und bei Fehlschlag - oder
+  wenn das Hook-Skript fehlt bzw. nicht ausführbar ist - blockiert.
+
+Details und Kontext für Coding-Agenten stehen in [`AGENTS.md`](AGENTS.md).
+
 ## 📄 License
 
 This project is licensed under the GPL-3.0.

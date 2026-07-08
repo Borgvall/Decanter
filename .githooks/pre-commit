@@ -1,0 +1,242 @@
+#!/usr/bin/env runghc
+
+-- |
+-- Pre-Commit-Hook für Decanter.
+--
+-- Wird zweifach eingebunden:
+--
+--   1. Als echter Git-Hook (@core.hooksPath@ zeigt auf @.githooks@,
+--      wird von @flake.nix@ / @devShells.default.shellHook@ automatisch
+--      gesetzt), damit JEDER Commit geprüft wird.
+--   2. Von @.claude/hooks/pre-commit-guard.sh@, das als PreToolUse-Hook in
+--      @.claude/settings.json@ registriert ist und Claude Code daran
+--      hindert, einen @git commit@-Bash-Befehl auszuführen, solange diese
+--      Prüfung nicht erfolgreich durchläuft.
+--
+-- Regeln:
+--
+--   1. @cabal build@ muss erfolgreich durchlaufen.
+--   2. Für jede Funktion, die neu aus dem Modul @Bottle.Logic@ EXPORTIERT
+--      wird (also im Export-Header von "Bottle\/Logic.hs" auftaucht und
+--      dort im Vergleich zu HEAD neu hinzugekommen ist), muss mindestens
+--      eine Erwähnung des Funktionsnamens in "test\/Bottle\/LogicSpec.hs"
+--      existieren. Nicht-exportierte (interne) Hilfsfunktionen lösen die
+--      Prüfung nicht aus.
+--
+-- Exit-Code 0    -> Commit darf durchgeführt werden.
+-- Exit-Code /= 0 -> Commit wird abgebrochen, Fehlermeldung auf stderr.
+module Main (main) where
+
+import Control.Exception (SomeException, try)
+import Control.Monad (unless)
+import Data.Char (isAlphaNum)
+import Data.List (isPrefixOf, nub, sort, stripPrefix, (\\))
+import System.Exit (ExitCode (..), exitFailure, exitSuccess)
+import System.IO (hPutStrLn, stderr)
+import System.Process
+  ( createProcess
+  , cwd
+  , proc
+  , readProcessWithExitCode
+  , waitForProcess
+  )
+
+logicFile :: FilePath
+logicFile = "Bottle/Logic.hs"
+
+specFile :: FilePath
+specFile = "test/Bottle/LogicSpec.hs"
+
+main :: IO ()
+main = do
+  repoRoot <- gitToplevel
+
+  buildOk <- runCommandLive repoRoot "cabal" ["build", "--enable-tests", "all"]
+  unless buildOk $ do
+    hPutStrLn stderr ""
+    hPutStrLn stderr "❌ 'cabal build' ist fehlgeschlagen. Bitte den Build reparieren, bevor du committest."
+    exitFailure
+
+  staged <- stagedFiles repoRoot
+  if logicFile `elem` staged
+    then do
+      putStrLn $ "==> [pre-commit] " ++ logicFile ++ " wurde geändert, prüfe Testabdeckung neuer Exporte in " ++ specFile ++ " ..."
+      ok <- checkExportedFunctionsCovered repoRoot
+      if ok then exitSuccess else exitFailure
+    else exitSuccess
+
+-- --------------------------------------------------------------------------
+-- Git-Hilfsfunktionen
+-- --------------------------------------------------------------------------
+
+gitToplevel :: IO FilePath
+gitToplevel = do
+  (code, out, _) <- readProcessWithExitCode "git" ["rev-parse", "--show-toplevel"] ""
+  pure $ if code == ExitSuccess then trim out else "."
+
+stagedFiles :: FilePath -> IO [String]
+stagedFiles root = do
+  (code, out, _) <-
+    readProcessWithExitCode "git" ["-C", root, "diff", "--cached", "--name-only"] ""
+  pure $ if code == ExitSuccess then lines out else []
+
+-- | Inhalt einer Datei zu einer bestimmten Git-Revision (z. B. @"HEAD"@ oder
+-- der leere String für den Index @""@). Gibt @""@ zurück, wenn die Datei zu
+-- dieser Revision nicht existiert (z. B. weil sie neu ist).
+gitShow :: FilePath -> String -> FilePath -> IO String
+gitShow root rev path = do
+  let ref = rev ++ ":" ++ path
+  result <- try (readProcessWithExitCode "git" ["-C", root, "show", ref] "") :: IO (Either SomeException (ExitCode, String, String))
+  pure $ case result of
+    Right (ExitSuccess, out, _) -> out
+    _ -> ""
+
+-- | Führt einen Befehl mit geerbtem stdin/stdout/stderr aus (damit z. B.
+-- 'cabal build' seine Fortschrittsausgabe live anzeigt) und liefert zurück,
+-- ob er erfolgreich war.
+runCommandLive :: FilePath -> String -> [String] -> IO Bool
+runCommandLive root cmd args = do
+  putStrLn $ "==> [pre-commit] Prüfe '" ++ unwords (cmd : args) ++ "' ..."
+  (_, _, _, ph) <- createProcess (proc cmd args) {cwd = Just root}
+  code <- waitForProcess ph
+  case code of
+    ExitSuccess -> putStrLn "✅ cabal build erfolgreich." >> pure True
+    ExitFailure _ -> pure False
+
+-- --------------------------------------------------------------------------
+-- Prüfung der Testabdeckung neu exportierter Funktionen
+-- --------------------------------------------------------------------------
+
+checkExportedFunctionsCovered :: FilePath -> IO Bool
+checkExportedFunctionsCovered root = do
+  oldSrc <- gitShow root "HEAD" logicFile
+  newSrc <- gitShow root "" logicFile -- "" == Index/Staging-Area
+
+  let oldExports = exportedFunctionNames oldSrc
+      newExports = exportedFunctionNames newSrc
+      addedExports = sort (newExports \\ oldExports)
+
+  if null addedExports
+    then do
+      putStrLn "✅ Keine neu exportierten Funktionen in dieser Änderung."
+      pure True
+    else do
+      putStrLn "Neu exportierte Funktionen:"
+      mapM_ (\f -> putStrLn ("  - " ++ f)) addedExports
+
+      specSrc <- gitShow root "" specFile
+      let missing = [f | f <- addedExports, not (f `isSubstringOf` specSrc)]
+
+      if null missing
+        then do
+          putStrLn $ "✅ Testabdeckung für neu exportierte Funktionen in " ++ specFile ++ " sieht gut aus."
+          pure True
+        else do
+          hPutStrLn stderr ""
+          hPutStrLn stderr $
+            "❌ Für folgende neu exportierte Funktion(en) aus " ++ logicFile
+              ++ " fehlen Testfälle in " ++ specFile ++ ":"
+          mapM_ (\f -> hPutStrLn stderr ("   - " ++ f)) missing
+          hPutStrLn stderr ""
+          hPutStrLn stderr $
+            "   Bitte in " ++ specFile ++ " mindestens einen 'it \"...\"'-Testfall "
+              ++ "ergänzen, der die jeweilige Funktion referenziert, und erneut committen."
+          pure False
+
+isSubstringOf :: String -> String -> Bool
+isSubstringOf needle haystack = any (needle `isPrefixOf`) (tails' haystack)
+ where
+  tails' [] = [[]]
+  tails' s@(_ : rest) = s : tails' rest
+
+-- --------------------------------------------------------------------------
+-- Minimaler Parser für die Export-Liste eines Haskell-Moduls
+-- --------------------------------------------------------------------------
+
+-- | Extrahiert die Namen aller aus dem Modul-Header exportierten
+-- *Funktionen* (nicht Typen/Konstruktoren/Klassen). Der Haskell-Konvention
+-- folgend beginnen Funktionsnamen mit einem Kleinbuchstaben oder
+-- Unterstrich; Typen, Daten- und Konstruktoren mit einem Großbuchstaben
+-- (z. B. @NameValid(Valid)@ wird ignoriert).
+exportedFunctionNames :: String -> [String]
+exportedFunctionNames src =
+  case extractExportList (stripLineComments src) of
+    Nothing -> []
+    Just exportBlock ->
+      sort . nub . filter isFunctionName . map identifierOf $ splitTopLevel ',' exportBlock
+
+-- | Entfernt einzeilige Haskell-Kommentare ("-- ...") aus dem Quelltext,
+-- damit sie die Export-Liste (z. B. Abschnittsüberschriften wie
+-- "-- * Validation") nicht verfälschen.
+stripLineComments :: String -> String
+stripLineComments = unlines . map stripLine . lines
+ where
+  stripLine line = case breakOn "--" line of
+    (before, _) -> before
+
+  breakOn :: String -> String -> (String, String)
+  breakOn pat s = go "" s
+   where
+    go acc rest
+      | pat `isPrefixOf` rest = (reverse acc, rest)
+      | null rest = (reverse acc, "")
+      | otherwise = go (head rest : acc) (tail rest)
+
+-- | Sucht "module", dann die erste öffnende Klammer, und liefert den Text
+-- bis zur passenden (balancierten) schließenden Klammer zurück.
+extractExportList :: String -> Maybe String
+extractExportList src = do
+  afterModule <- stripPrefix "module" =<< dropToSubstring "module" src
+  afterOpen <- dropToChar '(' afterModule
+  takeBalanced 1 (tail afterOpen) ""
+ where
+  dropToSubstring pat s
+    | pat `isPrefixOf` s = Just s
+    | null s = Nothing
+    | otherwise = dropToSubstring pat (tail s)
+
+  dropToChar c s
+    | null s = Nothing
+    | head s == c = Just s
+    | otherwise = dropToChar c (tail s)
+
+  takeBalanced :: Int -> String -> String -> Maybe String
+  takeBalanced depth remaining acc
+    | depth == 0 = Just (reverse acc)
+    | null remaining = Nothing
+    | head remaining == '(' = takeBalanced (depth + 1) (tail remaining) (head remaining : acc)
+    | head remaining == ')' =
+        if depth == 1
+          then Just (reverse acc)
+          else takeBalanced (depth - 1) (tail remaining) (head remaining : acc)
+    | otherwise = takeBalanced depth (tail remaining) (head remaining : acc)
+
+-- | Teilt einen String an Kommas, die sich NICHT innerhalb verschachtelter
+-- Klammern befinden (z. B. bei @Type(CtorA, CtorB)@).
+splitTopLevel :: Char -> String -> [String]
+splitTopLevel sep = go 0 "" []
+ where
+  go :: Int -> String -> [String] -> String -> [String]
+  go _ cur acc [] = reverse (reverse cur : acc)
+  go depth cur acc (c : cs)
+    | c == '(' = go (depth + 1) (c : cur) acc cs
+    | c == ')' = go (depth - 1) (c : cur) acc cs
+    | c == sep && depth == 0 = go depth "" (reverse cur : acc) cs
+    | otherwise = go depth (c : cur) acc cs
+
+-- | Extrahiert den führenden Bezeichner (Buchstaben, Ziffern, @_@, @'@) aus
+-- einem getrimmten Export-Item.
+identifierOf :: String -> String
+identifierOf item = takeWhile isIdentChar (trim item)
+ where
+  isIdentChar c = isAlphaNum c || c == '_' || c == '\''
+
+isFunctionName :: String -> Bool
+isFunctionName name = case name of
+  (c : _) -> c == '_' || (c >= 'a' && c <= 'z')
+  [] -> False
+
+trim :: String -> String
+trim = f . f
+ where
+  f = reverse . dropWhile (`elem` (" \t\n\r" :: String))
