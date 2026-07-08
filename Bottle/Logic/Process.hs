@@ -20,10 +20,9 @@ getWineOverrides Bottle{..} =
     [ ("WINEPREFIX", bottlePath)
     , ("WINEARCH", archToString arch)
     ] ++ case runner of
-               -- PRESSURE_VESSEL_SYSTEMD_SCOPE steckt das Spiel in einen
-               -- systemd --user Scope (siehe killProtonProcesses), ohne den
-               -- ist ein zuverlässiges Beenden von Proton-Prozessen nicht
-               -- möglich.
+               -- PRESSURE_VESSEL_SYSTEMD_SCOPE places the game into a
+               -- systemd --user scope (see killProtonProcesses); without
+               -- it, reliably killing Proton processes isn't possible.
                Proton p -> [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
                _ -> []
 
@@ -44,35 +43,34 @@ getMergedWineEnv bottle = do
 
     return (wineSpecificEnv ++ filteredEnv)
 
--- | Beendet alle Prozesse in der Bottle.
--- Dies sollte synchron geschehen, damit nachfolgende Operationen (wie Löschen) sicher sind.
+-- | Stops all processes in the bottle.
+-- This should happen synchronously so that subsequent operations (like deletion) are safe.
 killBottleProcesses :: Bottle -> IO ()
 killBottleProcesses bottle = case runner bottle of
   SystemWine -> do
     mergedEnv <- getMergedWineEnv bottle
-    -- Wir nutzen runProcess_ statt startProcess, um zu warten bis der Befehl fertig ist.
+    -- We use runProcess_ instead of startProcess to wait until the command has finished.
     runProcess_ $ setEnv mergedEnv $ proc "wineserver" ["-k"]
   Proton _ -> killProtonProcesses bottle
 
--- | Beendet Proton-Prozesse über ihren systemd --user Scope.
+-- | Stops Proton processes via their systemd --user scope.
 --
--- Proton-Programme laufen (über umu-run/pressure-vessel) in einem eigenen,
--- containerisierten Prozessbaum. Weder ein Signal an den umu-run-Prozess noch
--- ein erneuter Aufruf von "umu-run wineboot -k" erreicht die eigentlichen
--- Wine-Prozesse: Beim Beenden des äußeren Containers werden sie einfach auf
--- init (PID 1) reparentet und laufen unbeeindruckt weiter (empirisch
--- verifiziert; das gleiche, bislang ungelöste Problem hat auch der Heroic
--- Games Launcher, siehe
+-- Proton programs run (via umu-run/pressure-vessel) in their own,
+-- containerized process tree. Neither a signal to the umu-run process nor
+-- another call to "umu-run wineboot -k" reaches the actual Wine processes:
+-- when the outer container exits, they simply get reparented onto init
+-- (PID 1) and keep running unaffected (verified empirically; the Heroic
+-- Games Launcher hits the same, still-unresolved problem, see
 -- https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/issues/3879).
 --
--- Mit PRESSURE_VESSEL_SYSTEMD_SCOPE=1 (siehe getWineOverrides) steckt
--- pressure-vessel das Spiel stattdessen in einen systemd --user Scope
--- namens "app-steam-app<md5>-<pid>.scope", wobei <md5> deterministisch der
--- MD5-Hash des (kanonischen) WINEPREFIX-Pfads ist -- so berechnet umu-run
--- selbst seine synthetische STEAM_COMPAT_APP_ID (siehe
--- umu/umu_run.py: "prefix_md5 = hashlib.md5(str(pfx)...)"). Einen Scope zu
--- killen erreicht zuverlässig auch bereits verwaiste Kindprozesse, weil ein
--- Scope an die Cgroup gebunden ist, nicht an den (fragilen) Prozessbaum.
+-- With PRESSURE_VESSEL_SYSTEMD_SCOPE=1 (see getWineOverrides), pressure-
+-- vessel instead places the game into a systemd --user scope named
+-- "app-steam-app<md5>-<pid>.scope", where <md5> is deterministically the
+-- MD5 hash of the (canonical) WINEPREFIX path -- this is exactly how
+-- umu-run itself derives its synthetic STEAM_COMPAT_APP_ID (see
+-- umu/umu_run.py: "prefix_md5 = hashlib.md5(str(pfx)...)"). Killing a
+-- scope reliably reaches already-orphaned child processes too, because a
+-- scope is bound to the cgroup, not the (fragile) process tree.
 killProtonProcesses :: Bottle -> IO ()
 killProtonProcesses bottle = do
   canonicalPrefix <- canonicalizePath (bottlePath bottle)
@@ -83,10 +81,10 @@ killProtonProcesses bottle = do
   case (listExitCode, words (LBS8.unpack out)) of
     (ExitSuccess, scopeName : _) ->
       runProcess_ $ proc "systemctl" ["--user", "kill", scopeName]
-    _ -> pure ()  -- Kein laufender Scope für diese Bottle -- nichts zu tun.
+    _ -> pure ()  -- No running scope for this bottle -- nothing to do.
 
--- | MD5-Hexdigest eines Strings (über "md5sum", um keine zusätzliche
--- Krypto-Bibliotheksabhängigkeit einzuführen).
+-- | MD5 hex digest of a string (via "md5sum", to avoid introducing an
+-- extra crypto library dependency).
 md5Hex :: String -> IO String
 md5Hex input = do
   (out, _err) <- readProcess_ $ setStdin (byteStringInput (LBS8.pack input)) $ proc "md5sum" []
