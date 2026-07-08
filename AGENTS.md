@@ -59,6 +59,20 @@ though the project itself may be discussed with maintainers in German
 elsewhere. This keeps the codebase consistent and accessible to the
 widest possible set of contributors and tools.
 
+## Commit messages
+
+The author of an AI commit shall be the used LLM name and version e.g. Opus
+4.5. The author's email shall be `no@reply.org`.
+
+The first line of the commit message shall summarize the changes in 80
+characters. The first word should be one of "Feat", "Fix", "Refactor", "Tests",
+"Docs" or "Chore" followed by a ':', that indicates the intended scope of the
+commit. A good example line is "Refactor: split module Foo into submodules".
+
+The commit message's body shall summarize the requirements from the prompts and
+supplied extra informations at the beginning. The following paragraphs shall
+summarize the chosen design decisions.
+
 ## Hook setup
 
 `core.hooksPath` is not set automatically. Once per clone, enable the
