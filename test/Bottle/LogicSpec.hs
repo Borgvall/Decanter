@@ -121,17 +121,3 @@ spec = do
         
         -- Cleanup
         deleteBottleLogic bottle
-
-    describe "BTRFS/process helpers (used by Bottle.Logic.Snapshots)" $ around_ withTestEnvironment $ do
-
-      it "isBtrfsSubvolume returns False for a plain (non-BTRFS) directory" $ do
-        cwd <- getCurrentDirectory
-        let plainDir = cwd </> "test-env" </> "not-a-subvolume"
-        createDirectoryIfMissing True plainDir
-        isBtrfsSubvolume plainDir `shouldReturn` False
-
-      it "deleteSubvolumeForcible is exercised end-to-end by the bottle/snapshot lifecycle tests" $ do
-        pendingWith "Covered indirectly by 'create and delete 64 bit prefix' and Bottle.Logic.SnapshotsSpec whenever BTRFS is available; not safely unit-testable without a real subvolume."
-
-      it "runSystemTool launches an external tool without crashing" $ do
-        pendingWith "runSystemTool spawns a real external process (e.g. xdg-open) and isn't unit-testable in CI."

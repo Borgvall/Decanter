@@ -32,16 +32,14 @@ module Bottle.Logic
   , runWinetricks
   , runFileManager
   , findWineStartMenuLnks
-  , runSystemTool
-
-    -- * BTRFS Helpers (used by "Bottle.Logic.Snapshots")
-  , isBtrfsSubvolume
-  , deleteSubvolumeForcible
   ) where
 
 import Bottle.Types
+import Bottle.Logic.Process (getMergedWineEnv, killBottleProcesses)
+import Bottle.Logic.Snapshots (isBtrfsSubvolume, deleteSubvolumeForcible, deleteAllSnapshots)
+import Logic.SystemTool (runSystemTool)
 import System.Process.Typed
-import System.Directory 
+import System.Directory
     ( createDirectoryIfMissing
     , getXdgDirectory
     , XdgDirectory(XdgData)
@@ -54,13 +52,12 @@ import System.Directory
     )
 import System.FilePath ((</>), takeExtension, takeBaseName)
 import Control.Exception (try, IOException, SomeException)
-import Control.Monad (void, filterM, forM, forM_, when)
+import Control.Monad (void, filterM, forM)
 import Data.List (isSuffixOf)
 import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
-import System.IO.Error
 import System.Exit (ExitCode(..))
 import qualified Data.ByteString.Lazy.Char8 as LBS8 -- Für einfache Konvertierung von Prozess-Output
 
@@ -103,32 +100,6 @@ changeBottleRunnerLogic bottle newRunner = do
   -- decanter.cfg speichern
   saveBottleConfig updatedBottle
   pure updatedBottle
-
--- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
-getWineOverrides :: Bottle -> [(String, String)]
-getWineOverrides Bottle{..} =
-    [ ("WINEPREFIX", bottlePath)
-    , ("WINEARCH", archToString arch)
-    ] ++ case runner of
-               Proton p -> [("PROTONPATH", p)]
-               _ -> []
-
--- | Erstellt die Umgebungsvariablen für Wine/Proton
-getMergedWineEnv :: Bottle -> IO [(String, String)]
-getMergedWineEnv bottle = do
-    let wineSpecificEnv = getWineOverrides bottle
-    let overrideKeys = map fst wineSpecificEnv 
-    
-    currentEnv <- getEnvironment
-
-    -- The EA app, does not handle environments variables of a certain length.
-    -- The result is, it can not start any game. See
-    -- https://discourse.nixos.org/t/failing-to-launch-ea-games-on-nixos/61944.
-    let eaHack = filter ((<1000) . length . snd) currentEnv
-    
-    let filteredEnv = filter (\(k, _) -> k `notElem` overrideKeys) eaHack
-    
-    return (wineSpecificEnv ++ filteredEnv)
 
 isWinetricksAvailable :: IO Bool
 isWinetricksAvailable = do
@@ -173,14 +144,6 @@ detectBottleArch path = do
     is64 <- doesDirectoryExist syswow64
     return $ if is64 then Win64 else Win32
 
-
--- | Prüft, ob ein Pfad ein BTRFS Subvolume ist
-isBtrfsSubvolume :: FilePath -> IO Bool
-isBtrfsSubvolume path = do
-    result <- try (Btrfs.getSubvolReadOnly path) :: IO (Either IOException Bool)
-    case result of
-        Right _ -> return True  -- Aufruf erfolgreich -> Es ist ein Subvolume
-        Left _  -> return False -- Fehler -> Kein Subvolume (oder FS Error)
 
 -- | Scannt das Verzeichnis nach existierenden Bottles und erkennt deren Architektur
 listExistingBottles :: IO [Bottle]
@@ -326,54 +289,20 @@ createBottleLogic bottle@Bottle{..} = do
     invalidName -> do
       putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
--- | Safely deletes a BTRFS subvolume.
---
--- The initial 'setSubvolReadOnly' acts as a guard: it throws an exception
--- if the path is not a subvolume, preventing accidental deletion of
--- standard directories. If 'destroySubvol' fails with "Permission Denied"
--- (typical for non-root users), we fall back to standard recursive
--- directory deletion.
-deleteSubvolumeForcible :: FilePath -> IO ()
-deleteSubvolumeForcible subvolPath = do
-  putStrLn $ "Forcing deletion of subvolume: " ++ subvolPath
-  -- Erst Read-Only entfernen, sonst darf man nicht löschen
-  Btrfs.setSubvolReadOnly subvolPath False
-  destroyResult <- tryIOError (Btrfs.destroySubvol subvolPath)
-  case destroyResult of
-    Right () -> pure ()
-    Left exception
-      -- In case BTRFS is not mounted with user_subvol_rm_allowed,
-      -- destroySubvol fails with "Permission Denied". The only work-around
-      -- as a normal user is to delete the subvolume recursively as a
-      -- directory.
-      | isPermissionError exception -> removePathForcibly subvolPath
-      -- Something unexpected happened, rethrow this error
-      | otherwise -> ioError exception
-
 -- | Löscht eine Bottle und alle zugehörigen Snapshots
 deleteBottleLogic :: Bottle -> IO ()
 deleteBottleLogic bottle@Bottle{..} = do
   putStrLn $ "Starting deletion process for: " ++ T.unpack bottleName
-  
+
   -- WICHTIG: Laufende Prozesse beenden, bevor wir Dateien löschen.
   -- Dies verhindert Zombie-Wineserver, die spätere Tests oder Neuerstellungen blockieren.
   putStrLn "Stopping running processes..."
   _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
 
-  -- 1. Snapshots löschen (jeder Eintrag im Snapshot-Ordner ist ein eigenes
-  -- BTRFS-Subvolume und muss einzeln zerstört werden, siehe
-  -- "Bottle.Logic.Snapshots.getSnapshotsDir" für die gleiche Pfadkonvention)
-  base <- getXdgDirectory XdgData "Decanter"
-  let bottleSnapDir = base </> "BottleSnapshots" </> T.unpack bottleName
-  snapDirExists <- doesDirectoryExist bottleSnapDir
-  when snapDirExists $ do
-      entries <- listDirectory bottleSnapDir
-      forM_ entries $ \e -> deleteSubvolumeForcible (bottleSnapDir </> e)
+  -- 1. Alle Snapshots der Bottle löschen
+  deleteAllSnapshots bottle
 
-  -- 2. Den leeren Snapshot-Ordner der Bottle entfernen
-  removePathForcibly bottleSnapDir
-
-  -- 3. Die Bottle selbst löschen
+  -- 2. Die Bottle selbst löschen
   putStrLn $ "Deleting Wine prefix: " ++ bottlePath
   isSubvol <- isBtrfsSubvolume bottlePath
   if isSubvol
@@ -391,17 +320,6 @@ runRegedit bottle = runCmd bottle "wine" ["regedit"]
 runUninstaller :: Bottle -> IO ()
 runUninstaller bottle = runCmd bottle "wine" ["uninstaller"]
 
--- | Führt xdg-open aus, aber bereinigt vorher das Environment von Nix-spezifischen
--- Variablen wie GI_TYPELIB_PATH. Dies verhindert, dass System-Anwendungen (wie Nautilus)
--- abstürzen, weil sie versuchen, inkompatible Bibliotheken aus dem Nix Store zu laden.
-runSystemTool :: String -> [String] -> IO ()
-runSystemTool tool args = do
-  currentEnv <- getEnvironment
-  -- Wir filtern GI_TYPELIB_PATH heraus. Dies ist der Hauptverursacher für
-  -- "Namespace ... not available" Fehler in Python/GObject-Apps (Nautilus).
-  let cleanEnv = filter (\(k, _) -> k /= "GI_TYPELIB_PATH") currentEnv
-  void $ startProcess $ setEnv cleanEnv $ proc tool args
-
 runFileManager :: Bottle -> IO ()
 runFileManager Bottle{..} = do
   let driveC = bottlePath </> "drive_c"
@@ -416,19 +334,6 @@ runExecutable bottle filePath = do
 
 runFileWithStart :: Bottle -> FilePath -> IO ()
 runFileWithStart bottle path = runCmd bottle "wine" ["start", "/unix", path]
-
--- | Beendet alle Prozesse in der Bottle (wineserver -k).
--- Dies sollte synchron geschehen, damit nachfolgende Operationen (wie Löschen) sicher sind.
-killBottleProcesses :: Bottle -> IO ()
-killBottleProcesses bottle = do
-  mergedEnv <- getMergedWineEnv bottle
-  
-  let (cmd, args) = case runner bottle of
-        SystemWine -> ("wineserver", ["-k"])
-        Proton _   -> ("umu-run", ["wineboot", "-k"])
-
-  -- Wir nutzen runProcess_ statt startProcess, um zu warten bis der Befehl fertig ist.
-  runProcess_ $ setEnv mergedEnv $ proc cmd args
 
 runWindowsLnk :: Bottle -> FilePath -> IO ()
 runWindowsLnk bottle lnkPath = runCmd bottle "wine" ["start", "/unix", lnkPath]

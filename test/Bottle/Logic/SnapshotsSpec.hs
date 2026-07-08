@@ -103,5 +103,35 @@ spec = do
           -- Cleanup
           deleteBottleLogic bottle
 
+    it "deleteAllSnapshots removes every snapshot and the snapshot directory" $ do
+      bottle <- createBottleObject "DeleteAllSnapshotsTestBottle" Win64 SystemWine
+      createBottleLogic bottle
+
+      supportsSnaps <- isSnapshotableBottle bottle
+
+      if supportsSnaps
+        then do
+          createSnapshotLogic bottle "First"
+          createSnapshotLogic bottle "Second"
+          snapsBefore <- listSnapshots bottle
+          length snapsBefore `shouldBe` 2
+
+          deleteAllSnapshots bottle
+          snapsAfter <- listSnapshots bottle
+          snapsAfter `shouldBe` []
+        else
+          putStrLn "Skipping deleteAllSnapshots test (no BTRFS detected)"
+
+      deleteBottleLogic bottle
+
+    it "isBtrfsSubvolume returns False for a plain (non-BTRFS) directory" $ do
+      cwd <- getCurrentDirectory
+      let plainDir = cwd </> "test-env" </> "not-a-subvolume"
+      createDirectoryIfMissing True plainDir
+      isBtrfsSubvolume plainDir `shouldReturn` False
+
+    it "deleteSubvolumeForcible is exercised end-to-end by the snapshot lifecycle tests above" $ do
+      pendingWith "Covered indirectly by 'handles snapshots if supported' and 'deleteAllSnapshots ...' whenever BTRFS is available; not safely unit-testable without a real subvolume."
+
     it "opens the snapshot's drive_c in the file manager" $ do
       pendingWith "openSnapshotFileManager launches an external GUI app (xdg-open) and isn't unit-testable in CI."
