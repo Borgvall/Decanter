@@ -72,16 +72,3 @@ commit. A good example line is "Refactor: split module Foo into submodules".
 The commit message's body shall summarize the requirements from the prompts and
 supplied extra informations at the beginning. The following paragraphs shall
 summarize the chosen design decisions.
-
-## Hook setup
-
-`core.hooksPath` is not set automatically. Once per clone, enable the
-tracked `.gitconfig` (which sets `core.hooksPath` to `.githooks`) with:
-
-```bash
-git config --local include.path ../.gitconfig
-```
-
-`.githooks/pre-commit` already ships with its executable bit set (Git
-preserves file permissions when a patch or commit is applied), so no
-additional `chmod` step is required.
