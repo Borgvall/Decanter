@@ -1,36 +1,39 @@
 #!/usr/bin/env runghc
 
 -- |
--- Pre-Commit-Hook für Decanter.
+-- Pre-commit hook for Decanter.
 --
--- Wird zweifach eingebunden:
+-- Wired up in two places:
 --
---   1. Als echter Git-Hook (@core.hooksPath@ zeigt auf @.githooks@,
---      wird von @flake.nix@ / @devShells.default.shellHook@ automatisch
---      gesetzt), damit JEDER Commit geprüft wird.
---   2. Von @.claude/hooks/pre-commit-guard.sh@, das als PreToolUse-Hook in
---      @.claude/settings.json@ registriert ist und Claude Code daran
---      hindert, einen @git commit@-Bash-Befehl auszuführen, solange diese
---      Prüfung nicht erfolgreich durchläuft.
+--   1. As a real Git hook (@core.hooksPath@ points at @.githooks@, see the
+--      tracked @.gitconfig@ plus the one-time
+--      @git config --local include.path ../.gitconfig@ setup described in
+--      AGENTS.md / Readme.md), so that EVERY commit is checked.
+--   2. From @.claude/hooks/pre-commit-guard.sh@, which is registered as a
+--      PreToolUse hook in @.claude/settings.json@ and stops Claude Code
+--      from running a @git commit@ Bash command unless this check passes.
 --
--- Regeln:
+-- Rules:
 --
---   1. @cabal build@ muss erfolgreich durchlaufen.
---   2. Für jede Funktion, die neu aus dem Modul @Bottle.Logic@ EXPORTIERT
---      wird (also im Export-Header von "Bottle\/Logic.hs" auftaucht und
---      dort im Vergleich zu HEAD neu hinzugekommen ist), muss mindestens
---      eine Erwähnung des Funktionsnamens in "test\/Bottle\/LogicSpec.hs"
---      existieren. Nicht-exportierte (interne) Hilfsfunktionen lösen die
---      Prüfung nicht aus.
+--   1. @cabal build@ must succeed.
+--   2. For every module whose name or path contains "Logic" (e.g.
+--      @Bottle.Logic@, @Logic.Translation@, ...), any function that is
+--      newly added to its export list (compared to HEAD) must be
+--      mentioned at least once in the matching spec module under
+--      @test/@ (following the @hspec-discover@ convention, e.g.
+--      "Bottle/Logic.hs" -> "test/Bottle/LogicSpec.hs",
+--      "Logic/Translation.hs" -> "test/Logic/TranslationSpec.hs").
+--      Functions that are not exported (internal helpers) never trigger
+--      this check.
 --
--- Exit-Code 0    -> Commit darf durchgeführt werden.
--- Exit-Code /= 0 -> Commit wird abgebrochen, Fehlermeldung auf stderr.
+-- Exit code 0    -> commit is allowed to proceed.
+-- Exit code /= 0 -> commit is aborted, error message printed to stderr.
 module Main (main) where
 
 import Control.Exception (SomeException, try)
 import Control.Monad (unless)
 import Data.Char (isAlphaNum)
-import Data.List (isPrefixOf, nub, sort, stripPrefix, (\\))
+import Data.List (isInfixOf, isPrefixOf, isSuffixOf, nub, sort, stripPrefix, (\\))
 import System.Exit (ExitCode (..), exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Process
@@ -41,11 +44,27 @@ import System.Process
   , waitForProcess
   )
 
-logicFile :: FilePath
-logicFile = "Bottle/Logic.hs"
+-- | A file counts as a "Logic module" if its path contains the substring
+-- "Logic" anywhere in its name or directory hierarchy, e.g.
+-- "Bottle/Logic.hs" or "Logic/Translation.hs".
+isLogicModulePath :: FilePath -> Bool
+isLogicModulePath path =
+  ".hs" `isSuffixOf` path
+    && not ("test/" `isPrefixOf` path)
+    && "Logic" `isInfixOf` path
 
-specFile :: FilePath
-specFile = "test/Bottle/LogicSpec.hs"
+-- | Derives the expected spec file path for a module path, following the
+-- @hspec-discover@ convention: "Some/Module.hs" -> "test/Some/ModuleSpec.hs".
+specPathFor :: FilePath -> FilePath
+specPathFor path = "test/" ++ base ++ "Spec.hs"
+ where
+  base = case stripSuffix ".hs" path of
+    Just b -> b
+    Nothing -> path
+
+  stripSuffix suf s
+    | suf `isSuffixOf` s = Just (take (length s - length suf) s)
+    | otherwise = Nothing
 
 main :: IO ()
 main = do
@@ -54,19 +73,20 @@ main = do
   buildOk <- runCommandLive repoRoot "cabal" ["build", "--enable-tests", "all"]
   unless buildOk $ do
     hPutStrLn stderr ""
-    hPutStrLn stderr "❌ 'cabal build' ist fehlgeschlagen. Bitte den Build reparieren, bevor du committest."
+    hPutStrLn stderr "\10060 'cabal build' failed. Please fix the build before committing."
     exitFailure
 
   staged <- stagedFiles repoRoot
-  if logicFile `elem` staged
-    then do
-      putStrLn $ "==> [pre-commit] " ++ logicFile ++ " wurde geändert, prüfe Testabdeckung neuer Exporte in " ++ specFile ++ " ..."
-      ok <- checkExportedFunctionsCovered repoRoot
-      if ok then exitSuccess else exitFailure
-    else exitSuccess
+  let logicModules = sort (filter isLogicModulePath staged)
+
+  if null logicModules
+    then exitSuccess
+    else do
+      results <- mapM (checkExportedFunctionsCovered repoRoot) logicModules
+      if and results then exitSuccess else exitFailure
 
 -- --------------------------------------------------------------------------
--- Git-Hilfsfunktionen
+-- Git helpers
 -- --------------------------------------------------------------------------
 
 gitToplevel :: IO FilePath
@@ -80,9 +100,9 @@ stagedFiles root = do
     readProcessWithExitCode "git" ["-C", root, "diff", "--cached", "--name-only"] ""
   pure $ if code == ExitSuccess then lines out else []
 
--- | Inhalt einer Datei zu einer bestimmten Git-Revision (z. B. @"HEAD"@ oder
--- der leere String für den Index @""@). Gibt @""@ zurück, wenn die Datei zu
--- dieser Revision nicht existiert (z. B. weil sie neu ist).
+-- | Contents of a file at a given Git revision (e.g. @"HEAD"@, or the empty
+-- string for the index @""@). Returns @""@ if the file does not exist at
+-- that revision (e.g. because it is new).
 gitShow :: FilePath -> String -> FilePath -> IO String
 gitShow root rev path = do
   let ref = rev ++ ":" ++ path
@@ -91,26 +111,30 @@ gitShow root rev path = do
     Right (ExitSuccess, out, _) -> out
     _ -> ""
 
--- | Führt einen Befehl mit geerbtem stdin/stdout/stderr aus (damit z. B.
--- 'cabal build' seine Fortschrittsausgabe live anzeigt) und liefert zurück,
--- ob er erfolgreich war.
+-- | Runs a command with inherited stdin/stdout/stderr (so e.g. 'cabal
+-- build' streams its progress output live) and reports whether it
+-- succeeded.
 runCommandLive :: FilePath -> String -> [String] -> IO Bool
 runCommandLive root cmd args = do
-  putStrLn $ "==> [pre-commit] Prüfe '" ++ unwords (cmd : args) ++ "' ..."
+  putStrLn $ "==> [pre-commit] Checking '" ++ unwords (cmd : args) ++ "' ..."
   (_, _, _, ph) <- createProcess (proc cmd args) {cwd = Just root}
   code <- waitForProcess ph
   case code of
-    ExitSuccess -> putStrLn "✅ cabal build erfolgreich." >> pure True
+    ExitSuccess -> putStrLn "\9989 cabal build succeeded." >> pure True
     ExitFailure _ -> pure False
 
 -- --------------------------------------------------------------------------
--- Prüfung der Testabdeckung neu exportierter Funktionen
+-- Test-coverage check for newly exported functions of a Logic module
 -- --------------------------------------------------------------------------
 
-checkExportedFunctionsCovered :: FilePath -> IO Bool
-checkExportedFunctionsCovered root = do
+checkExportedFunctionsCovered :: FilePath -> FilePath -> IO Bool
+checkExportedFunctionsCovered root logicFile = do
+  let specFile = specPathFor logicFile
+
+  putStrLn $ "==> [pre-commit] " ++ logicFile ++ " changed, checking test coverage in " ++ specFile ++ " ..."
+
   oldSrc <- gitShow root "HEAD" logicFile
-  newSrc <- gitShow root "" logicFile -- "" == Index/Staging-Area
+  newSrc <- gitShow root "" logicFile -- "" == index/staging area
 
   let oldExports = exportedFunctionNames oldSrc
       newExports = exportedFunctionNames newSrc
@@ -118,10 +142,10 @@ checkExportedFunctionsCovered root = do
 
   if null addedExports
     then do
-      putStrLn "✅ Keine neu exportierten Funktionen in dieser Änderung."
+      putStrLn $ "\9989 No newly exported functions in " ++ logicFile ++ "."
       pure True
     else do
-      putStrLn "Neu exportierte Funktionen:"
+      putStrLn $ "Newly exported functions in " ++ logicFile ++ ":"
       mapM_ (\f -> putStrLn ("  - " ++ f)) addedExports
 
       specSrc <- gitShow root "" specFile
@@ -129,18 +153,18 @@ checkExportedFunctionsCovered root = do
 
       if null missing
         then do
-          putStrLn $ "✅ Testabdeckung für neu exportierte Funktionen in " ++ specFile ++ " sieht gut aus."
+          putStrLn $ "\9989 Test coverage for newly exported functions in " ++ specFile ++ " looks good."
           pure True
         else do
           hPutStrLn stderr ""
           hPutStrLn stderr $
-            "❌ Für folgende neu exportierte Funktion(en) aus " ++ logicFile
-              ++ " fehlen Testfälle in " ++ specFile ++ ":"
+            "\10060 Missing test case(s) in " ++ specFile
+              ++ " for the following newly exported function(s) from " ++ logicFile ++ ":"
           mapM_ (\f -> hPutStrLn stderr ("   - " ++ f)) missing
           hPutStrLn stderr ""
           hPutStrLn stderr $
-            "   Bitte in " ++ specFile ++ " mindestens einen 'it \"...\"'-Testfall "
-              ++ "ergänzen, der die jeweilige Funktion referenziert, und erneut committen."
+            "   Please add at least one 'it \"...\"' test case referencing each"
+              ++ " function to " ++ specFile ++ " and commit again."
           pure False
 
 isSubstringOf :: String -> String -> Bool
@@ -150,14 +174,14 @@ isSubstringOf needle haystack = any (needle `isPrefixOf`) (tails' haystack)
   tails' s@(_ : rest) = s : tails' rest
 
 -- --------------------------------------------------------------------------
--- Minimaler Parser für die Export-Liste eines Haskell-Moduls
+-- Minimal parser for a Haskell module's export list
 -- --------------------------------------------------------------------------
 
--- | Extrahiert die Namen aller aus dem Modul-Header exportierten
--- *Funktionen* (nicht Typen/Konstruktoren/Klassen). Der Haskell-Konvention
--- folgend beginnen Funktionsnamen mit einem Kleinbuchstaben oder
--- Unterstrich; Typen, Daten- und Konstruktoren mit einem Großbuchstaben
--- (z. B. @NameValid(Valid)@ wird ignoriert).
+-- | Extracts the names of all *functions* (not types/constructors/classes)
+-- exported from the module header. Following Haskell convention, function
+-- names start with a lowercase letter or an underscore; types, data and
+-- constructors start with an uppercase letter (e.g. @NameValid(Valid)@ is
+-- ignored).
 exportedFunctionNames :: String -> [String]
 exportedFunctionNames src =
   case extractExportList (stripLineComments src) of
@@ -165,9 +189,9 @@ exportedFunctionNames src =
     Just exportBlock ->
       sort . nub . filter isFunctionName . map identifierOf $ splitTopLevel ',' exportBlock
 
--- | Entfernt einzeilige Haskell-Kommentare ("-- ...") aus dem Quelltext,
--- damit sie die Export-Liste (z. B. Abschnittsüberschriften wie
--- "-- * Validation") nicht verfälschen.
+-- | Strips single-line Haskell comments ("-- ...") from the source so they
+-- don't pollute the export list (e.g. section headers like
+-- "-- * Validation").
 stripLineComments :: String -> String
 stripLineComments = unlines . map stripLine . lines
  where
@@ -182,8 +206,8 @@ stripLineComments = unlines . map stripLine . lines
       | null rest = (reverse acc, "")
       | otherwise = go (head rest : acc) (tail rest)
 
--- | Sucht "module", dann die erste öffnende Klammer, und liefert den Text
--- bis zur passenden (balancierten) schließenden Klammer zurück.
+-- | Finds "module", then the first opening parenthesis, and returns the
+-- text up to the matching (balanced) closing parenthesis.
 extractExportList :: String -> Maybe String
 extractExportList src = do
   afterModule <- stripPrefix "module" =<< dropToSubstring "module" src
@@ -211,8 +235,8 @@ extractExportList src = do
           else takeBalanced (depth - 1) (tail remaining) (head remaining : acc)
     | otherwise = takeBalanced depth (tail remaining) (head remaining : acc)
 
--- | Teilt einen String an Kommas, die sich NICHT innerhalb verschachtelter
--- Klammern befinden (z. B. bei @Type(CtorA, CtorB)@).
+-- | Splits a string on commas that are NOT nested inside parentheses (e.g.
+-- for @Type(CtorA, CtorB)@).
 splitTopLevel :: Char -> String -> [String]
 splitTopLevel sep = go 0 "" []
  where
@@ -224,8 +248,8 @@ splitTopLevel sep = go 0 "" []
     | c == sep && depth == 0 = go depth "" (reverse cur : acc) cs
     | otherwise = go depth (c : cur) acc cs
 
--- | Extrahiert den führenden Bezeichner (Buchstaben, Ziffern, @_@, @'@) aus
--- einem getrimmten Export-Item.
+-- | Extracts the leading identifier (letters, digits, @_@, @'@) from a
+-- trimmed export item.
 identifierOf :: String -> String
 identifierOf item = takeWhile isIdentChar (trim item)
  where

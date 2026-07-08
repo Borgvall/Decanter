@@ -1,0 +1,13 @@
+# Repository-provided Git configuration for Decanter.
+#
+# This file is tracked in the repository, but Git does not read it
+# automatically (only .git/config, the user/global, and the system config
+# are read on their own). Enable it once per clone with:
+#
+#   git config --local include.path ../.gitconfig
+#
+# That makes your local .git/config include this file, which in turn
+# points core.hooksPath at .githooks so that .githooks/pre-commit (cabal
+# build + test-coverage check, see AGENTS.md) runs on every commit.
+[core]
+	hooksPath = .githooks

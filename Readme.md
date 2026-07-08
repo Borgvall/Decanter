@@ -120,28 +120,29 @@ Decanter stores its bottles in the standard XDG Data directory:
 
  * `~/.local/share/Decanter/`
 
-## 🧪 Pre-Commit Checks (auch für Claude Code)
+## 🧪 Pre-Commit Checks (also enforced for Claude Code)
 
-Dieses Repository erzwingt zwei Regeln vor jedem Commit, sowohl für
-menschliche Beiträge als auch für Claude Code:
+This repository enforces two rules before every commit, both for human
+contributions and for Claude Code:
 
-1. `cabal build` muss erfolgreich durchlaufen.
-2. Neu **exportierte** Funktionen in `Bottle/Logic.hs` (also Funktionen, die
-   im Export-Header des Moduls auftauchen) benötigen mindestens einen
-   passenden Testfall in `test/Bottle/LogicSpec.hs`.
+1. `cabal build` must succeed.
+2. Newly **exported** functions in any module whose name or path contains
+   "Logic" (e.g. `Bottle/Logic.hs`, `Logic/Translation.hs`) need at least
+   one matching test case in the corresponding spec module under `test/`
+   (e.g. `test/Bottle/LogicSpec.hs`, `test/Logic/TranslationSpec.hs`).
 
-Die Prüf-Logik ist als Haskell-Skript in
-[`.githooks/pre-commit`](.githooks/pre-commit) implementiert und wird
-zweifach eingebunden:
+The check logic is implemented as a Haskell script in
+[`.githooks/pre-commit`](.githooks/pre-commit) and is wired up twice:
 
-* als echter Git-Hook, sobald `core.hooksPath` auf `.githooks` zeigt
-  (wird automatisch beim Betreten von `nix develop` per `shellHook` in
-  `flake.nix` gesetzt, inklusive `chmod +x` auf das Hook-Skript), und
-* als [Claude Code `PreToolUse`-Hook](.claude/settings.json), der
-  `git commit`-Aufrufe von Claude Code abfängt und bei Fehlschlag - oder
-  wenn das Hook-Skript fehlt bzw. nicht ausführbar ist - blockiert.
+* as a real Git hook, once `core.hooksPath` points at `.githooks` - enable
+  this once per clone with `git config --local include.path ../.gitconfig`
+  (the tracked [`.gitconfig`](.gitconfig) sets `core.hooksPath`; the hook
+  script already ships with its executable bit set), and
+* as a [Claude Code `PreToolUse` hook](.claude/settings.json) that
+  intercepts `git commit` calls from Claude Code and blocks them on
+  failure - or if the hook script is missing or not executable.
 
-Details und Kontext für Coding-Agenten stehen in [`AGENTS.md`](AGENTS.md).
+Details and context for coding agents live in [`AGENTS.md`](AGENTS.md).
 
 ## 📄 License
 

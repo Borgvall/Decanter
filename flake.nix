@@ -82,20 +82,7 @@
             winetricks
             umu-launcher
           ];
-
-          # Aktiviert automatisch den .githooks/pre-commit Hook (cabal build +
-          # Testabdeckungs-Check für neu exportierte Funktionen aus
-          # Bottle/Logic.hs), sobald jemand 'nix develop' betritt: setzt
-          # core.hooksPath direkt in der lokalen .git/config und stellt sicher,
-          # dass das Hook-Skript ausführbar ist.
-          shellHook = ''
-            if [ -d .git ]; then
-              git config core.hooksPath .githooks
-              chmod +x .githooks/pre-commit
-            fi
-          '';
         };
-
       }
     );
 }

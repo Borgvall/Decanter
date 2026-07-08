@@ -8,7 +8,7 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-commit-guard.sh\"",
             "timeout": 600,
-            "statusMessage": "Prüfe cabal build und Testabdeckung vor dem Commit ..."
+            "statusMessage": "Checking cabal build and test coverage before commit ..."
           }
         ]
       }
