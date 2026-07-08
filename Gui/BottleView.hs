@@ -17,6 +17,7 @@ import System.FilePath (takeBaseName)
 
 import Bottle.Types
 import Bottle.Logic
+import Bottle.Logic.Snapshots (isSnapshotableBottle)
 import Logic.Translation (tr)
 import Gui.BottleSnapshotsView (buildSnapshotView)
 

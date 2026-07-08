@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Bottle.Logic 
+module Bottle.Logic
   ( -- * Bottle Management
     listExistingBottles
   , getAvailableRunners
@@ -12,18 +12,18 @@ module Bottle.Logic
   , deleteBottleLogic
   , checkSystemWine32Support
   , getSupportedArchitectures
-  
+
     -- * Validation
   , checkNameValidity
   , NameValid(Valid)
   , explainNameValid
-  
+
     -- * Running Programs
   , runExecutable
   , runFileWithStart
   , runWindowsLnk
   , killBottleProcesses
-  
+
     -- * System Tools
   , runWineCfg
   , runRegedit
@@ -32,14 +32,11 @@ module Bottle.Logic
   , runWinetricks
   , runFileManager
   , findWineStartMenuLnks
-  
-    -- * Snapshots & BTRFS
-  , isSnapshotableBottle
-  , listSnapshots
-  , createSnapshotLogic
-  , restoreSnapshotLogic
-  , deleteSnapshotLogic
-  , openSnapshotFileManager
+  , runSystemTool
+
+    -- * BTRFS Helpers (used by "Bottle.Logic.Snapshots")
+  , isBtrfsSubvolume
+  , deleteSubvolumeForcible
   ) where
 
 import Bottle.Types
@@ -57,14 +54,13 @@ import System.Directory
     )
 import System.FilePath ((</>), takeExtension, takeBaseName)
 import Control.Exception (try, IOException, SomeException)
-import Control.Monad (void, filterM, forM, forM_)
-import Data.List (isSuffixOf, sortOn)
-import Data.Maybe (isJust, mapMaybe)
+import Control.Monad (void, filterM, forM, forM_, when)
+import Data.List (isSuffixOf)
+import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
 import System.IO.Error
-import Data.Char (isDigit)
 import System.Exit (ExitCode(..))
 import qualified Data.ByteString.Lazy.Char8 as LBS8 -- Für einfache Konvertierung von Prozess-Output
 
@@ -364,15 +360,17 @@ deleteBottleLogic bottle@Bottle{..} = do
   putStrLn "Stopping running processes..."
   _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
 
-  -- 1. Snapshots löschen
-  snaps <- listSnapshots bottle
-  forM_ snaps $ \s -> do
-      let path = snapshotPath s
-      deleteSubvolumeForcible path
+  -- 1. Snapshots löschen (jeder Eintrag im Snapshot-Ordner ist ein eigenes
+  -- BTRFS-Subvolume und muss einzeln zerstört werden, siehe
+  -- "Bottle.Logic.Snapshots.getSnapshotsDir" für die gleiche Pfadkonvention)
+  base <- getXdgDirectory XdgData "Decanter"
+  let bottleSnapDir = base </> "BottleSnapshots" </> T.unpack bottleName
+  snapDirExists <- doesDirectoryExist bottleSnapDir
+  when snapDirExists $ do
+      entries <- listDirectory bottleSnapDir
+      forM_ entries $ \e -> deleteSubvolumeForcible (bottleSnapDir </> e)
 
   -- 2. Den leeren Snapshot-Ordner der Bottle entfernen
-  baseSnapDir <- getSnapshotsDir
-  let bottleSnapDir = baseSnapDir </> T.unpack bottleName
   removePathForcibly bottleSnapDir
 
   -- 3. Die Bottle selbst löschen
@@ -465,85 +463,6 @@ findWineStartMenuLnks Bottle{..} = do
                     then return [path]
                     else return []
         return (concat paths)
-
-getSnapshotsDir :: IO FilePath
-getSnapshotsDir = do
-    base <- getXdgDirectory XdgData "Decanter"
-    let snapDir = base </> "BottleSnapshots"
-    createDirectoryIfMissing True snapDir
-    return snapDir
-
-isSnapshotableBottle :: Bottle -> IO Bool
-isSnapshotableBottle = isBtrfsSubvolume . bottlePath
-
-listSnapshots :: Bottle -> IO [BottleSnapshot]
-listSnapshots bottle = do
-    baseSnapDir <- getSnapshotsDir
-    let bottleSnapDir = baseSnapDir </> T.unpack (bottleName bottle)
-    
-    exists <- doesDirectoryExist bottleSnapDir
-    if not exists
-        then return []
-        else do
-            entries <- listDirectory bottleSnapDir
-            let snapshots = mapMaybe (parseSnapshotName bottleSnapDir) entries
-            return $ sortOn snapshotId snapshots
-
-  where
-    parseSnapshotName :: FilePath -> String -> Maybe BottleSnapshot
-    parseSnapshotName parentDir filename = 
-        let (idPart, rest) = span isDigit filename
-        in if null idPart
-            then Nothing
-            else case rest of
-                ('_':name) -> 
-                    let sId = read idPart :: Int
-                        sName = T.pack name
-                    in Just $ BottleSnapshot sId sName (parentDir </> filename)
-                _ -> Nothing
-
-getNextSnapshotId :: [BottleSnapshot] -> Int
-getNextSnapshotId [] = 0
-getNextSnapshotId snaps = maximum (map snapshotId snaps) + 1
-
-createSnapshotLogic :: Bottle -> T.Text -> IO ()
-createSnapshotLogic bottle sName = do
-    baseSnapDir <- getSnapshotsDir
-    let bottleSnapDir = baseSnapDir </> T.unpack (bottleName bottle)
-    createDirectoryIfMissing True bottleSnapDir
-    
-    currentSnaps <- listSnapshots bottle
-    let nextId = getNextSnapshotId currentSnaps
-    
-    let folderName = show nextId ++ "_" ++ T.unpack sName
-    let destPath = bottleSnapDir </> folderName
-    
-    Btrfs.snapshot (bottlePath bottle) destPath True 
-
--- | Stellt eine Bottle aus einem Snapshot wieder her
-restoreSnapshotLogic :: Bottle -> BottleSnapshot -> IO ()
-restoreSnapshotLogic bottle snapshot = do
-    putStrLn $ "Restoring bottle '" ++ T.unpack (bottleName bottle) ++ "' from snapshot " ++ show (snapshotId snapshot)
-    
-    -- Auch hier: Erst Prozess sicher beenden, bevor wir das Filesystem anfassen
-    -- killBottleProcesses ist jetzt synchron und wartet auf Abschluss.
-    _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
-    
-    deleteSubvolumeForcible (bottlePath bottle)
-    Btrfs.snapshot (snapshotPath snapshot) (bottlePath bottle) False
-    putStrLn "Restore successful."
-
--- | Löscht einen spezifischen Snapshot
-deleteSnapshotLogic :: BottleSnapshot -> IO ()
-deleteSnapshotLogic snapshot = do
-    putStrLn $ "Deleting snapshot: " ++ snapshotPath snapshot
-    deleteSubvolumeForcible (snapshotPath snapshot)
-
--- | Öffnet den Dateimanager im drive_c des Snapshots
-openSnapshotFileManager :: BottleSnapshot -> IO ()
-openSnapshotFileManager snapshot = do
-    let driveC = snapshotPath snapshot </> "drive_c"
-    runSystemTool "xdg-open" [driveC]
 
 -- | Prüft, ob das System 32-Bit Prefixe unterstützt.
 -- Führt 'WINEARCH=win32 wine --version' aus. Wenn wine32 fehlt, gibt dies meist ExitCode 1 zurück.

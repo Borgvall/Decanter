@@ -18,6 +18,7 @@ executable decanter
     -- Die anderen Module müssen im selben Verzeichnis liegen
     other-modules:    Bottle.Types
                     , Bottle.Logic
+                    , Bottle.Logic.Snapshots
                     , Logic.Translation
                     , Gui.BottleView
                     , Gui.BottleSnapshotsView
@@ -56,9 +57,11 @@ test-suite decanter-test
     
     -- Module, die getestet werden sollen (aus dem Hauptprogramm)
     other-modules:    Bottle.Logic
+                    , Bottle.Logic.Snapshots
                     , Bottle.Types
                     , Logic.Translation
                     , Bottle.LogicSpec
+                    , Bottle.Logic.SnapshotsSpec
                     , Data.Vdf
     
     build-depends:    base >= 4.16 && < 5

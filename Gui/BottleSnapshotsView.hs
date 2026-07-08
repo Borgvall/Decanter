@@ -14,6 +14,7 @@ import Data.Text (Text)
 
 import Bottle.Types
 import Bottle.Logic
+import Bottle.Logic.Snapshots
 import Logic.Translation (tr)
 
 -- ... (validateSnapshotName, showCreateSnapshotPopover und createMenuBtn bleiben unverändert) ...
