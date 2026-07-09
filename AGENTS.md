@@ -45,12 +45,6 @@ describe "myNewFunction" $ do
 only what actually becomes part of a Logic module's public API needs its
 own test case.
 
-To determine this, the hook compares a Logic module's export list between
-`HEAD` and the staged version, and checks, for every newly added exported
-function, whether its name appears at least once in the corresponding spec
-file. If a test case is missing, the commit is blocked with a list of the
-affected functions and modules.
-
 ## 3. Comments and documentation are written in English
 
 All code comments, docstrings, commit messages for tooling changes, and
