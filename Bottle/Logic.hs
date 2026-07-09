@@ -23,6 +23,7 @@ module Bottle.Logic
   , runFileWithStart
   , runWindowsLnk
   , killBottleProcesses
+  , runCmd
 
     -- * System Tools
   , runWineCfg

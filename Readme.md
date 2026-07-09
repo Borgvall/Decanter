@@ -120,6 +120,18 @@ Decanter stores its bottles in the standard XDG Data directory:
 
  * `~/.local/share/Decanter/`
 
+## 🏃 Running Tests
+
+```bash
+cabal test
+```
+
+**Note:** The Proton-based process-killing test downloads a Steam Runtime
+(several hundred MB, via `umu-run`) on first run. It is stored under the
+build directory (`dist-newstyle/decanter-test-xdg-data-home`), not in your
+real `~/.local/share/`, and is deliberately kept there between test runs so
+it isn't re-downloaded every time.
+
 ## 🧪 Pre-Commit Checks (also enforced for Claude Code)
 
 This repository enforces two rules before every commit, both for human

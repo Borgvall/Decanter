@@ -4,6 +4,7 @@
 module Bottle.Logic.Process
   ( getMergedWineEnv
   , killBottleProcesses
+  , findBottleScopes
   , md5Hex
   ) where
 
@@ -71,17 +72,36 @@ killBottleProcesses bottle = case runner bottle of
 -- umu/umu_run.py: "prefix_md5 = hashlib.md5(str(pfx)...)"). Killing a
 -- scope reliably reaches already-orphaned child processes too, because a
 -- scope is bound to the cgroup, not the (fragile) process tree.
+--
+-- A bottle can have more than one live scope at the same time: every
+-- umu-run invocation (e.g. the "wineboot -u" done by createBottleLogic,
+-- and separately whatever program the user actually launches) gets its
+-- own container and thus its own scope, all sharing the same
+-- WINEPREFIX-derived name prefix but a different trailing PID. All of
+-- them need to be killed, not just the first one found.
 killProtonProcesses :: Bottle -> IO ()
 killProtonProcesses bottle = do
+  scopeNames <- findBottleScopes bottle
+  case scopeNames of
+    [] -> pure ()  -- No running scope for this bottle -- nothing to do.
+    _  -> runProcess_ $ proc "systemctl" (["--user", "kill"] ++ scopeNames)
+
+-- | Names of all currently running systemd --user scopes belonging to this
+-- bottle (see 'killProtonProcesses' for why there can be more than one).
+-- Exposed so tests can check for a live/dead scope directly instead of
+-- guessing at the wineserver binary's on-disk path, which can differ from
+-- what actually shows up in a running process' command line (e.g. behind
+-- extra layers of symlinks/wrapper scripts).
+findBottleScopes :: Bottle -> IO [String]
+findBottleScopes bottle = do
   canonicalPrefix <- canonicalizePath (bottlePath bottle)
   prefixHash <- md5Hex canonicalPrefix
   let scopePattern = "app-steam-app" ++ prefixHash ++ "-*.scope"
   (listExitCode, out) <- readProcessStdout $
     proc "systemctl" ["--user", "list-units", "--type=scope", "--no-legend", "--plain", scopePattern]
-  case (listExitCode, words (LBS8.unpack out)) of
-    (ExitSuccess, scopeName : _) ->
-      runProcess_ $ proc "systemctl" ["--user", "kill", scopeName]
-    _ -> pure ()  -- No running scope for this bottle -- nothing to do.
+  case listExitCode of
+    ExitSuccess -> pure [ name | line <- lines (LBS8.unpack out), (name : _) <- [words line] ]
+    _           -> pure []
 
 -- | MD5 hex digest of a string (via "md5sum", to avoid introducing an
 -- extra crypto library dependency).
