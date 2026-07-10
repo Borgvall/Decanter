@@ -30,18 +30,24 @@
 
         rawDecanterPkg = pkgs.haskellPackages.callCabal2nix "decanter" ./. {};
 
+        # nixpkgs' own "vkd3d-proton" package has no usable Windows DLLs
+        # (see vkd3dproton-decanter.nix for the full rationale), so we
+        # repackage the upstream release tarball ourselves.
+        vkd3dProtonDecanter = pkgs.callPackage ./vkd3dproton-decanter.nix {};
+
       in
       {
         packages.default = rawDecanterPkg.overrideAttrs (oldAttrs: {
           doCheck = true;
 
-          # Nix store path of the "dxvk" package, used by
-          # Bottle.Logic.Direct3dWrappers to symlink DXVK's DLLs into a
-          # wine prefix. Set as a plain derivation attribute so it's
-          # already an environment variable during checkPhase (where the
-          # test suite runs); preFixup below additionally exposes it to the
-          # installed binary at runtime.
+          # Nix store paths of the "dxvk" and vkd3d-proton-decanter
+          # packages, used by Bottle.Logic.Direct3dWrappers to symlink
+          # their DLLs into a wine prefix. Set as plain derivation
+          # attributes so they're already environment variables during
+          # checkPhase (where the test suite runs); preFixup below
+          # additionally exposes them to the installed binary at runtime.
           DECANTER_DXVK_PATH = "${pkgs.dxvk}";
+          DECANTER_VKD3D_PROTON_PATH = "${vkd3dProtonDecanter}";
 
           nativeBuildInputs = (oldAttrs.nativeBuildInputs or []) ++ [
             pkgs.pkg-config
@@ -61,6 +67,7 @@
           preFixup = (oldAttrs.preFixup or "") + ''
             gappsWrapperArgs+=(--prefix PATH : "${pkgs.lib.makeBinPath runtimeDeps}")
             gappsWrapperArgs+=(--set DECANTER_DXVK_PATH "${pkgs.dxvk}")
+            gappsWrapperArgs+=(--set DECANTER_VKD3D_PROTON_PATH "${vkd3dProtonDecanter}")
           '';
 
           postInstall = (oldAttrs.postInstall or "") + ''
@@ -76,9 +83,11 @@
           packages = p: [ rawDecanterPkg ];
           withHoogle = true;
 
-          # So "cabal test" can find DXVK the same way the packaged build does.
+          # So "cabal test" can find DXVK/vkd3d-proton the same way the
+          # packaged build does.
           shellHook = ''
             export DECANTER_DXVK_PATH="${pkgs.dxvk}"
+            export DECANTER_VKD3D_PROTON_PATH="${vkd3dProtonDecanter}"
           '';
 
           nativeBuildInputs = with pkgs; [

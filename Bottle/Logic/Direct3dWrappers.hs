@@ -22,25 +22,48 @@ import Control.Exception (catch)
 import Control.Monad (forM_, when, unless)
 
 -- | The supported states of a wine prefix's Direct3D-to-Vulkan translation
--- setup.
---
--- A third state ("both DXVK and vkd3d-proton installed") is deliberately
--- not modeled yet: nixpkgs' "vkd3d-proton" package only ships native Unix
--- libraries meant for building Wine itself with vkd3d support baked in, not
--- the Windows PE DLLs (d3d12.dll/d3d12core.dll) a wine prefix needs to have
--- vkd3d-proton symlinked in the same way as DXVK below. Sourcing those
--- requires a separate Nix derivation and is tracked as follow-up work.
+-- setup. "vkd3d-proton only" (without DXVK) is deliberately not modeled:
+-- vkd3d-proton's own dxgi.dll dependency comes from DXVK, so it never works
+-- without DXVK also being installed.
 data Direct3DWrapperState
   = WineD3D -- ^ Wine's own built-in Direct3D implementation (the default).
   | Dxvk    -- ^ DXVK's Direct3D-to-Vulkan translation layer.
+  | Both    -- ^ DXVK and vkd3d-proton, in the only combination that works.
   deriving (Show, Eq, Enum, Bounded, Read)
 
--- | The Direct3D DLLs that DXVK replaces.
-dxvkDllNames :: [String]
-dxvkDllNames = ["d3d8.dll", "d3d9.dll", "d3d10core.dll", "d3d11.dll", "dxgi.dll"]
+-- | Describes one of the Nix-packaged DLL sets (DXVK, vkd3d-proton) that
+-- can be symlinked into a wine prefix.
+data WrapperPackage = WrapperPackage
+  { wrapperMarkerDll :: String   -- ^ one of 'wrapperDllNames', used to check install status.
+  , wrapperDllNames  :: [String]
+  , wrapperDir64     :: String   -- ^ subdirectory holding the 64-bit DLLs.
+  , wrapperDir32     :: String   -- ^ subdirectory holding the 32-bit DLLs.
+  , wrapperEnvVar    :: String   -- ^ env var pointing at the package's Nix store path.
+  }
+
+-- | DXVK, via nixpkgs' own "dxvk" package (see flake.nix).
+dxvkPackage :: WrapperPackage
+dxvkPackage = WrapperPackage
+  { wrapperMarkerDll = "dxgi.dll"
+  , wrapperDllNames  = ["d3d8.dll", "d3d9.dll", "d3d10core.dll", "d3d11.dll", "dxgi.dll"]
+  , wrapperDir64     = "x64"
+  , wrapperDir32     = "x32"
+  , wrapperEnvVar    = "DECANTER_DXVK_PATH"
+  }
+
+-- | vkd3d-proton, via the custom "vkd3dproton-decanter.nix" derivation (see
+-- flake.nix) -- nixpkgs' own "vkd3d-proton" package has no usable DLLs.
+vkd3dProtonPackage :: WrapperPackage
+vkd3dProtonPackage = WrapperPackage
+  { wrapperMarkerDll = "d3d12.dll"
+  , wrapperDllNames  = ["d3d12.dll", "d3d12core.dll"]
+  , wrapperDir64     = "x64"
+  , wrapperDir32     = "x86"
+  , wrapperEnvVar    = "DECANTER_VKD3D_PROTON_PATH"
+  }
 
 -- | Suffix used to back up a wine prefix's original DLL before replacing it
--- with a DXVK symlink, so it can be restored when switching back to WineD3D.
+-- with a symlink, so it can be restored when uninstalling again.
 backupSuffix :: String
 backupSuffix = ".orig-wine"
 
@@ -50,25 +73,24 @@ system32Dir Bottle{..} = bottlePath </> "drive_c" </> "windows" </> "system32"
 syswow64Dir :: Bottle -> FilePath
 syswow64Dir Bottle{..} = bottlePath </> "drive_c" </> "windows" </> "syswow64"
 
--- | Wine-prefix directories to manage, paired with the matching DXVK
--- bitness subdirectory ("x64" for 64-bit DLLs, "x32" for 32-bit ones). A
--- Win64 prefix has both a 64-bit system32 and a 32-bit syswow64; a Win32
--- prefix only has a (32-bit) system32.
-targetDirsWithBitness :: Bottle -> [(FilePath, FilePath)]
-targetDirsWithBitness bottle = case arch bottle of
-  Win64 -> [ (system32Dir bottle, "x64"), (syswow64Dir bottle, "x32") ]
-  Win32 -> [ (system32Dir bottle, "x32") ]
+-- | Wine-prefix directories to manage, paired with whether they hold
+-- 64-bit DLLs. A Win64 prefix has both a 64-bit system32 and a 32-bit
+-- syswow64; a Win32 prefix only has a (32-bit) system32.
+targetDirs :: Bottle -> [(FilePath, Bool)]
+targetDirs bottle = case arch bottle of
+  Win64 -> [ (system32Dir bottle, True), (syswow64Dir bottle, False) ]
+  Win32 -> [ (system32Dir bottle, False) ]
 
--- | The Nix store path of the "dxvk" package, exposed via the
--- DECANTER_DXVK_PATH environment variable (see flake.nix: set as a
--- derivation attribute for the test suite's checkPhase, and injected via
--- gappsWrapperArgs for the installed binary at runtime).
-getDxvkStorePath :: IO FilePath
-getDxvkStorePath = do
-  maybePath <- lookupEnv "DECANTER_DXVK_PATH"
+-- | The Nix store path of a wrapper package, exposed via its
+-- 'wrapperEnvVar' (see flake.nix: set as a derivation attribute for the
+-- test suite's checkPhase, and injected via gappsWrapperArgs for the
+-- installed binary at runtime).
+getPackageStorePath :: WrapperPackage -> IO FilePath
+getPackageStorePath pkg = do
+  maybePath <- lookupEnv (wrapperEnvVar pkg)
   case maybePath of
     Just path -> pure path
-    Nothing   -> error "DECANTER_DXVK_PATH is not set; cannot locate the DXVK Nix package."
+    Nothing   -> error (wrapperEnvVar pkg ++ " is not set; cannot locate its Nix package.")
 
 -- | Like 'pathIsSymbolicLink', but returns False instead of throwing when
 -- "path" does not exist at all.
@@ -84,19 +106,17 @@ entryExists path = do
   isLink <- safePathIsSymbolicLink path
   if isLink then pure True else doesFileExist path
 
--- | Whether DXVK's DLLs are currently symlinked into "dir" -- used as a
--- representative marker for the whole prefix, since
--- 'setDirect3DWrapperState' always installs/removes all DLLs in all
--- relevant directories together.
-isDxvkInstalledIn :: FilePath -> IO Bool
-isDxvkInstalledIn dir = safePathIsSymbolicLink (dir </> "dxgi.dll")
+-- | Whether "pkg"'s DLLs are currently symlinked into "dir" -- checking
+-- just one representative DLL is enough, since 'setPackageInstalled'
+-- always installs/removes all of a package's DLLs together.
+isPackageInstalledIn :: WrapperPackage -> FilePath -> IO Bool
+isPackageInstalledIn pkg dir = safePathIsSymbolicLink (dir </> wrapperMarkerDll pkg)
 
--- | Symlinks a single DXVK DLL into "targetDir" (pointing into "sourceDir",
--- i.e. one of DXVK's own "x64"/"x32" directories), backing up Wine's
--- original file first, unless that already happened during a previous
--- install.
-installDxvkDll :: FilePath -> FilePath -> String -> IO ()
-installDxvkDll targetDir sourceDir name = do
+-- | Symlinks a single DLL into "targetDir" (pointing into "sourceDir"),
+-- backing up Wine's original file first, unless that already happened
+-- during a previous install.
+installDll :: FilePath -> FilePath -> String -> IO ()
+installDll targetDir sourceDir name = do
   let target = targetDir </> name
       backup = target ++ backupSuffix
   isSymlink <- safePathIsSymbolicLink target
@@ -111,10 +131,10 @@ installDxvkDll targetDir sourceDir name = do
         (False, _)    -> pure ()
   createFileLink (sourceDir </> name) target
 
--- | Removes a DXVK DLL symlink from "targetDir" and restores Wine's
--- original file from its backup, if one was made.
-uninstallDxvkDll :: FilePath -> String -> IO ()
-uninstallDxvkDll targetDir name = do
+-- | Removes a DLL symlink from "targetDir" and restores Wine's original
+-- file from its backup, if one was made.
+uninstallDll :: FilePath -> String -> IO ()
+uninstallDll targetDir name = do
   let target = targetDir </> name
       backup = target ++ backupSuffix
   isSymlink <- safePathIsSymbolicLink target
@@ -122,23 +142,43 @@ uninstallDxvkDll targetDir name = do
   backupExists <- entryExists backup
   when backupExists $ renameFile backup target
 
--- | Determines a bottle's current Direct3D wrapper state by checking
--- whether its Direct3D DLLs are DXVK symlinks or Wine's own files.
+-- | Symlinks all of "pkg"'s DLLs into every relevant directory of "bottle".
+installPackage :: Bottle -> WrapperPackage -> IO ()
+installPackage bottle pkg = do
+  storePath <- getPackageStorePath pkg
+  forM_ (targetDirs bottle) $ \(dir, is64) ->
+    let sourceDir = storePath </> (if is64 then wrapperDir64 pkg else wrapperDir32 pkg)
+    in forM_ (wrapperDllNames pkg) (installDll dir sourceDir)
+
+-- | Removes all of "pkg"'s DLLs from every relevant directory of "bottle".
+uninstallPackage :: Bottle -> WrapperPackage -> IO ()
+uninstallPackage bottle pkg =
+  forM_ (targetDirs bottle) $ \(dir, _) ->
+    forM_ (wrapperDllNames pkg) (uninstallDll dir)
+
+-- | Installs or removes "pkg" so that it ends up (not) installed as
+-- requested. Does nothing if it already is in that state.
+setPackageInstalled :: Bottle -> WrapperPackage -> Bool -> IO ()
+setPackageInstalled bottle pkg wanted = do
+  isInstalled <- isPackageInstalledIn pkg (system32Dir bottle)
+  unless (isInstalled == wanted) $
+    if wanted then installPackage bottle pkg else uninstallPackage bottle pkg
+
+-- | Determines a bottle's current Direct3D wrapper state by checking which
+-- of DXVK's/vkd3d-proton's DLLs are symlinked in versus Wine's own files.
 getDirect3DWrapperState :: Bottle -> IO Direct3DWrapperState
 getDirect3DWrapperState bottle = do
-  dxvkInstalled <- isDxvkInstalledIn (system32Dir bottle)
-  pure $ if dxvkInstalled then Dxvk else WineD3D
+  dxvkInstalled <- isPackageInstalledIn dxvkPackage (system32Dir bottle)
+  vkd3dProtonInstalled <- isPackageInstalledIn vkd3dProtonPackage (system32Dir bottle)
+  pure $ case (dxvkInstalled, vkd3dProtonInstalled) of
+    (False, _)    -> WineD3D
+    (True, False) -> Dxvk
+    (True, True)  -> Both
 
--- | Installs or removes DXVK's DLLs in "bottle" so that it ends up in
--- "desired" state. Does nothing if "bottle" is already in that state.
+-- | Installs or removes DXVK's/vkd3d-proton's DLLs in "bottle" so that it
+-- ends up in "desired" state. Does nothing for a package that's already
+-- (not) installed as "desired" requires.
 setDirect3DWrapperState :: Bottle -> Direct3DWrapperState -> IO ()
 setDirect3DWrapperState bottle desired = do
-  current <- getDirect3DWrapperState bottle
-  unless (current == desired) $ case desired of
-    WineD3D ->
-      forM_ (targetDirsWithBitness bottle) $ \(dir, _) ->
-        forM_ dxvkDllNames (uninstallDxvkDll dir)
-    Dxvk -> do
-      dxvkPath <- getDxvkStorePath
-      forM_ (targetDirsWithBitness bottle) $ \(dir, bitness) ->
-        forM_ dxvkDllNames (installDxvkDll dir (dxvkPath </> bitness))
+  setPackageInstalled bottle dxvkPackage (desired /= WineD3D)
+  setPackageInstalled bottle vkd3dProtonPackage (desired == Both)
