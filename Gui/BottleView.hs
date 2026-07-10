@@ -12,8 +12,9 @@ import Data.GI.Base
 import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
 import qualified Data.Text as T
-import Control.Monad (forM, forM_, when, void)
+import Control.Monad (forM_, when, void)
 import System.FilePath (takeBaseName)
+import Text.Read (readMaybe)
 
 import Bottle.Types
 import Bottle.Logic
@@ -156,12 +157,19 @@ direct3DWrapperLabel WineD3D             = tr "Wine (built-in)"
 direct3DWrapperLabel Dxvk                = tr "DXVK"
 direct3DWrapperLabel DxvkAndVkd3dProton  = tr "DXVK + vkd3d-proton"
 
--- | Baut eine Gruppe von Radiobuttons, mit der zwischen Wines eingebauter
--- Direct3D-Implementierung, DXVK und DXVK + vkd3d-proton umgeschaltet werden
--- kann. Symlinken der DLLs ist eine reine Dateisystem-Operation (keine
--- externen Prozesse, keine spürbare Verzögerung), daher genügt ein
--- synchroner Aufruf ohne Fortschrittsanzeige -- wie bei den übrigen
--- schnellen Logic-Aufrufen in dieser Datei (z.B. changeBottleRunnerLogic).
+-- | Eindeutiger Name eines Direct3D-Wrapper-Zustands innerhalb der
+-- AdwToggleGroup; über 'Direct3DWrapperState's abgeleitetes 'Show'/'Read'
+-- verlustfrei in beide Richtungen konvertierbar.
+direct3DWrapperName :: Direct3DWrapperState -> T.Text
+direct3DWrapperName = T.pack . show
+
+-- | Baut eine AdwToggleGroup (ein modernes, segmentiertes Umschalt-Widget),
+-- mit der zwischen Wines eingebauter Direct3D-Implementierung, DXVK und DXVK
+-- + vkd3d-proton umgeschaltet werden kann. Symlinken der DLLs ist eine reine
+-- Dateisystem-Operation (keine externen Prozesse, keine spürbare
+-- Verzögerung), daher genügt ein synchroner Aufruf ohne Fortschrittsanzeige
+-- -- wie bei den übrigen schnellen Logic-Aufrufen in dieser Datei (z.B.
+-- changeBottleRunnerLogic).
 buildDirect3DWrapperSection :: Gtk.Box -> Bottle -> IO ()
 buildDirect3DWrapperSection contentBox bottle = do
   currentState <- getDirect3DWrapperState bottle
@@ -180,30 +188,25 @@ buildDirect3DWrapperSection contentBox bottle = do
     ]
   #append sectionBox sectionLabel
 
-  radiosBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 4 ]
-  #append sectionBox radiosBox
-
   let tooltip = tr "For current games, \"DXVK + vkd3d-proton\" is the recommended setting. Otherwise it may not matter, or results can vary."
 
-  radioButtons <- forM [WineD3D, Dxvk, DxvkAndVkd3dProton] $ \state -> do
-    radioBtn <- new Gtk.CheckButton
-      [ #label := direct3DWrapperLabel state
-      , #active := (state == currentState)
-      , #tooltipText := tooltip
+  toggleGroup <- new Adw.ToggleGroup [ #halign := Gtk.AlignStart ]
+  #append sectionBox toggleGroup
+
+  forM_ [WineD3D, Dxvk, DxvkAndVkd3dProton] $ \state -> do
+    toggle <- new Adw.Toggle
+      [ #name := direct3DWrapperName state
+      , #label := direct3DWrapperLabel state
       ]
-    #append radiosBox radioBtn
-    return (state, radioBtn)
+    Adw.toggleSetTooltip toggle tooltip
+    Adw.toggleGroupAdd toggleGroup toggle
+  Adw.toggleGroupSetActiveName toggleGroup (Just (direct3DWrapperName currentState))
 
-  -- Alle Buttons derselben Gruppe zuordnen, damit sie sich wie Radiobuttons
-  -- gegenseitig ausschließen.
-  case radioButtons of
-    ((_, leader) : rest) -> forM_ rest $ \(_, btn) -> Gtk.checkButtonSetGroup btn (Just leader)
-    []                   -> pure ()
-
-  forM_ radioButtons $ \(state, radioBtn) ->
-    void $ on radioBtn #toggled $ do
-      isActive <- get radioBtn #active
-      when isActive $ do
+  void $ on toggleGroup (PropertyNotify #activeName) $ \_pspec -> do
+    maybeName <- Adw.toggleGroupGetActiveName toggleGroup
+    case maybeName >>= readMaybe . T.unpack of
+      Nothing    -> pure ()
+      Just state -> do
         result <- try (setDirect3DWrapperState bottle state) :: IO (Either SomeException ())
         case result of
           Left err -> putStrLn $ "Error changing Direct3D wrapper: " ++ show err
