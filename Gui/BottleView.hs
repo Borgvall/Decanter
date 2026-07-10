@@ -175,7 +175,7 @@ buildDirect3DWrapperSection contentBox bottle = do
   currentState <- getDirect3DWrapperState bottle
 
   sectionBox <- new Gtk.Box
-    [ #orientation := Gtk.OrientationVertical
+    [ #orientation := Gtk.OrientationHorizontal
     , #spacing := 4
     , #marginBottom := 15
     ]
@@ -184,13 +184,14 @@ buildDirect3DWrapperSection contentBox bottle = do
   sectionLabel <- new Gtk.Label
     [ #label := tr "Direct3D"
     , #halign := Gtk.AlignStart
+    , #hexpand := True
     , #cssClasses := ["dim-label", "caption"]
     ]
   #append sectionBox sectionLabel
 
   let tooltip = tr "For current games, \"DXVK + vkd3d-proton\" is the recommended setting. Otherwise it may not matter, or results can vary."
 
-  toggleGroup <- new Adw.ToggleGroup [ #halign := Gtk.AlignStart ]
+  toggleGroup <- new Adw.ToggleGroup [ #halign := Gtk.AlignEnd ]
   #append sectionBox toggleGroup
 
   forM_ [WineD3D, Dxvk, DxvkAndVkd3dProton] $ \state -> do
