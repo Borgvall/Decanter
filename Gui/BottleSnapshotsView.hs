@@ -68,9 +68,17 @@ createMenuBtn labelText iconName cssClassesList = do
     return btn
 
 
--- | Baut die Snapshot-Liste
-buildSnapshotView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO Gtk.Widget
-buildSnapshotView _window bottle stack = do
+-- | Baut die Snapshot-Liste.
+--
+-- "reloadDetailView" ist Gui.BottleView.reloadBottleView, bereits mit Fenster,
+-- Bottle und Stack angewendet (als reines IO () durchgereicht statt direkt
+-- importiert, um den zyklischen Modul-Import zu vermeiden, da Gui.BottleView
+-- umgekehrt schon 'buildSnapshotView' importiert). Wird nach einem
+-- erfolgreichen Snapshot-Restore aufgerufen, damit die Detailansicht (u.a.
+-- die Direct3D-Wrapper-Anzeige) den wiederhergestellten Dateisystemzustand
+-- zeigt, statt nur stumpf auf die alte, unveränderte Ansicht zurückzuschalten.
+buildSnapshotView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
+buildSnapshotView _window bottle stack reloadDetailView = do
   
   -- === KONSISTENZ: Adw.ToolbarView statt Gtk.Box ===
   toolbarView <- new Adw.ToolbarView []
@@ -145,9 +153,7 @@ buildSnapshotView _window bottle stack = do
                        res <- try (restoreSnapshotLogic bottle s) :: IO (Either SomeException ())
                        GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                            case res of
-                               Right _ -> do
-                                   let detailViewName = "detail_" <> bottleName bottle
-                                   #setVisibleChildName stack detailViewName
+                               Right _ -> reloadDetailView
                                Left err -> putStrLn $ "Error during restore: " ++ show err
                            return False
                #append popBox restoreBtn

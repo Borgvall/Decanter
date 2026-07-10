@@ -131,8 +131,12 @@ changeBottleRunner window bottle stack refreshCallback = do
 -- | Lädt die Bottle-Ansicht neu
 reloadBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO ()
 reloadBottleView window bottle stack refreshCallback = do
-  -- Aktuelle View aus dem Stack entfernen
-  let viewName = "bottle_" <> bottleName bottle
+  -- Aktuelle View aus dem Stack entfernen. Der Name muss mit dem
+  -- übereinstimmen, unter dem Gui.OverviewView die Detailansicht ursprünglich
+  -- via #addNamed hinzugefügt hat -- sonst wird die alte View nie entfernt
+  -- und stattdessen läuft hier bei jedem Aufruf eine zusätzliche, unsichtbare
+  -- Karteikarte im Stack auf.
+  let viewName = "detail_" <> bottleName bottle
   mOldChild <- #getChildByName stack viewName
   case mOldChild of
     Just oldChild -> #remove stack oldChild
@@ -362,7 +366,7 @@ buildBottleView window bottle stack refreshCallback = do
     #append snapBox snapIcon >> #append snapBox snapLabel >> #setChild snapBtn (Just snapBox)
     
     void $ on snapBtn #clicked $ do
-       snapView <- buildSnapshotView window bottle stack
+       snapView <- buildSnapshotView window bottle stack (reloadBottleView window bottle stack refreshCallback)
        let viewName = "snapshots_" <> bottleName bottle
        void $ #addNamed stack snapView (Just viewName)
        #setVisibleChildName stack viewName
