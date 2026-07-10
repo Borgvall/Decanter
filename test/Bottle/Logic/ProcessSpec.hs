@@ -5,10 +5,11 @@ module Bottle.Logic.ProcessSpec (spec) where
 import Test.Hspec
 import Bottle.Logic.Process
 import Bottle.Logic (getAvailableRunners, createBottleObject, createBottleLogic, deleteBottleLogic, runCmd)
+import Bottle.Logic.Direct3dWrappers (Direct3DWrapperState(..), setDirect3DWrapperState)
 import Bottle.Types
 import System.Directory (createDirectoryIfMissing, findExecutable, getCurrentDirectory)
 import System.FilePath ((</>))
-import System.Environment (setEnv, unsetEnv)
+import System.Environment (setEnv, unsetEnv, lookupEnv)
 import qualified System.Process.Typed as PT
 import System.Exit (ExitCode(..))
 import Control.Exception (finally, try, SomeException)
@@ -105,6 +106,35 @@ spec = describe "Bottle.Logic.Process" $ do
       let systemWineBottle = protonBottle { runner = SystemWine }
       systemWineEnv <- getMergedWineEnv systemWineBottle
       lookup "PRESSURE_VESSEL_SYSTEMD_SCOPE" systemWineEnv `shouldBe` Nothing
+
+    it "sets WINEDLLOVERRIDES for a System Wine bottle with DXVK/vkd3d-proton installed, but not otherwise" $ withTestEnvironment $ do
+      runners <- getAvailableRunners
+      maybeDxvkPath <- lookupEnv "DECANTER_DXVK_PATH"
+      maybeVkd3dProtonPath <- lookupEnv "DECANTER_VKD3D_PROTON_PATH"
+      case (SystemWine `elem` runners, maybeDxvkPath, maybeVkd3dProtonPath) of
+        (False, _, _) -> pendingWith "No system Wine installation found in this environment; not testable here."
+        (_, Nothing, _) -> pendingWith "DECANTER_DXVK_PATH is not set; enter the Nix dev shell to run this test."
+        (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
+        (True, Just _, Just _) -> do
+          bottle <- createBottleObject "WineDllOverridesTestBottle" Win64 SystemWine
+          createBottleLogic bottle
+
+          (do
+            freshEnv <- getMergedWineEnv bottle
+            lookup "WINEDLLOVERRIDES" freshEnv `shouldBe` Nothing
+
+            setDirect3DWrapperState bottle Dxvk
+            dxvkEnv <- getMergedWineEnv bottle
+            lookup "WINEDLLOVERRIDES" dxvkEnv `shouldBe` Just "d3d8,d3d9,d3d10core,d3d11,dxgi=native"
+
+            setDirect3DWrapperState bottle DxvkAndVkd3dProton
+            bothEnv <- getMergedWineEnv bottle
+            lookup "WINEDLLOVERRIDES" bothEnv `shouldBe` Just "d3d8,d3d9,d3d10core,d3d11,dxgi,d3d12,d3d12core=native"
+
+            setDirect3DWrapperState bottle WineD3D
+            resetEnv <- getMergedWineEnv bottle
+            lookup "WINEDLLOVERRIDES" resetEnv `shouldBe` Nothing
+            ) `finally` deleteBottleLogic bottle
 
   describe "md5Hex" $ do
     it "matches known MD5 test vectors" $ do

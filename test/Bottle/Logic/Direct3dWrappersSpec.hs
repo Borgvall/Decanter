@@ -65,7 +65,20 @@ assertDirect3DWrapperState bottle state = do
       isSymlinkedInBothDirs bottle "d3d12.dll" `shouldReturn` True
 
 spec :: Spec
-spec = describe "Bottle.Logic.Direct3dWrappers" $
+spec = describe "Bottle.Logic.Direct3dWrappers" $ do
+
+  describe "direct3DWrapperOverrideDllNames" $ do
+    it "lists no DLLs to override for WineD3D" $
+      direct3DWrapperOverrideDllNames WineD3D `shouldBe` []
+
+    it "lists DXVK's DLLs (without the .dll extension) for Dxvk" $
+      direct3DWrapperOverrideDllNames Dxvk
+        `shouldBe` ["d3d8", "d3d9", "d3d10core", "d3d11", "dxgi"]
+
+    it "lists both DXVK's and vkd3d-proton's DLLs for DxvkAndVkd3dProton" $
+      direct3DWrapperOverrideDllNames DxvkAndVkd3dProton
+        `shouldBe` ["d3d8", "d3d9", "d3d10core", "d3d11", "dxgi", "d3d12", "d3d12core"]
+
   describe "getDirect3DWrapperState / setDirect3DWrapperState" $
     it "walks a System Wine bottle through all six state changes and three no-ops" $ withTestEnvironment $ do
       runners <- getAvailableRunners

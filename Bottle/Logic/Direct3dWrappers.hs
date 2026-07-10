@@ -4,6 +4,7 @@ module Bottle.Logic.Direct3dWrappers
   ( Direct3DWrapperState(..)
   , getDirect3DWrapperState
   , setDirect3DWrapperState
+  , direct3DWrapperOverrideDllNames
   ) where
 
 import Bottle.Types
@@ -15,7 +16,7 @@ import System.Directory
     , createFileLink
     )
 import System.Environment (lookupEnv)
-import System.FilePath ((</>))
+import System.FilePath ((</>), dropExtension)
 import System.IO.Error (isDoesNotExistError)
 import Control.Exception (catch)
 import Control.Monad (forM_, when, unless)
@@ -181,3 +182,22 @@ setDirect3DWrapperState :: Bottle -> Direct3DWrapperState -> IO ()
 setDirect3DWrapperState bottle desired = do
   setPackageInstalled bottle dxvkPackage (desired /= WineD3D)
   setPackageInstalled bottle vkd3dProtonPackage (desired == DxvkAndVkd3dProton)
+
+-- | Base names (without ".dll") of the DLLs that need a Wine "native" DLL
+-- override for a bottle to actually behave as "state" claims. Placing the
+-- DLL file alone (as 'setDirect3DWrapperState' does) is not enough: Wine's
+-- default load order prefers its own builtin implementation for these
+-- specific DLLs regardless of what's on disk in system32/syswow64 -- the
+-- same reason winetricks' own "dxvk" verb sets a
+-- "HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides" registry entry after
+-- copying the DLLs. See "Bottle.Logic.Process.getWineOverrides", which
+-- turns this into a WINEDLLOVERRIDES environment variable instead of
+-- touching the registry.
+direct3DWrapperOverrideDllNames :: Direct3DWrapperState -> [String]
+direct3DWrapperOverrideDllNames WineD3D             = []
+direct3DWrapperOverrideDllNames Dxvk                = dllBaseNames dxvkPackage
+direct3DWrapperOverrideDllNames DxvkAndVkd3dProton  =
+  dllBaseNames dxvkPackage ++ dllBaseNames vkd3dProtonPackage
+
+dllBaseNames :: WrapperPackage -> [String]
+dllBaseNames pkg = map dropExtension (wrapperDllNames pkg)

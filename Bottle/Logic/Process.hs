@@ -9,28 +9,48 @@ module Bottle.Logic.Process
   ) where
 
 import Bottle.Types
+import Bottle.Logic.Direct3dWrappers (getDirect3DWrapperState, direct3DWrapperOverrideDllNames)
 import System.Process.Typed
 import System.Environment (getEnvironment)
 import System.Directory (canonicalizePath)
 import System.Exit (ExitCode(..))
+import Data.List (intercalate)
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 
+-- | WINEDLLOVERRIDES entries needed for Wine to actually load DXVK's/
+-- vkd3d-proton's DLLs instead of its own builtin Direct3D implementation
+-- for them (see Bottle.Logic.Direct3dWrappers.direct3DWrapperOverrideDllNames
+-- for why placing the DLL file alone isn't enough). Only meaningful for
+-- System Wine bottles -- Proton manages its own DXVK/vkd3d-proton
+-- independently, so we leave it alone there.
+getDirect3DOverrideEnv :: Bottle -> IO [(String, String)]
+getDirect3DOverrideEnv bottle = case runner bottle of
+    Proton _   -> pure []
+    SystemWine -> do
+        state <- getDirect3DWrapperState bottle
+        case direct3DWrapperOverrideDllNames state of
+            []    -> pure []
+            names -> pure [("WINEDLLOVERRIDES", intercalate "," names ++ "=native")]
+
 -- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
-getWineOverrides :: Bottle -> [(String, String)]
-getWineOverrides Bottle{..} =
-    [ ("WINEPREFIX", bottlePath)
-    , ("WINEARCH", archToString arch)
-    ] ++ case runner of
+getWineOverrides :: Bottle -> IO [(String, String)]
+getWineOverrides bottle@Bottle{..} = do
+    direct3DOverrideEnv <- getDirect3DOverrideEnv bottle
+    pure $
+      [ ("WINEPREFIX", bottlePath)
+      , ("WINEARCH", archToString arch)
+      ] ++ (case runner of
                -- PRESSURE_VESSEL_SYSTEMD_SCOPE places the game into a
                -- systemd --user scope (see killProtonProcesses); without
                -- it, reliably killing Proton processes isn't possible.
                Proton p -> [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
-               _ -> []
+               _ -> [])
+        ++ direct3DOverrideEnv
 
 -- | Erstellt die Umgebungsvariablen für Wine/Proton
 getMergedWineEnv :: Bottle -> IO [(String, String)]
 getMergedWineEnv bottle = do
-    let wineSpecificEnv = getWineOverrides bottle
+    wineSpecificEnv <- getWineOverrides bottle
     let overrideKeys = map fst wineSpecificEnv
 
     currentEnv <- getEnvironment
