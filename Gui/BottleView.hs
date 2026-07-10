@@ -256,10 +256,9 @@ buildBottleView window bottle stack refreshCallback = do
   #setChild clamp (Just contentBox)
   
   -- NEU: Runner-Information anzeigen mit Änderungs-Button
-  runnerSectionBox <- new Gtk.Box 
+  runnerSectionBox <- new Gtk.Box
     [ #orientation := Gtk.OrientationHorizontal
     , #spacing := 8
-    , #halign := Gtk.AlignStart
     , #marginBottom := 15
     ]
   #append contentBox runnerSectionBox
@@ -298,8 +297,12 @@ buildBottleView window bottle stack refreshCallback = do
   #append runnerInfoBox runnerTypeLabel
   
   -- Änderungs-Button
-  changeRunnerBtn <- new Gtk.Button 
+  changeRunnerBtnContent <- new Adw.ButtonContent
     [ #iconName := "edit-symbolic"
+    , #label := tr "Change Windows Runner"
+    ]
+  changeRunnerBtn <- new Gtk.Button
+    [ #child := changeRunnerBtnContent
     , #tooltipText := tr "Change Runner"
     , #valign := Gtk.AlignCenter
     , #cssClasses := ["flat"]
