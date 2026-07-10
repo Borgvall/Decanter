@@ -40,6 +40,7 @@
             pkgs.wrapGAppsHook4
             pkgs.gobject-introspection
             pkgs.copyDesktopItems
+            pkgs.procps # pgrep, used by the System Wine kill test
           ];
 
           buildInputs = (oldAttrs.buildInputs or []) ++ [
