@@ -46,7 +46,12 @@
           # attributes so they're already environment variables during
           # checkPhase (where the test suite runs); preFixup below
           # additionally exposes them to the installed binary at runtime.
-          DECANTER_DXVK_PATH = "${pkgs.dxvk}";
+          #
+          # "pkgs.dxvk" is a multi-output derivation whose *default* output
+          # is just a "setup_dxvk.sh" wrapper script -- no actual DLLs. The
+          # compiled Windows DLLs (x32/x64 directories) live in its separate
+          # "bin" output, "pkgs.dxvk.bin".
+          DECANTER_DXVK_PATH = "${pkgs.dxvk.bin}";
           DECANTER_VKD3D_PROTON_PATH = "${vkd3dProtonDecanter}";
 
           nativeBuildInputs = (oldAttrs.nativeBuildInputs or []) ++ [
@@ -66,7 +71,7 @@
 
           preFixup = (oldAttrs.preFixup or "") + ''
             gappsWrapperArgs+=(--prefix PATH : "${pkgs.lib.makeBinPath runtimeDeps}")
-            gappsWrapperArgs+=(--set DECANTER_DXVK_PATH "${pkgs.dxvk}")
+            gappsWrapperArgs+=(--set DECANTER_DXVK_PATH "${pkgs.dxvk.bin}")
             gappsWrapperArgs+=(--set DECANTER_VKD3D_PROTON_PATH "${vkd3dProtonDecanter}")
           '';
 
@@ -86,7 +91,7 @@
           # So "cabal test" can find DXVK/vkd3d-proton the same way the
           # packaged build does.
           shellHook = ''
-            export DECANTER_DXVK_PATH="${pkgs.dxvk}"
+            export DECANTER_DXVK_PATH="${pkgs.dxvk.bin}"
             export DECANTER_VKD3D_PROTON_PATH="${vkd3dProtonDecanter}"
           '';
 
