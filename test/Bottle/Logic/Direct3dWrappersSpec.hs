@@ -60,7 +60,7 @@ assertDirect3DWrapperState bottle state = do
     Dxvk -> do
       isSymlinkedInBothDirs bottle "dxgi.dll" `shouldReturn` True
       isWineOwnInBothDirs bottle "d3d12.dll" `shouldReturn` True
-    Both -> do
+    DxvkAndVkd3dProton -> do
       isSymlinkedInBothDirs bottle "dxgi.dll" `shouldReturn` True
       isSymlinkedInBothDirs bottle "d3d12.dll" `shouldReturn` True
 
@@ -90,9 +90,12 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $
             -- every one of the 3 states' "already there" no-op and every
             -- one of the 6 possible transitions between distinct states is
             -- hit exactly once: no-op WineD3D, WineD3D->Dxvk, no-op Dxvk,
-            -- Dxvk->Both, no-op Both, Both->WineD3D, WineD3D->Both,
-            -- Both->Dxvk, Dxvk->WineD3D.
-            forM_ [WineD3D, Dxvk, Dxvk, Both, Both, WineD3D, Both, Dxvk, WineD3D] $ \state -> do
+            -- Dxvk->DxvkAndVkd3dProton, no-op DxvkAndVkd3dProton,
+            -- DxvkAndVkd3dProton->WineD3D, WineD3D->DxvkAndVkd3dProton,
+            -- DxvkAndVkd3dProton->Dxvk, Dxvk->WineD3D.
+            forM_ [ WineD3D, Dxvk, Dxvk, DxvkAndVkd3dProton, DxvkAndVkd3dProton
+                  , WineD3D, DxvkAndVkd3dProton, Dxvk, WineD3D
+                  ] $ \state -> do
               setDirect3DWrapperState bottle state
               assertDirect3DWrapperState bottle state
 

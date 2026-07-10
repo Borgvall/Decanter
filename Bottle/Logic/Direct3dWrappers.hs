@@ -28,7 +28,7 @@ import Control.Monad (forM_, when, unless)
 data Direct3DWrapperState
   = WineD3D -- ^ Wine's own built-in Direct3D implementation (the default).
   | Dxvk    -- ^ DXVK's Direct3D-to-Vulkan translation layer.
-  | Both    -- ^ DXVK and vkd3d-proton, in the only combination that works.
+  | DxvkAndVkd3dProton -- ^ DXVK and vkd3d-proton, the only combination that works.
   deriving (Show, Eq, Enum, Bounded, Read)
 
 -- | Describes one of the Nix-packaged DLL sets (DXVK, vkd3d-proton) that
@@ -173,7 +173,7 @@ getDirect3DWrapperState bottle = do
   pure $ case (dxvkInstalled, vkd3dProtonInstalled) of
     (False, _)    -> WineD3D
     (True, False) -> Dxvk
-    (True, True)  -> Both
+    (True, True)  -> DxvkAndVkd3dProton
 
 -- | Installs or removes DXVK's/vkd3d-proton's DLLs in "bottle" so that it
 -- ends up in "desired" state. Does nothing for a package that's already
@@ -181,4 +181,4 @@ getDirect3DWrapperState bottle = do
 setDirect3DWrapperState :: Bottle -> Direct3DWrapperState -> IO ()
 setDirect3DWrapperState bottle desired = do
   setPackageInstalled bottle dxvkPackage (desired /= WineD3D)
-  setPackageInstalled bottle vkd3dProtonPackage (desired == Both)
+  setPackageInstalled bottle vkd3dProtonPackage (desired == DxvkAndVkd3dProton)
