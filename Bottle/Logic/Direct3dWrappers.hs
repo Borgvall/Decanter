@@ -1,5 +1,4 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE OverloadedStrings #-}
 
 module Bottle.Logic.Direct3dWrappers
   ( Direct3DWrapperState(..)
