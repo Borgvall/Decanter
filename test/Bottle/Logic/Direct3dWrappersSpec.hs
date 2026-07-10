@@ -6,7 +6,7 @@ import Test.Hspec
 import Bottle.Logic.Direct3dWrappers
 import Bottle.Logic (getAvailableRunners, createBottleObject, createBottleLogic, deleteBottleLogic)
 import Bottle.Types
-import System.Directory (createDirectoryIfMissing, getCurrentDirectory, pathIsSymbolicLink)
+import System.Directory (createDirectoryIfMissing, getCurrentDirectory, pathIsSymbolicLink, removeFile, createFileLink)
 import System.Environment (setEnv, unsetEnv, lookupEnv)
 import System.FilePath ((</>))
 import Control.Exception (finally)
@@ -118,4 +118,43 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
             restoredD3d12 <- BS.readFile (system32Dll bottle "d3d12.dll")
             restoredDxgi `shouldBe` originalDxgi
             restoredD3d12 `shouldBe` originalD3d12
+            ) `finally` deleteBottleLogic bottle
+
+  describe "getDirect3DWrapperHealth / repairDirect3DWrapperState" $
+    it "detects an outdated/dangling symlink and repairs it back to valid" $ withTestEnvironment $ do
+      runners <- getAvailableRunners
+      maybeDxvkPath <- lookupEnv "DECANTER_DXVK_PATH"
+      maybeVkd3dProtonPath <- lookupEnv "DECANTER_VKD3D_PROTON_PATH"
+      case (SystemWine `elem` runners, maybeDxvkPath, maybeVkd3dProtonPath) of
+        (False, _, _) -> pendingWith "No system Wine installation found in this environment; not testable here."
+        (_, Nothing, _) -> pendingWith "DECANTER_DXVK_PATH is not set; enter the Nix dev shell to run this test."
+        (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
+        (True, Just _, Just _) -> do
+          bottle <- createBottleObject "Direct3dWrapperHealthTestBottle" Win64 SystemWine
+          createBottleLogic bottle
+
+          (do
+            setDirect3DWrapperState bottle DxvkAndVkd3dProton
+            getDirect3DWrapperHealth bottle `shouldReturn` WrapperValid
+
+            -- Simulate a symlink left over from an older Decanter/DXVK
+            -- version: still resolves to a real file, just not the one the
+            -- currently configured DECANTER_DXVK_PATH points at.
+            let dxgiPath = system32Dll bottle "dxgi.dll"
+                decoyPath = bottlePath bottle </> "decoy-dxgi.dll"
+            writeFile decoyPath "decoy"
+            removeFile dxgiPath
+            createFileLink decoyPath dxgiPath
+            getDirect3DWrapperHealth bottle `shouldReturn` WrapperOutdated
+
+            -- Simulate the store path having been garbage-collected since.
+            removeFile dxgiPath
+            createFileLink (bottlePath bottle </> "does-not-exist.dll") dxgiPath
+            getDirect3DWrapperHealth bottle `shouldReturn` WrapperDangling
+
+            -- Repairing must restore a healthy symlink without changing the
+            -- nominal state (still DxvkAndVkd3dProton).
+            repairDirect3DWrapperState bottle
+            getDirect3DWrapperHealth bottle `shouldReturn` WrapperValid
+            assertDirect3DWrapperState bottle DxvkAndVkd3dProton
             ) `finally` deleteBottleLogic bottle

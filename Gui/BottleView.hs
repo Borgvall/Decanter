@@ -18,7 +18,14 @@ import Text.Read (readMaybe)
 
 import Bottle.Types
 import Bottle.Logic
-import Bottle.Logic.Direct3dWrappers (Direct3DWrapperState(..), getDirect3DWrapperState, setDirect3DWrapperState)
+import Bottle.Logic.Direct3dWrappers
+  ( Direct3DWrapperState(..)
+  , getDirect3DWrapperState
+  , setDirect3DWrapperState
+  , WrapperHealth(..)
+  , getDirect3DWrapperHealth
+  , repairDirect3DWrapperState
+  )
 import Bottle.Logic.Snapshots (isSnapshotableBottle)
 import Logic.Translation (tr)
 import Gui.BottleSnapshotsView (buildSnapshotView)
@@ -167,15 +174,22 @@ direct3DWrapperLabel DxvkAndVkd3dProton  = tr "DXVK + vkd3d-proton"
 direct3DWrapperName :: Direct3DWrapperState -> T.Text
 direct3DWrapperName = T.pack . show
 
--- | Baut eine AdwToggleGroup (ein modernes, segmentiertes Umschalt-Widget),
--- mit der zwischen Wines eingebauter Direct3D-Implementierung, DXVK und DXVK
--- + vkd3d-proton umgeschaltet werden kann. Symlinken der DLLs ist eine reine
+-- | Baut die Direct3D-Sektion der Bottle-Ansicht. Bei "WrapperValid" eine
+-- AdwToggleGroup (ein modernes, segmentiertes Umschalt-Widget), mit der
+-- zwischen Wines eingebauter Direct3D-Implementierung, DXVK und DXVK +
+-- vkd3d-proton umgeschaltet werden kann. Symlinken der DLLs ist eine reine
 -- Dateisystem-Operation (keine externen Prozesse, keine spürbare
 -- Verzögerung), daher genügt ein synchroner Aufruf ohne Fortschrittsanzeige
 -- -- wie bei den übrigen schnellen Logic-Aufrufen in dieser Datei (z.B.
 -- changeBottleRunnerLogic).
-buildDirect3DWrapperSection :: Gtk.Box -> Bottle -> IO ()
-buildDirect3DWrapperSection contentBox bottle = do
+--
+-- Ist der Symlink veraltet oder defekt ("WrapperOutdated"/"WrapperDangling",
+-- siehe Bottle.Logic.Direct3dWrappers.getDirect3DWrapperHealth), wird die
+-- ToggleGroup durch einen einzelnen "Update"-Button ersetzt, der repariert
+-- und danach die ganze Ansicht neu lädt (damit Zustand und Health frisch neu
+-- ermittelt werden und -- bei Erfolg -- wieder die ToggleGroup erscheint).
+buildDirect3DWrapperSection :: Gtk.Window -> Gtk.Stack -> IO () -> WrapperHealth -> Gtk.Box -> Bottle -> IO ()
+buildDirect3DWrapperSection window stack refreshCallback health contentBox bottle = do
   currentState <- getDirect3DWrapperState bottle
 
   sectionBox <- new Gtk.Box
@@ -193,29 +207,50 @@ buildDirect3DWrapperSection contentBox bottle = do
     ]
   #append sectionBox sectionLabel
 
-  let tooltip = tr "For current games, \"DXVK + vkd3d-proton\" is the recommended setting. Otherwise it may not matter, or results can vary."
+  case health of
+    WrapperValid -> do
+      let tooltip = tr "For current games, \"DXVK + vkd3d-proton\" is the recommended setting. Otherwise it may not matter, or results can vary."
 
-  toggleGroup <- new Adw.ToggleGroup [ #halign := Gtk.AlignEnd ]
-  #append sectionBox toggleGroup
+      toggleGroup <- new Adw.ToggleGroup [ #halign := Gtk.AlignEnd ]
+      #append sectionBox toggleGroup
 
-  forM_ [WineD3D, Dxvk, DxvkAndVkd3dProton] $ \state -> do
-    toggle <- new Adw.Toggle
-      [ #name := direct3DWrapperName state
-      , #label := direct3DWrapperLabel state
-      ]
-    Adw.toggleSetTooltip toggle tooltip
-    Adw.toggleGroupAdd toggleGroup toggle
-  Adw.toggleGroupSetActiveName toggleGroup (Just (direct3DWrapperName currentState))
+      forM_ [WineD3D, Dxvk, DxvkAndVkd3dProton] $ \state -> do
+        toggle <- new Adw.Toggle
+          [ #name := direct3DWrapperName state
+          , #label := direct3DWrapperLabel state
+          ]
+        Adw.toggleSetTooltip toggle tooltip
+        Adw.toggleGroupAdd toggleGroup toggle
+      Adw.toggleGroupSetActiveName toggleGroup (Just (direct3DWrapperName currentState))
 
-  void $ on toggleGroup (PropertyNotify #activeName) $ \_pspec -> do
-    maybeName <- Adw.toggleGroupGetActiveName toggleGroup
-    case maybeName >>= readMaybe . T.unpack of
-      Nothing    -> pure ()
-      Just state -> do
-        result <- try (setDirect3DWrapperState bottle state) :: IO (Either SomeException ())
+      void $ on toggleGroup (PropertyNotify #activeName) $ \_pspec -> do
+        maybeName <- Adw.toggleGroupGetActiveName toggleGroup
+        case maybeName >>= readMaybe . T.unpack of
+          Nothing    -> pure ()
+          Just state -> do
+            result <- try (setDirect3DWrapperState bottle state) :: IO (Either SomeException ())
+            case result of
+              Left err -> putStrLn $ "Error changing Direct3D wrapper: " ++ show err
+              Right () -> pure ()
+
+    _ -> do
+      let updateTooltip = case health of
+            WrapperDangling ->
+              tr "The Direct3D wrapper's files are missing (e.g. removed by Nix garbage collection). Windows programs are blocked until this is repaired."
+            _ -> tr "A newer Direct3D wrapper version is available."
+
+      updateBtn <- new Gtk.Button
+        [ #label := tr "Update"
+        , #tooltipText := updateTooltip
+        , #halign := Gtk.AlignEnd
+        , #cssClasses := ["suggested-action"]
+        ]
+      void $ on updateBtn #clicked $ do
+        result <- try (repairDirect3DWrapperState bottle) :: IO (Either SomeException ())
         case result of
-          Left err -> putStrLn $ "Error changing Direct3D wrapper: " ++ show err
-          Right () -> pure ()
+          Left err -> putStrLn $ "Error repairing Direct3D wrapper: " ++ show err
+          Right () -> reloadBottleView window bottle stack refreshCallback
+      #append sectionBox updateBtn
 
 -- | Erstellt die Detailansicht für eine Bottle
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
@@ -258,7 +293,21 @@ buildBottleView window bottle stack refreshCallback = do
     , #valign := Gtk.AlignStart 
     ]
   #setChild clamp (Just contentBox)
-  
+
+  -- Gesundheit des Direct3D-Wrappers -- steuert sowohl die Direct3D-Sektion
+  -- unten als auch, ob Windows-Programme überhaupt gestartet werden dürfen
+  -- (siehe "wineAppsBlocked"). Für Proton-Bottles verwaltet Decanter DXVK/
+  -- vkd3d-proton nicht selbst, daher dort immer "WrapperValid".
+  direct3DHealth <- case runner bottle of
+    SystemWine -> getDirect3DWrapperHealth bottle
+    Proton _   -> pure WrapperValid
+  let wineAppsBlocked = direct3DHealth == WrapperDangling
+      blockedTooltip = tr "Blocked until the Direct3D wrapper is repaired (see above)."
+      blockIfWineAppsBlocked :: Gtk.IsWidget w => w -> IO ()
+      blockIfWineAppsBlocked widget = when wineAppsBlocked $ do
+        w <- Gtk.toWidget widget
+        set w [ #sensitive := False, #tooltipText := blockedTooltip ]
+
   -- NEU: Runner-Information anzeigen mit Änderungs-Button
   runnerSectionBox <- new Gtk.Box
     [ #orientation := Gtk.OrientationHorizontal
@@ -318,7 +367,7 @@ buildBottleView window bottle stack refreshCallback = do
   -- Direct3D-Wrapper (DXVK/vkd3d-proton) umschalten -- nur für System-Wine-
   -- Bottles: Proton bringt beides bereits selbst mit.
   case runner bottle of
-    SystemWine -> buildDirect3DWrapperSection contentBox bottle
+    SystemWine -> buildDirect3DWrapperSection window stack refreshCallback direct3DHealth contentBox bottle
     Proton _   -> pure ()
 
   let addBtn label tooltip cssClasses action = do
@@ -331,6 +380,7 @@ buildBottleView window bottle stack refreshCallback = do
   runBtn <- new Gtk.Button [ #label := tr "Run Executable / Installer", #cssClasses := ["suggested-action", "pill"], #halign := Gtk.AlignFill ]
   void $ on runBtn #clicked $ openExecutableFileDialog window $ runExecutable bottle
   #append contentBox runBtn
+  blockIfWineAppsBlocked runBtn
 
   -- Drop Zone
   dropZone <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #cssClasses := ["card", "view"], #heightRequest := 48, #valign := Gtk.AlignStart, #halign := Gtk.AlignFill, #marginTop := 5 ]
@@ -352,6 +402,7 @@ buildBottleView window bottle stack refreshCallback = do
           Nothing -> return False
   #addController dropZone dropTarget
   #append contentBox dropZone
+  blockIfWineAppsBlocked dropZone
 
   sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep1
@@ -401,6 +452,7 @@ buildBottleView window bottle stack refreshCallback = do
                 progBtn <- new Gtk.Button [ #label := name, #halign := Gtk.AlignFill, #tooltipText := T.pack path ]
                 void $ on progBtn #clicked $ runWindowsLnk bottle path
                 #append progBox progBtn
+                blockIfWineAppsBlocked progBtn
             set progExpander [ #expanded := True ]
 
   refreshBtn <- new Gtk.Button [ #iconName := "view-refresh-symbolic", #tooltipText := tr "Refresh program list", #valign := Gtk.AlignStart ]
@@ -414,11 +466,14 @@ buildBottleView window bottle stack refreshCallback = do
   -- Tools
   toolsLabel <- new Gtk.Label [ #label := tr "System Tools", #halign := Gtk.AlignStart, #cssClasses := ["heading"] ]
   #append contentBox toolsLabel
-  void $ addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle)
-  void $ addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle)
-  void $ addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (runUninstaller bottle)
+  addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle) >>= blockIfWineAppsBlocked
+  addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle) >>= blockIfWineAppsBlocked
+  addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (runUninstaller bottle) >>= blockIfWineAppsBlocked
   hasWinetricks <- isWinetricksAvailable
-  when hasWinetricks $ void $ addBtn (tr "Winetricks") (tr "Manage packages") [] (runWinetricks bottle)
+  when hasWinetricks $
+    addBtn (tr "Winetricks") (tr "Manage packages") [] (runWinetricks bottle) >>= blockIfWineAppsBlocked
+  -- Bleibt bewusst nicht gesperrt: öffnet nur den Linux-Dateimanager (xdg-open)
+  -- auf drive_c, startet also kein Wine-Programm.
   void $ addBtn (tr "Browse Files") (tr "Open drive_c") [] (runFileManager bottle)
   
   void $ addBtn (tr "Stop all Programs") (tr "Forcefully close all running processes") ["destructive-action"] $ showKillConfirmationDialog window bottle

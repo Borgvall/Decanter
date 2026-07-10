@@ -5,6 +5,9 @@ module Bottle.Logic.Direct3dWrappers
   , getDirect3DWrapperState
   , setDirect3DWrapperState
   , direct3DWrapperOverrideDllNames
+  , WrapperHealth(..)
+  , getDirect3DWrapperHealth
+  , repairDirect3DWrapperState
   ) where
 
 import Bottle.Types
@@ -14,12 +17,14 @@ import System.Directory
     , removeFile
     , renameFile
     , createFileLink
+    , getSymbolicLinkTarget
     )
 import System.Environment (lookupEnv)
 import System.FilePath ((</>), dropExtension)
 import System.IO.Error (isDoesNotExistError)
 import Control.Exception (catch)
 import Control.Monad (forM_, when, unless)
+import Data.List (isPrefixOf)
 
 -- | The supported states of a wine prefix's Direct3D-to-Vulkan translation
 -- setup. "vkd3d-proton only" (without DXVK) is deliberately not modeled:
@@ -182,6 +187,65 @@ setDirect3DWrapperState :: Bottle -> Direct3DWrapperState -> IO ()
 setDirect3DWrapperState bottle desired = do
   setPackageInstalled bottle dxvkPackage (desired /= WineD3D)
   setPackageInstalled bottle vkd3dProtonPackage (desired == DxvkAndVkd3dProton)
+
+-- | Health of a wrapper package's on-disk symlink relative to the Nix store
+-- path Decanter is currently configured to install from (see
+-- 'getPackageStorePath'). A symlink's target is a fixed absolute Nix store
+-- path baked in at install time -- it never follows a Decanter (and thus
+-- DXVK/vkd3d-proton) version upgrade on its own.
+data WrapperHealth
+  = WrapperValid    -- ^ Points at the currently configured Nix store path.
+  | WrapperOutdated -- ^ Points at a different, but still existing, Nix store path.
+  | WrapperDangling -- ^ Points at a Nix store path that no longer exists (e.g. garbage-collected).
+  deriving (Show, Eq)
+
+-- | Health of a single package's symlink in "dir". Assumes the package is
+-- actually supposed to be installed there; combine with
+-- 'getDirect3DWrapperState' (as 'getDirect3DWrapperHealth' does) if that
+-- isn't already known.
+getWrapperPackageHealth :: WrapperPackage -> FilePath -> IO WrapperHealth
+getWrapperPackageHealth pkg dir = do
+  let markerPath = dir </> wrapperMarkerDll pkg
+  -- doesFileExist follows symlinks, so this is False for a dangling one.
+  targetExists <- doesFileExist markerPath
+  if not targetExists
+    then pure WrapperDangling
+    else do
+      currentStorePath <- getPackageStorePath pkg
+      linkTarget <- getSymbolicLinkTarget markerPath
+      pure $ if currentStorePath `isPrefixOf` linkTarget then WrapperValid else WrapperOutdated
+
+-- | Worst-of health across whichever packages "bottle"'s current Direct3D
+-- wrapper state actually has installed. 'WineD3D' has no symlinks at all and
+-- is therefore always 'WrapperValid'.
+getDirect3DWrapperHealth :: Bottle -> IO WrapperHealth
+getDirect3DWrapperHealth bottle = do
+  state <- getDirect3DWrapperState bottle
+  healths <- mapM (\pkg -> getWrapperPackageHealth pkg (system32Dir bottle)) (packagesFor state)
+  pure (worstHealth healths)
+  where
+    packagesFor WineD3D            = []
+    packagesFor Dxvk               = [dxvkPackage]
+    packagesFor DxvkAndVkd3dProton = [dxvkPackage, vkd3dProtonPackage]
+
+    worstHealth healths
+      | WrapperDangling `elem` healths = WrapperDangling
+      | WrapperOutdated `elem` healths = WrapperOutdated
+      | otherwise                     = WrapperValid
+
+-- | Unconditionally re-symlinks whichever packages "bottle"'s current
+-- Direct3D wrapper state calls for, pointing them at the currently
+-- configured Nix store paths. Unlike 'setDirect3DWrapperState', this skips
+-- the "already installed" shortcut in 'setPackageInstalled' -- which is
+-- exactly what makes it able to repair an outdated or dangling symlink:
+-- 'installDll' always relinks unconditionally once actually invoked.
+repairDirect3DWrapperState :: Bottle -> IO ()
+repairDirect3DWrapperState bottle = do
+  state <- getDirect3DWrapperState bottle
+  case state of
+    WineD3D            -> pure ()
+    Dxvk               -> installPackage bottle dxvkPackage
+    DxvkAndVkd3dProton  -> installPackage bottle dxvkPackage >> installPackage bottle vkd3dProtonPackage
 
 -- | Base names (without ".dll") of the DLLs that need a Wine "native" DLL
 -- override for a bottle to actually behave as "state" claims. Placing the
