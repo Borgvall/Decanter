@@ -20,6 +20,7 @@ executable decanter
                     , Bottle.Logic
                     , Bottle.Logic.Process
                     , Bottle.Logic.Snapshots
+                    , Bottle.Logic.Direct3dWrappers
                     , Logic.SystemTool
                     , Logic.Translation
                     , Gui.BottleView
@@ -61,12 +62,14 @@ test-suite decanter-test
     other-modules:    Bottle.Logic
                     , Bottle.Logic.Process
                     , Bottle.Logic.Snapshots
+                    , Bottle.Logic.Direct3dWrappers
                     , Bottle.Types
                     , Logic.SystemTool
                     , Logic.Translation
                     , Bottle.LogicSpec
                     , Bottle.Logic.ProcessSpec
                     , Bottle.Logic.SnapshotsSpec
+                    , Bottle.Logic.Direct3dWrappersSpec
                     , Logic.SystemToolSpec
                     , Data.Vdf
     

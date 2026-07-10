@@ -35,6 +35,14 @@
         packages.default = rawDecanterPkg.overrideAttrs (oldAttrs: {
           doCheck = true;
 
+          # Nix store path of the "dxvk" package, used by
+          # Bottle.Logic.Direct3dWrappers to symlink DXVK's DLLs into a
+          # wine prefix. Set as a plain derivation attribute so it's
+          # already an environment variable during checkPhase (where the
+          # test suite runs); preFixup below additionally exposes it to the
+          # installed binary at runtime.
+          DECANTER_DXVK_PATH = "${pkgs.dxvk}";
+
           nativeBuildInputs = (oldAttrs.nativeBuildInputs or []) ++ [
             pkgs.pkg-config
             pkgs.wrapGAppsHook4
@@ -52,6 +60,7 @@
 
           preFixup = (oldAttrs.preFixup or "") + ''
             gappsWrapperArgs+=(--prefix PATH : "${pkgs.lib.makeBinPath runtimeDeps}")
+            gappsWrapperArgs+=(--set DECANTER_DXVK_PATH "${pkgs.dxvk}")
           '';
 
           postInstall = (oldAttrs.postInstall or "") + ''
@@ -65,7 +74,12 @@
 
         devShells.default = pkgs.haskellPackages.shellFor {
           packages = p: [ rawDecanterPkg ];
-          withHoogle = true; 
+          withHoogle = true;
+
+          # So "cabal test" can find DXVK the same way the packaged build does.
+          shellHook = ''
+            export DECANTER_DXVK_PATH="${pkgs.dxvk}"
+          '';
 
           nativeBuildInputs = with pkgs; [
             cabal-install
