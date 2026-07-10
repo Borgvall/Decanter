@@ -12,11 +12,12 @@ import Data.GI.Base
 import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
 import qualified Data.Text as T
-import Control.Monad (forM_, when, void)
+import Control.Monad (forM, forM_, when, void)
 import System.FilePath (takeBaseName)
 
 import Bottle.Types
 import Bottle.Logic
+import Bottle.Logic.Direct3dWrappers (Direct3DWrapperState(..), getDirect3DWrapperState, setDirect3DWrapperState)
 import Bottle.Logic.Snapshots (isSnapshotableBottle)
 import Logic.Translation (tr)
 import Gui.BottleSnapshotsView (buildSnapshotView)
@@ -149,6 +150,65 @@ runnerTypeToString :: RunnerType -> T.Text
 runnerTypeToString SystemWine = tr "System Wine"
 runnerTypeToString (Proton path) = T.pack ("Proton (" ++ takeBaseName path ++ ")")
 
+-- | Anzeigename und Beschreibung für einen Direct3D-Wrapper-Zustand.
+direct3DWrapperLabel :: Direct3DWrapperState -> T.Text
+direct3DWrapperLabel WineD3D             = tr "Wine (built-in)"
+direct3DWrapperLabel Dxvk                = tr "DXVK"
+direct3DWrapperLabel DxvkAndVkd3dProton  = tr "DXVK + vkd3d-proton"
+
+-- | Baut eine Gruppe von Radiobuttons, mit der zwischen Wines eingebauter
+-- Direct3D-Implementierung, DXVK und DXVK + vkd3d-proton umgeschaltet werden
+-- kann. Symlinken der DLLs ist eine reine Dateisystem-Operation (keine
+-- externen Prozesse, keine spürbare Verzögerung), daher genügt ein
+-- synchroner Aufruf ohne Fortschrittsanzeige -- wie bei den übrigen
+-- schnellen Logic-Aufrufen in dieser Datei (z.B. changeBottleRunnerLogic).
+buildDirect3DWrapperSection :: Gtk.Box -> Bottle -> IO ()
+buildDirect3DWrapperSection contentBox bottle = do
+  currentState <- getDirect3DWrapperState bottle
+
+  sectionBox <- new Gtk.Box
+    [ #orientation := Gtk.OrientationVertical
+    , #spacing := 4
+    , #marginBottom := 15
+    ]
+  #append contentBox sectionBox
+
+  sectionLabel <- new Gtk.Label
+    [ #label := tr "Direct3D"
+    , #halign := Gtk.AlignStart
+    , #cssClasses := ["dim-label", "caption"]
+    ]
+  #append sectionBox sectionLabel
+
+  radiosBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 4 ]
+  #append sectionBox radiosBox
+
+  let tooltip = tr "For current games, \"DXVK + vkd3d-proton\" is the recommended setting. Otherwise it may not matter, or results can vary."
+
+  radioButtons <- forM [WineD3D, Dxvk, DxvkAndVkd3dProton] $ \state -> do
+    radioBtn <- new Gtk.CheckButton
+      [ #label := direct3DWrapperLabel state
+      , #active := (state == currentState)
+      , #tooltipText := tooltip
+      ]
+    #append radiosBox radioBtn
+    return (state, radioBtn)
+
+  -- Alle Buttons derselben Gruppe zuordnen, damit sie sich wie Radiobuttons
+  -- gegenseitig ausschließen.
+  case radioButtons of
+    ((_, leader) : rest) -> forM_ rest $ \(_, btn) -> Gtk.checkButtonSetGroup btn (Just leader)
+    []                   -> pure ()
+
+  forM_ radioButtons $ \(state, radioBtn) ->
+    void $ on radioBtn #toggled $ do
+      isActive <- get radioBtn #active
+      when isActive $ do
+        result <- try (setDirect3DWrapperState bottle state) :: IO (Either SomeException ())
+        case result of
+          Left err -> putStrLn $ "Error changing Direct3D wrapper: " ++ show err
+          Right () -> pure ()
+
 -- | Erstellt die Detailansicht für eine Bottle
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildBottleView window bottle stack refreshCallback = do
@@ -240,11 +300,17 @@ buildBottleView window bottle stack refreshCallback = do
     , #valign := Gtk.AlignCenter
     , #cssClasses := ["flat"]
     ]
-  void $ on changeRunnerBtn #clicked $ 
+  void $ on changeRunnerBtn #clicked $
     changeBottleRunner window bottle stack refreshCallback
   #append runnerSectionBox changeRunnerBtn
-  
-  let addBtn label tooltip cssClasses action = do 
+
+  -- Direct3D-Wrapper (DXVK/vkd3d-proton) umschalten -- nur für System-Wine-
+  -- Bottles: Proton bringt beides bereits selbst mit.
+  case runner bottle of
+    SystemWine -> buildDirect3DWrapperSection contentBox bottle
+    Proton _   -> pure ()
+
+  let addBtn label tooltip cssClasses action = do
         btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip, #cssClasses := cssClasses, #halign := Gtk.AlignFill ]
         void $ on btn #clicked action
         #append contentBox btn
