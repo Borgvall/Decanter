@@ -8,11 +8,13 @@ module Cli
   , runStart
   ) where
 
-import Data.List (sortOn)
+import Data.List (isPrefixOf, sortOn)
+import Data.Maybe (listToMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Options.Applicative
+import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.FilePath (takeBaseName)
 import System.IO (hPutStrLn, stderr)
@@ -60,8 +62,48 @@ commandParser = subcommands <|> pure (Gui Nothing)
     listAppsParser = ListApps <$> bottleArg
     startParser = Start <$> bottleArg <*> appArg
 
-    bottleArg = T.pack <$> argument str (metavar "BOTTLE" <> help "Name of the bottle")
-    appArg = T.pack <$> argument str (metavar "APPLICATION" <> help "Name of the application (start menu entry)")
+    bottleArg = T.pack <$> argument str
+      (metavar "BOTTLE" <> help "Name of the bottle" <> completer bottleCompleter)
+    appArg = T.pack <$> argument str
+      (metavar "APPLICATION" <> help "Name of the application (start menu entry)" <> completer appCompleter)
+
+-- | Shell-completion source for BOTTLE arguments: lists the existing
+-- bottles live, filtered by the partial word already typed.
+bottleCompleter :: Completer
+bottleCompleter = listIOCompleter $ do
+  bottles <- listExistingBottles
+  return $ map T.unpack (sortOn id (map bottleName bottles))
+
+-- | Shell-completion source for the APPLICATION argument of 'start'.
+-- 'Completer' only hands us the partial word being completed, not the
+-- BOTTLE argument that was already typed before it, so we recover it by
+-- inspecting the raw "--bash-completion-word" arguments that the
+-- generated shell completion script passes to this very process (the
+-- documented optparse-applicative technique for context-sensitive
+-- completions).
+appCompleter :: Completer
+appCompleter = mkCompleter $ \word -> do
+  mBottleName <- precedingStartBottleArg
+  case mBottleName of
+    Nothing -> return []
+    Just bottleNm -> do
+      bottles <- listExistingBottles
+      case findBottleByName (T.pack bottleNm) bottles of
+        Nothing -> return []
+        Just bottle -> do
+          lnkPaths <- findWineStartMenuLnks bottle
+          return $ filter (isPrefixOf word) (map takeBaseName lnkPaths)
+
+-- | Extracts the BOTTLE word that follows "start" out of this process's own
+-- argv, as passed by the generated bash/zsh/fish completion scripts.
+precedingStartBottleArg :: IO (Maybe String)
+precedingStartBottleArg = do
+  args <- getArgs
+  return $ listToMaybe (drop 1 (dropWhile (/= "start") (completionWords args)))
+  where
+    completionWords ("--bash-completion-word" : w : rest) = w : completionWords rest
+    completionWords (_ : rest) = completionWords rest
+    completionWords [] = []
 
 bottleNotFound :: Text -> IO a
 bottleNotFound name = do

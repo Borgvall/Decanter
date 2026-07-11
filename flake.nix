@@ -60,6 +60,7 @@
             pkgs.gobject-introspection
             pkgs.copyDesktopItems
             pkgs.procps # pgrep, used by the System Wine kill test
+            pkgs.installShellFiles
           ];
 
           buildInputs = (oldAttrs.buildInputs or []) ++ [
@@ -78,9 +79,17 @@
           postInstall = (oldAttrs.postInstall or "") + ''
             mkdir -p $out/share/applications
             cp data/com.github.borgvall.decanter.desktop $out/share/applications/
-            
+
             mkdir -p $out/share/icons/hicolor/scalable/apps
             cp data/com.github.borgvall.decanter.svg $out/share/icons/hicolor/scalable/apps/
+
+            # optparse-applicative generates the completion scripts itself;
+            # we just have the freshly built binary print them and install
+            # them via installShellFiles's usual mechanism.
+            installShellCompletion --cmd decanter \
+              --bash <($out/bin/decanter --bash-completion-script $out/bin/decanter) \
+              --fish <($out/bin/decanter --fish-completion-script $out/bin/decanter) \
+              --zsh <($out/bin/decanter --zsh-completion-script $out/bin/decanter)
           '';
         });
 
