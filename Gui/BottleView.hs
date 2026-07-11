@@ -178,9 +178,10 @@ applicationMenuCategories =
 -- einer Änderung die Programmliste neu aufbauen, damit der Button seinen
 -- Zustand aktualisiert. Bleibt bewusst ungesperrt, auch wenn Windows-
 -- Programme aktuell blockiert sind (siehe "Browse Files" weiter unten): es
--- wird nur eine ".desktop"-Datei geschrieben/gelöscht, kein Wine gestartet.
-buildAppMenuButton :: Bottle -> T.Text -> IO () -> IO Gtk.Widget
-buildAppMenuButton bottle appName onChanged = do
+-- wird nur eine ".desktop"-Datei geschrieben/gelöscht, kein Wine-Programm
+-- selbst gestartet.
+buildAppMenuButton :: Bottle -> T.Text -> FilePath -> IO () -> IO Gtk.Widget
+buildAppMenuButton bottle appName lnkPath onChanged = do
   alreadyAdded <- isInApplicationMenu bottle appName
   if alreadyAdded
     then do
@@ -225,10 +226,18 @@ buildAppMenuButton bottle appName onChanged = do
 
       forM_ applicationMenuCategories $ \category -> do
         row <- new Adw.ActionRow [ #title := category, #activatable := True ]
+        -- addToApplicationMenu extrahiert dabei per Wine/winemenubuilder ein
+        -- Icon (siehe Bottle.Logic.Process.extractAppIcon) und kann daher
+        -- ein paar Sekunden brauchen -- läuft deshalb (wie das
+        -- Bottle-Löschen oben) in einem eigenen Thread, damit die UI nicht
+        -- kurz einfriert.
         void $ on row #activated $ do
           #popdown popover
-          addToApplicationMenu bottle appName category
-          onChanged
+          void $ async $ do
+            addToApplicationMenu bottle appName lnkPath category
+            GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+              onChanged
+              return False
         #add categoryGroup row
 
       #setPopover menuBtn (Just popover)
@@ -516,7 +525,7 @@ buildBottleView window bottle stack refreshCallback = do
                 #append rowBox progBtn
                 blockIfWineAppsBlocked progBtn
 
-                menuBtn <- buildAppMenuButton bottle name refreshPrograms
+                menuBtn <- buildAppMenuButton bottle name path refreshPrograms
                 #append rowBox menuBtn
 
                 #append progBox rowBox
