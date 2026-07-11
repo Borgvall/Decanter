@@ -167,10 +167,12 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
             ) `finally` deleteBottleLogic bottle
 
   describe "getDirect3DWrapperStatus / isBottleReadyForWindowsApps" $
-    it "reports a Proton bottle as unmanaged and always ready" $ do
+    it "reports a Proton bottle as unmanaged and always ready" $ withTestEnvironment $ do
       -- Proton brings its own DXVK/vkd3d-proton, so this must hold without
-      -- ever touching the filesystem or requiring an actual Proton install
-      -- -- createBottleObject only builds the Bottle record.
+      -- requiring an actual Proton install -- createBottleObject only
+      -- builds the Bottle record and doesn't create the prefix itself, but
+      -- still needs a writable XDG_DATA_HOME (see 'withTestEnvironment')
+      -- for its own bookkeeping directory.
       bottle <- createBottleObject "Direct3dWrapperStatusProtonTestBottle" Win64 (Proton "/Test/Path")
       getDirect3DWrapperStatus bottle `shouldReturn` WrapperNotManaged
       isBottleReadyForWindowsApps bottle `shouldReturn` True
