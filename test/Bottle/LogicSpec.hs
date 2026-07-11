@@ -137,9 +137,16 @@ spec = do
             createDirectoryIfMissing True path
             return $ Bottle "MenuTestBottle" path SystemWine Win64
 
+      -- Ein absichtlich nicht existierender .lnk-Pfad genügt für die meisten
+      -- dieser Tests: die Icon-Extraktion (siehe Bottle.Logic.Process.
+      -- extractAppIcon) ist best effort und schlägt dafür einfach graceful
+      -- fehl (kein "Icon="-Feld), statt addToApplicationMenu insgesamt
+      -- scheitern zu lassen.
+      let bogusLnkPath = "/nonexistent/MyGame.lnk"
+
       it "creates a .desktop entry inside the bottle and a symlink pointing at its menu dir" $ do
         bottle <- makeMenuTestBottle
-        addToApplicationMenu bottle "MyGame" "Game"
+        addToApplicationMenu bottle "MyGame" bogusLnkPath "Game"
 
         isInApplicationMenu bottle "MyGame" `shouldReturn` True
 
@@ -152,17 +159,24 @@ spec = do
         linkTarget <- getSymbolicLinkTarget (appsDir </> "decanter-MenuTestBottle")
         linkTarget `shouldBe` (bottlePath bottle </> "menu")
 
+      it "omits the Icon= field when icon extraction fails (best effort)" $ do
+        bottle <- makeMenuTestBottle
+        addToApplicationMenu bottle "MyGame" bogusLnkPath "Game"
+
+        content <- readFile (bottlePath bottle </> "menu" </> "MyGame.desktop")
+        content `shouldNotContain` "Icon="
+
       it "reuses the existing symlink for a second application in the same bottle" $ do
         bottle <- makeMenuTestBottle
-        addToApplicationMenu bottle "FirstApp" "Game"
-        addToApplicationMenu bottle "SecondApp" "Utility"
+        addToApplicationMenu bottle "FirstApp" bogusLnkPath "Game"
+        addToApplicationMenu bottle "SecondApp" bogusLnkPath "Utility"
 
         isInApplicationMenu bottle "FirstApp" `shouldReturn` True
         isInApplicationMenu bottle "SecondApp" `shouldReturn` True
 
       it "removeFromApplicationMenu removes the entry again" $ do
         bottle <- makeMenuTestBottle
-        addToApplicationMenu bottle "MyApp" "Utility"
+        addToApplicationMenu bottle "MyApp" bogusLnkPath "Utility"
         isInApplicationMenu bottle "MyApp" `shouldReturn` True
 
         removeFromApplicationMenu bottle "MyApp"

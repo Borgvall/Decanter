@@ -7,7 +7,7 @@ import Bottle.Logic.Process
 import Bottle.Logic (getAvailableRunners, createBottleObject, createBottleLogic, deleteBottleLogic, runCmd)
 import Bottle.Logic.Direct3dWrappers (Direct3DWrapperState(..), setDirect3DWrapperState)
 import Bottle.Types
-import System.Directory (createDirectoryIfMissing, findExecutable, getCurrentDirectory)
+import System.Directory (createDirectoryIfMissing, findExecutable, getCurrentDirectory, removePathForcibly)
 import System.FilePath ((</>))
 import System.Environment (setEnv, unsetEnv, lookupEnv)
 import qualified System.Process.Typed as PT
@@ -144,6 +144,31 @@ spec = describe "Bottle.Logic.Process" $ do
             resetEnv <- getMergedWineEnv bottle
             lookup "WINEDLLOVERRIDES" resetEnv `shouldBe` Just "winemenubuilder.exe="
             ) `finally` deleteBottleLogic bottle
+
+  describe "extractAppIcon" $ do
+    it "returns False and creates no file for a non-existent .lnk path" $ withTestEnvironment $ do
+      runners <- getAvailableRunners
+      case SystemWine `elem` runners of
+        False -> pendingWith "No system Wine installation found in this environment; not testable here."
+        True -> do
+          let bottle = Bottle "Test" "/tmp/decanter-test-icon-extraction-prefix" SystemWine Win64
+          let outputPath = "/tmp/decanter-test-icon-extraction-output.png"
+
+          removePathForcibly outputPath
+          succeeded <- extractAppIcon bottle "/nonexistent/Some App.lnk" outputPath
+            `finally` removePathForcibly outputPath
+
+          succeeded `shouldBe` False
+
+    -- The success path (resolving a real .lnk to its .exe and extracting a
+    -- real icon resource via WIC) would need a genuine Windows shortcut
+    -- file inside a real bottle; constructing one is impractical in a unit
+    -- test. Verified manually instead (see the commit this test was added
+    -- in): extracting the icon of a real installed program's .lnk produces
+    -- a valid PNG both for System Wine and for Proton (via umu-run), as
+    -- long as the output path lives inside the bottle's own WINEPREFIX
+    -- (Proton's pressure-vessel sandbox does not expose arbitrary host
+    -- paths like /tmp).
 
   describe "md5Hex" $ do
     it "matches known MD5 test vectors" $ do

@@ -6,15 +6,17 @@ module Bottle.Logic.Process
   , killBottleProcesses
   , findBottleScopes
   , md5Hex
+  , extractAppIcon
   ) where
 
 import Bottle.Types
 import Bottle.Logic.Direct3dWrappers (getDirect3DWrapperState, direct3DWrapperOverrideDllNames)
 import System.Process.Typed
 import System.Environment (getEnvironment)
-import System.Directory (canonicalizePath)
+import System.Directory (canonicalizePath, doesFileExist)
 import System.Exit (ExitCode(..))
 import Data.List (intercalate)
+import Control.Exception (try, IOException)
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 
 -- | The WINEDLLOVERRIDES entry for winemenubuilder.exe needed to stop Wine
@@ -64,10 +66,11 @@ getWineOverrides bottle@Bottle{..} = do
                _ -> [])
         ++ wineDllOverridesEnv
 
--- | Erstellt die Umgebungsvariablen für Wine/Proton
-getMergedWineEnv :: Bottle -> IO [(String, String)]
-getMergedWineEnv bottle = do
-    wineSpecificEnv <- getWineOverrides bottle
+-- | Merged bottelspezifische Wine-Umgebungsvariablen mit der Host-Umgebung
+-- (diese haben Vorrang vor bereits gesetzten, gleichnamigen Variablen).
+-- Von 'getMergedWineEnv' und 'getIconExtractionWineEnv' gemeinsam genutzt.
+mergeWithHostEnv :: [(String, String)] -> IO [(String, String)]
+mergeWithHostEnv wineSpecificEnv = do
     let overrideKeys = map fst wineSpecificEnv
 
     currentEnv <- getEnvironment
@@ -80,6 +83,49 @@ getMergedWineEnv bottle = do
     let filteredEnv = filter (\(k, _) -> k `notElem` overrideKeys) eaHack
 
     return (wineSpecificEnv ++ filteredEnv)
+
+-- | Erstellt die Umgebungsvariablen für Wine/Proton
+getMergedWineEnv :: Bottle -> IO [(String, String)]
+getMergedWineEnv bottle = getWineOverrides bottle >>= mergeWithHostEnv
+
+-- | Wine-Umgebung speziell für die Icon-Extraktion via winemenubuilder.exe
+-- (siehe 'extractAppIcon'). Bewusst eine eigene, parallele Funktion statt
+-- eines Bool-Flags durch 'getWineOverrides'/'getMergedWineEnv': diese setzen
+-- für System-Wine-Bottles immer WINEDLLOVERRIDES=winemenubuilder.exe=
+-- (siehe 'menuBuilderOverrideEntry'), was den hier benötigten Aufruf von
+-- winemenubuilder.exe selbst blockieren würde. Da Icon-Extraktion kein
+-- Direct3D braucht, lassen wir WINEDLLOVERRIDES hier komplett weg, statt
+-- die überall sonst verwendeten Funktionen mit einem Sonderfall zu belasten.
+getIconExtractionWineEnv :: Bottle -> IO [(String, String)]
+getIconExtractionWineEnv Bottle{..} =
+    mergeWithHostEnv $
+      [ ("WINEPREFIX", bottlePath)
+      , ("WINEARCH", archToString arch)
+      ] ++ case runner of
+             Proton p -> [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
+             _        -> []
+
+-- | Extrahiert das Icon einer Start-Menü-Applikation (".lnk") als PNG-Datei,
+-- über Wines eigenes winemenubuilder.exe ("-t"-Flag, "thumbnail_lnk"): löst
+-- den .lnk-Link auf die eigentliche .exe auf und schreibt das gefundene
+-- Icon-Ressource per WIC, vollständig headless (kein Display nötig).
+--
+-- Läuft -- anders als 'runCmd' -- synchron: Aufrufer brauchen die fertige
+-- Datei direkt im Anschluss (z.B. um sie in eine .desktop-Datei
+-- einzutragen). Schlägt die Extraktion fehl, wird False zurückgegeben statt
+-- eine Exception zu werfen -- Aufrufer behandeln das als Best-Effort-Schritt,
+-- der z.B. das Hinzufügen eines Anwendungsmenü-Eintrags nicht verhindern soll.
+extractAppIcon :: Bottle -> FilePath -> FilePath -> IO Bool
+extractAppIcon bottle lnkPath outputPngPath = do
+    env <- getIconExtractionWineEnv bottle
+    let args = ["winemenubuilder.exe", "-t", lnkPath, outputPngPath]
+        cmd = case runner bottle of
+                Proton _   -> "umu-run"
+                SystemWine -> "wine"
+    result <- try (runProcess (setEnv env (proc cmd args))) :: IO (Either IOException ExitCode)
+    case result of
+      Right ExitSuccess -> doesFileExist outputPngPath
+      _                 -> pure False
 
 -- | Stops all processes in the bottle.
 -- This should happen synchronously so that subsequent operations (like deletion) are safe.

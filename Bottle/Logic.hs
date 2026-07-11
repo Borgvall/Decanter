@@ -53,7 +53,7 @@ module Bottle.Logic
   ) where
 
 import Bottle.Types
-import Bottle.Logic.Process (getMergedWineEnv, killBottleProcesses)
+import Bottle.Logic.Process (getMergedWineEnv, killBottleProcesses, extractAppIcon)
 import Bottle.Logic.Snapshots (isBtrfsSubvolume, deleteSubvolumeForcible, deleteAllSnapshots)
 import Bottle.Logic.Direct3dWrappers
   ( Direct3DWrapperState(..)
@@ -381,6 +381,12 @@ bottleMenuDir Bottle{..} = bottlePath </> "menu"
 desktopFilePath :: Bottle -> T.Text -> FilePath
 desktopFilePath bottle appName = bottleMenuDir bottle </> T.unpack appName ++ ".desktop"
 
+-- | Pfad des (best-effort extrahierten) Icons einer Applikation innerhalb
+-- der Bottle. Liegt wie die ".desktop"-Datei selbst im "menu"-Verzeichnis,
+-- wandert also ebenso mit Snapshots mit.
+iconFilePath :: Bottle -> T.Text -> FilePath
+iconFilePath bottle appName = bottleMenuDir bottle </> "icons" </> T.unpack appName ++ ".png"
+
 -- | Name des Symlinks in ~/.local/share/applications für eine Bottle.
 applicationMenuSymlinkName :: Bottle -> String
 applicationMenuSymlinkName Bottle{..} = "decanter-" ++ T.unpack bottleName
@@ -425,26 +431,43 @@ removeApplicationMenuSymlink bottle = do
 -- Der Eintrag ruft "decanter start <bottle> <app>" auf, läuft also durch
 -- Decanters eigene Ausführungslogik (Env-Merging, Proton-Routing,
 -- Direct3D-Wrapper), statt Wine/die Applikation direkt aufzurufen.
-addToApplicationMenu :: Bottle -> T.Text -> T.Text -> IO ()
-addToApplicationMenu bottle appName category = do
+--
+-- Das Icon wird per 'extractAppIcon' aus der ".lnk"-Datei extrahiert
+-- (best effort, siehe dort): Schlägt das fehl, bekommt der Eintrag einfach
+-- kein "Icon="-Feld, statt dass das Hinzufügen insgesamt scheitert.
+addToApplicationMenu :: Bottle -> T.Text -> FilePath -> T.Text -> IO ()
+addToApplicationMenu bottle appName lnkPath category = do
   createDirectoryIfMissing True (bottleMenuDir bottle)
+  createDirectoryIfMissing True (bottleMenuDir bottle </> "icons")
   ensureApplicationMenuSymlink bottle
-  writeFile (desktopFilePath bottle appName) $ T.unpack $ T.unlines
+
+  let iconPath = iconFilePath bottle appName
+  iconExtracted <- extractAppIcon bottle lnkPath iconPath
+  let iconLine = if iconExtracted then ["Icon=" <> T.pack iconPath] else []
+
+  writeFile (desktopFilePath bottle appName) $ T.unpack $ T.unlines $
     [ "[Desktop Entry]"
     , "Type=Application"
     , "Name=" <> appName
     , "Exec=decanter start " <> quoteExecArg (bottleName bottle) <> " " <> quoteExecArg appName
     , "Categories=" <> category <> ";"
     , "Terminal=false"
-    ]
+    ] ++ iconLine
 
--- | Entfernt einen zuvor angelegten Anwendungsmenü-Eintrag wieder.
+-- | Entfernt einen zuvor angelegten Anwendungsmenü-Eintrag (samt Icon, falls
+-- eines extrahiert wurde) wieder.
 removeFromApplicationMenu :: Bottle -> T.Text -> IO ()
 removeFromApplicationMenu bottle appName = do
   let path = desktopFilePath bottle appName
   exists <- doesFileExist path
   if exists
     then removeFile path
+    else return ()
+
+  let iconPath = iconFilePath bottle appName
+  iconExists <- doesFileExist iconPath
+  if iconExists
+    then removeFile iconPath
     else return ()
 
 -- | Prüft, ob für eine Applikation bereits ein Anwendungsmenü-Eintrag existiert.
