@@ -14,6 +14,17 @@ import Logic.Translation (tr)
 import Gui.BottleView (buildBottleView)
 import Gui.NewBottleDialog (showNewBottleDialog) -- Import für den Dialog
 
+-- | Wechselt im Stack zur Detailansicht der übergebenen Bottle (baut sie bei
+-- Bedarf auf). Wird sowohl von der Übersichtsseite (Klick auf eine Zeile) als
+-- auch beim CLI-Start via 'decanter gui <bottle name>' verwendet.
+navigateToBottle :: Gtk.Window -> Gtk.Stack -> Bottle -> IO () -> IO ()
+navigateToBottle window stack bottle refreshAction = do
+  detailView <- buildBottleView window bottle stack refreshAction
+  let viewName = "detail_" <> bottleName bottle
+
+  void $ #addNamed stack detailView (Just viewName)
+  #setVisibleChildName stack viewName
+
 -- | Baut die Übersichtsseite und gibt das Widget sowie eine Refresh-Funktion zurück
 buildOverviewPage :: Gtk.Window -> Gtk.Stack -> IO (Gtk.Widget, IO ())
 buildOverviewPage window stack = do
@@ -70,15 +81,9 @@ buildOverviewPage window stack = do
                icon <- new Gtk.Image [ #iconName := "go-next-symbolic" ]
                #addSuffix row icon
                
-               #setActivatableWidget row (Just icon) 
-               void $ on row #activated $ do
-                 -- Navigation zur Detailansicht
-                 detailView <- buildBottleView window b stack refreshAction
-                 let viewName = "detail_" <> bottleName b
-                 
-                 void $ #addNamed stack detailView (Just viewName)
-                 #setVisibleChildName stack viewName
-               
+               #setActivatableWidget row (Just icon)
+               void $ on row #activated $ navigateToBottle window stack b refreshAction
+
                #append listBox row
   
   -- Action für Add Button verbinden

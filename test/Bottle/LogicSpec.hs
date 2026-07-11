@@ -61,6 +61,40 @@ spec = do
         archToString Win32 `shouldBe` "win32"
         archToString Win64 `shouldBe` "win64"
 
+    describe "findBottleByName" $ do
+      let bottleA = Bottle "Alpha" "/tmp/alpha" SystemWine Win64
+      let bottleB = Bottle "Beta" "/tmp/beta" SystemWine Win32
+      let bottles = [bottleA, bottleB]
+
+      it "finds a bottle by its exact name" $ do
+        findBottleByName "Alpha" bottles `shouldBe` Just bottleA
+        findBottleByName "Beta" bottles `shouldBe` Just bottleB
+
+      it "is case-sensitive" $ do
+        findBottleByName "alpha" bottles `shouldBe` Nothing
+
+      it "returns Nothing for an unknown name" $ do
+        findBottleByName "Gamma" bottles `shouldBe` Nothing
+
+    describe "findAppLnkByName" $ do
+      let lnkPaths =
+            [ "/prefix/drive_c/ProgramData/Start Menu/Notepad.lnk"
+            , "/prefix/drive_c/users/alice/Start Menu/Notepad.lnk"
+            , "/prefix/drive_c/ProgramData/Start Menu/Solitaire.lnk"
+            ]
+
+      it "finds an app by its display name (basename without extension)" $ do
+        findAppLnkByName "Solitaire" lnkPaths `shouldBe` Just "/prefix/drive_c/ProgramData/Start Menu/Solitaire.lnk"
+
+      it "returns the first match if the name is ambiguous" $ do
+        findAppLnkByName "Notepad" lnkPaths `shouldBe` Just "/prefix/drive_c/ProgramData/Start Menu/Notepad.lnk"
+
+      it "is case-sensitive" $ do
+        findAppLnkByName "notepad" lnkPaths `shouldBe` Nothing
+
+      it "returns Nothing for an unknown name" $ do
+        findAppLnkByName "Unknown" lnkPaths `shouldBe` Nothing
+
     describe "runCmd" $ do
       it "starts the given command asynchronously with the bottle's merged Wine environment" $ do
         let markerPath = "/tmp/decanter-test-runcmd-marker"

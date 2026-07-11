@@ -4,6 +4,8 @@
 module Bottle.Logic
   ( -- * Bottle Management
     listExistingBottles
+  , findBottleByName
+  , findAppLnkByName
   , getAvailableRunners
   , getRunnerTypeDisplayName -- NEU exportiert
   , createBottleObject
@@ -165,6 +167,21 @@ detectBottleArch path = do
     is64 <- doesDirectoryExist syswow64
     return $ if is64 then Win64 else Win32
 
+
+-- | Findet eine Bottle anhand ihres Namens (exakter, case-sensitiver Vergleich).
+findBottleByName :: T.Text -> [Bottle] -> Maybe Bottle
+findBottleByName name bottles = case filter ((== name) . bottleName) bottles of
+  (b : _) -> Just b
+  []      -> Nothing
+
+-- | Findet den Pfad zu einer Windows-Applikation (.lnk) anhand ihres
+-- Anzeigenamens, wie er auch im GUI aus dem Dateinamen abgeleitet wird
+-- (siehe 'Gui.BottleView'). Bei mehreren Treffern (z.B. gleicher Name in
+-- verschiedenen Benutzerverzeichnissen) wird der erste zurückgegeben.
+findAppLnkByName :: T.Text -> [FilePath] -> Maybe FilePath
+findAppLnkByName name lnkPaths = case filter ((== name) . T.pack . takeBaseName) lnkPaths of
+  (p : _) -> Just p
+  []      -> Nothing
 
 -- | Scannt das Verzeichnis nach existierenden Bottles und erkennt deren Architektur
 listExistingBottles :: IO [Bottle]
