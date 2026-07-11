@@ -96,14 +96,20 @@ getMergedWineEnv bottle = getWineOverrides bottle >>= mergeWithHostEnv
 -- winemenubuilder.exe selbst blockieren würde. Da Icon-Extraktion kein
 -- Direct3D braucht, lassen wir WINEDLLOVERRIDES hier komplett weg, statt
 -- die überall sonst verwendeten Funktionen mit einem Sonderfall zu belasten.
+--
+-- DISPLAY/WAYLAND_DISPLAY werden entfernt, damit Wine bei einer noch nicht
+-- initialisierten Bottle (z.B. in Tests) nicht den Gecko/Mono-Installer-
+-- Dialog aufpoppen lässt -- extractAppIcon soll immer headless laufen (vgl.
+-- die gleiche Begründung bei Bottle.Logic.createBottleLogic für wineboot).
 getIconExtractionWineEnv :: Bottle -> IO [(String, String)]
-getIconExtractionWineEnv Bottle{..} =
-    mergeWithHostEnv $
+getIconExtractionWineEnv Bottle{..} = do
+    env <- mergeWithHostEnv $
       [ ("WINEPREFIX", bottlePath)
       , ("WINEARCH", archToString arch)
       ] ++ case runner of
              Proton p -> [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
              _        -> []
+    pure $ filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) env
 
 -- | Extrahiert das Icon einer Start-Menü-Applikation (".lnk") als PNG-Datei,
 -- über Wines eigenes winemenubuilder.exe ("-t"-Flag, "thumbnail_lnk"): löst
