@@ -348,16 +348,16 @@ deleteBottleLogic bottle@Bottle{..} = do
   -- 1. Alle Snapshots der Bottle löschen
   deleteAllSnapshots bottle
 
-  -- 2. Die Bottle selbst löschen
+  -- 2. Application-Menu-Symlink entfernen, bevor die Bottle selbst
+  -- verschwindet -- so zeigt der Symlink zu keinem Zeitpunkt ins Leere.
+  removeApplicationMenuSymlink bottle
+
+  -- 3. Die Bottle selbst löschen
   putStrLn $ "Deleting Wine prefix: " ++ bottlePath
   isSubvol <- isBtrfsSubvolume bottlePath
   if isSubvol
   then deleteSubvolumeForcible bottlePath
   else removePathForcibly bottlePath
-
-  -- 3. Application-Menu-Symlink entfernen (liegt außerhalb des
-  -- Bottle-Verzeichnisses, wird also von obigem Löschen nicht mit erfasst)
-  removeApplicationMenuSymlink bottle
 
   putStrLn "Deletion completed."
 
