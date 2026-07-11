@@ -17,25 +17,42 @@ import System.Exit (ExitCode(..))
 import Data.List (intercalate)
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 
--- | WINEDLLOVERRIDES entries needed for Wine to actually load DXVK's/
--- vkd3d-proton's DLLs instead of its own builtin Direct3D implementation
--- for them (see Bottle.Logic.Direct3dWrappers.direct3DWrapperOverrideDllNames
--- for why placing the DLL file alone isn't enough). Only meaningful for
--- System Wine bottles -- Proton manages its own DXVK/vkd3d-proton
--- independently, so we leave it alone there.
-getDirect3DOverrideEnv :: Bottle -> IO [(String, String)]
-getDirect3DOverrideEnv bottle = case runner bottle of
+-- | The WINEDLLOVERRIDES entry for winemenubuilder.exe needed to stop Wine
+-- from creating Linux desktop integration (Start Menu / ".desktop" entries,
+-- MIME associations) for programs installed into a bottle. Decanter is
+-- meant to be the only entry point into a bottle's programs; leaving this
+-- enabled would let users launch them straight from the host's application
+-- menu, bypassing Decanter entirely. An empty load order ("=") disables the
+-- DLL outright (see the WINEDLLOVERRIDES syntax in "man wine").
+menuBuilderOverrideEntry :: String
+menuBuilderOverrideEntry = "winemenubuilder.exe="
+
+-- | The WINEDLLOVERRIDES entry needed for Wine to actually load DXVK's/
+-- vkd3d-proton's DLLs instead of its own builtin Direct3D implementation for
+-- them (see Bottle.Logic.Direct3dWrappers.direct3DWrapperOverrideDllNames
+-- for why placing the DLL file alone isn't enough), if any are needed.
+direct3DOverrideEntry :: Bottle -> IO (Maybe String)
+direct3DOverrideEntry bottle = do
+    state <- getDirect3DWrapperState bottle
+    pure $ case direct3DWrapperOverrideDllNames state of
+        []    -> Nothing
+        names -> Just (intercalate "," names ++ "=native")
+
+-- | WINEDLLOVERRIDES entries. Only meaningful for System Wine bottles --
+-- Proton neither integrates with the host desktop nor manages DXVK/
+-- vkd3d-proton the way System Wine does, so we leave it alone there.
+getWineDllOverridesEnv :: Bottle -> IO [(String, String)]
+getWineDllOverridesEnv bottle = case runner bottle of
     Proton _   -> pure []
     SystemWine -> do
-        state <- getDirect3DWrapperState bottle
-        case direct3DWrapperOverrideDllNames state of
-            []    -> pure []
-            names -> pure [("WINEDLLOVERRIDES", intercalate "," names ++ "=native")]
+        maybeDirect3DEntry <- direct3DOverrideEntry bottle
+        let entries = menuBuilderOverrideEntry : maybe [] (: []) maybeDirect3DEntry
+        pure [("WINEDLLOVERRIDES", intercalate ";" entries)]
 
 -- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
 getWineOverrides :: Bottle -> IO [(String, String)]
 getWineOverrides bottle@Bottle{..} = do
-    direct3DOverrideEnv <- getDirect3DOverrideEnv bottle
+    wineDllOverridesEnv <- getWineDllOverridesEnv bottle
     pure $
       [ ("WINEPREFIX", bottlePath)
       , ("WINEARCH", archToString arch)
@@ -45,7 +62,7 @@ getWineOverrides bottle@Bottle{..} = do
                -- it, reliably killing Proton processes isn't possible.
                Proton p -> [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
                _ -> [])
-        ++ direct3DOverrideEnv
+        ++ wineDllOverridesEnv
 
 -- | Erstellt die Umgebungsvariablen für Wine/Proton
 getMergedWineEnv :: Bottle -> IO [(String, String)]

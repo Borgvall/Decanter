@@ -107,7 +107,16 @@ spec = describe "Bottle.Logic.Process" $ do
       systemWineEnv <- getMergedWineEnv systemWineBottle
       lookup "PRESSURE_VESSEL_SYSTEMD_SCOPE" systemWineEnv `shouldBe` Nothing
 
-    it "sets WINEDLLOVERRIDES for a System Wine bottle with DXVK/vkd3d-proton installed, but not otherwise" $ withTestEnvironment $ do
+    it "always disables winemenubuilder.exe for System Wine, but not for Proton" $ do
+      let systemWineBottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine Win64
+      systemWineEnv <- getMergedWineEnv systemWineBottle
+      lookup "WINEDLLOVERRIDES" systemWineEnv `shouldBe` Just "winemenubuilder.exe="
+
+      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton") Win64
+      protonEnv <- getMergedWineEnv protonBottle
+      lookup "WINEDLLOVERRIDES" protonEnv `shouldBe` Nothing
+
+    it "sets WINEDLLOVERRIDES for a System Wine bottle with DXVK/vkd3d-proton installed, but always disables winemenubuilder.exe" $ withTestEnvironment $ do
       runners <- getAvailableRunners
       maybeDxvkPath <- lookupEnv "DECANTER_DXVK_PATH"
       maybeVkd3dProtonPath <- lookupEnv "DECANTER_VKD3D_PROTON_PATH"
@@ -121,19 +130,19 @@ spec = describe "Bottle.Logic.Process" $ do
 
           (do
             freshEnv <- getMergedWineEnv bottle
-            lookup "WINEDLLOVERRIDES" freshEnv `shouldBe` Nothing
+            lookup "WINEDLLOVERRIDES" freshEnv `shouldBe` Just "winemenubuilder.exe="
 
             setDirect3DWrapperState bottle Dxvk
             dxvkEnv <- getMergedWineEnv bottle
-            lookup "WINEDLLOVERRIDES" dxvkEnv `shouldBe` Just "d3d8,d3d9,d3d10core,d3d11,dxgi=native"
+            lookup "WINEDLLOVERRIDES" dxvkEnv `shouldBe` Just "winemenubuilder.exe=;d3d8,d3d9,d3d10core,d3d11,dxgi=native"
 
             setDirect3DWrapperState bottle DxvkAndVkd3dProton
             bothEnv <- getMergedWineEnv bottle
-            lookup "WINEDLLOVERRIDES" bothEnv `shouldBe` Just "d3d8,d3d9,d3d10core,d3d11,dxgi,d3d12,d3d12core=native"
+            lookup "WINEDLLOVERRIDES" bothEnv `shouldBe` Just "winemenubuilder.exe=;d3d8,d3d9,d3d10core,d3d11,dxgi,d3d12,d3d12core=native"
 
             setDirect3DWrapperState bottle WineD3D
             resetEnv <- getMergedWineEnv bottle
-            lookup "WINEDLLOVERRIDES" resetEnv `shouldBe` Nothing
+            lookup "WINEDLLOVERRIDES" resetEnv `shouldBe` Just "winemenubuilder.exe="
             ) `finally` deleteBottleLogic bottle
 
   describe "md5Hex" $ do
