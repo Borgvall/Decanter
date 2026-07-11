@@ -68,64 +68,71 @@ showKillConfirmationDialog parent bottle = do
   -- FIX: Explizite Typannotation für Nothing
   Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleResult)
 
--- | Ändert den Runner für eine Bottle
-changeBottleRunner :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO ()
-changeBottleRunner window bottle stack refreshCallback = do
-  -- Verfügbare Runner abrufen
+-- | Baut den Inhalt des Runner-Auswahl-Popovers: eine Zeile pro verfügbarem
+-- Runner, mit Checkmark beim aktuell aktiven. Ein Klick auf eine Zeile
+-- ändert den Runner, lädt die Bottle-Ansicht neu und schließt das Popover
+-- wieder -- ein Popover schließt sich zusätzlich schon von selbst bei Klick
+-- daneben oder Escape, daher gibt es (anders als beim vorherigen
+-- Adw.MessageDialog) keinen expliziten Cancel-Button mehr.
+buildRunnerPopover :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> [RunnerType] -> IO Gtk.Popover
+buildRunnerPopover window bottle stack refreshCallback availableRunners = do
+  popover <- new Gtk.Popover []
+  runnerGroup <- new Adw.PreferencesGroup
+    [ #marginTop := 6, #marginBottom := 6, #marginStart := 6, #marginEnd := 6 ]
+  #setChild popover (Just runnerGroup)
+
+  let currentRunner = runner bottle
+  forM_ availableRunners $ \runnerType -> do
+    displayName <- getRunnerTypeDisplayName runnerType
+    row <- new Adw.ActionRow
+      [ #title := displayName
+      , #subtitle := runnerTypeToString runnerType
+      , #activatable := True
+      ]
+
+    when (runnerType == currentRunner) $ do
+      icon <- new Gtk.Image [ #iconName := "object-select-symbolic", #cssClasses := ["dim-label"] ]
+      #addSuffix row icon
+
+    void $ on row #activated $ do
+      #popdown popover
+      updatedBottle <- changeBottleRunnerLogic bottle runnerType
+      reloadBottleView window updatedBottle stack refreshCallback
+
+    #add runnerGroup row
+
+  pure popover
+
+-- | Baut den "Change Windows Runner"-MenuButton: klappt bei Klick ein
+-- Popover direkt unter sich selbst auf (statt, wie zuvor, ein separates
+-- Dialogfenster zu öffnen), siehe 'buildRunnerPopover'. Ohne verfügbare
+-- Runner bleibt der Button deaktiviert, mit erklärendem Tooltip, statt
+-- (wie zuvor) erst nach einem Klick einen Fehlerdialog zu zeigen.
+buildChangeRunnerButton :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.MenuButton
+buildChangeRunnerButton window bottle stack refreshCallback = do
   availableRunners <- getAvailableRunners
-  if null availableRunners
-    then do
-      -- Keine Runner verfügbar - Fehlermeldung anzeigen
-      errorDialog <- new Gtk.AlertDialog 
-        [ #message := tr "No runners available. Please install Wine or Proton."
-        , #buttons := [ tr "OK" ]
-        ]
-      Gtk.alertDialogChoose errorDialog (Just window) 
-        (Nothing :: Maybe Gio.Cancellable) 
-        (Nothing :: Maybe (AsyncReadyCallback))
-    else do
-      -- Dialog zum Auswählen des Runners
-      runnerDialog <- new Adw.MessageDialog 
-        [ #transientFor := window
-        , #heading := tr "Change Runner"
-        , #body := tr "Select a new runner for this bottle. Changing the runner may affect compatibility with installed programs."
-        , #closeResponse := "cancel"
-        ]
-      
-      -- Aktuellen Runner markieren
-      let currentRunner = runner bottle
-      
-      -- Action Row für jeden verfügbaren Runner erstellen
-      runnerGroup <- new Adw.PreferencesGroup []
-      #setExtraChild runnerDialog $ Just runnerGroup
-      
-      forM_ availableRunners $ \runnerType -> do
-        displayName <- getRunnerTypeDisplayName runnerType
-        row <- new Adw.ActionRow 
-          [ #title := displayName
-          , #subtitle := runnerTypeToString runnerType
-          , #activatable := True
-          ]
-        
-        -- Aktuellen Runner markieren
-        when (runnerType == currentRunner) $ do
-          icon <- new Gtk.Image [ #iconName := "object-select-symbolic", #cssClasses := ["dim-label"] ]
-          #addSuffix row icon
-        
-        void $ on row #activated $ do
-          -- Runner ändern
-          updatedBottle <- changeBottleRunnerLogic bottle runnerType
-          -- Stack-Eintrag neu laden
-          reloadBottleView window updatedBottle stack refreshCallback
-          #close runnerDialog
-        
-        #add runnerGroup row
-      
-      -- Cancel Button
-      #addResponse runnerDialog "cancel" (tr "Cancel")
-      #setResponseAppearance runnerDialog "cancel" Adw.ResponseAppearanceDefault
-      
-      #show runnerDialog
+  let hasRunners = not (null availableRunners)
+
+  content <- new Adw.ButtonContent
+    [ #iconName := "edit-symbolic"
+    , #label := tr "Change Windows Runner"
+    ]
+  btn <- new Gtk.MenuButton
+    [ #child := content
+    , #tooltipText := if hasRunners
+        then tr "Change Runner"
+        else tr "No runners available. Please install Wine or Proton."
+    , #valign := Gtk.AlignCenter
+    , #cssClasses := ["flat"]
+    , #sensitive := hasRunners
+    , #alwaysShowArrow := True
+    ]
+
+  when hasRunners $ do
+    popover <- buildRunnerPopover window bottle stack refreshCallback availableRunners
+    #setPopover btn (Just popover)
+
+  pure btn
 
 -- | Lädt die Bottle-Ansicht neu
 reloadBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO ()
@@ -340,18 +347,7 @@ buildBottleView window bottle stack refreshCallback = do
   #append runnerInfoBox runnerTypeLabel
   
   -- Änderungs-Button
-  changeRunnerBtnContent <- new Adw.ButtonContent
-    [ #iconName := "edit-symbolic"
-    , #label := tr "Change Windows Runner"
-    ]
-  changeRunnerBtn <- new Gtk.Button
-    [ #child := changeRunnerBtnContent
-    , #tooltipText := tr "Change Runner"
-    , #valign := Gtk.AlignCenter
-    , #cssClasses := ["flat"]
-    ]
-  void $ on changeRunnerBtn #clicked $
-    changeBottleRunner window bottle stack refreshCallback
+  changeRunnerBtn <- buildChangeRunnerButton window bottle stack refreshCallback
   #append runnerSectionBox changeRunnerBtn
 
   -- Direct3D-Wrapper (DXVK/vkd3d-proton) umschalten -- nur wenn die Bottle
