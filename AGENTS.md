@@ -53,6 +53,30 @@ though the project itself may be discussed with maintainers in German
 elsewhere. This keeps the codebase consistent and accessible to the
 widest possible set of contributors and tools.
 
+## 4. GUI changes are tested by the user, not by simulated clicks
+
+For changes to any `Gui/*` module, do not drive the running app
+yourself with simulated mouse/keyboard input (e.g. `wlrctl`, `ydotool`,
+`xdotool`) and screenshots (e.g. `grim`) to verify the change. The
+project's desktop session is the user's real, live session - hijacking
+its cursor to click through the app is disruptive and can land clicks
+in unrelated windows.
+
+Instead:
+
+1. Build and run the automated test suite as usual
+   (`cabal build --enable-tests all`, `cabal test`).
+2. Launch the app with `cabal run` so it's ready on screen.
+3. Write a short, concrete checklist of what to click and what to
+   expect (e.g. "click the 'Change Runner' button - does a popover
+   open directly under it, listing all runners with the current one
+   checked?").
+4. Stop and wait for the user's own feedback instead of clicking
+   through the checklist yourself.
+
+This doesn't apply to non-interactive checks - building, the automated
+test suite, and `nix build` remain fine to run without asking.
+
 ## Commit messages
 
 The author of an AI commit shall be the used LLM name and version e.g. Opus
