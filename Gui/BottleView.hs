@@ -161,6 +161,79 @@ runnerTypeToString :: RunnerType -> T.Text
 runnerTypeToString SystemWine = tr "System Wine"
 runnerTypeToString (Proton path) = T.pack ("Proton (" ++ takeBaseName path ++ ")")
 
+-- | Zur Auswahl angebotene Kategorien für Anwendungsmenü-Einträge (siehe
+-- 'Bottle.Logic.addToApplicationMenu'). Dies sind exakte Freedesktop-
+-- "Main Category"-Bezeichner (landen 1:1 im "Categories="-Feld der
+-- ".desktop"-Datei) und werden daher bewusst nicht übersetzt. "Game" steht
+-- an erster Stelle, da das der häufigste Anwendungsfall von Decanter ist.
+applicationMenuCategories :: [T.Text]
+applicationMenuCategories =
+  [ "Game", "Utility", "Office", "Graphics", "Network", "Development", "AudioVideo", "Education", "System" ]
+
+-- | Baut den Button, mit dem eine einzelne Start-Menü-Applikation zum
+-- Anwendungsmenü des Hosts hinzugefügt bzw. wieder daraus entfernt werden
+-- kann (siehe 'Bottle.Logic.addToApplicationMenu'/'removeFromApplicationMenu').
+-- Der Zustand (schon hinzugefügt oder nicht) wird bei jedem Aufruf frisch
+-- über 'isInApplicationMenu' geprüft; "onChanged" lässt den Aufrufer nach
+-- einer Änderung die Programmliste neu aufbauen, damit der Button seinen
+-- Zustand aktualisiert. Bleibt bewusst ungesperrt, auch wenn Windows-
+-- Programme aktuell blockiert sind (siehe "Browse Files" weiter unten): es
+-- wird nur eine ".desktop"-Datei geschrieben/gelöscht, kein Wine gestartet.
+buildAppMenuButton :: Bottle -> T.Text -> IO () -> IO Gtk.Widget
+buildAppMenuButton bottle appName onChanged = do
+  alreadyAdded <- isInApplicationMenu bottle appName
+  if alreadyAdded
+    then do
+      btn <- new Gtk.Button
+        [ #iconName := "list-remove-symbolic"
+        , #tooltipText := tr "Remove from application menu"
+        , #valign := Gtk.AlignCenter
+        ]
+      void $ on btn #clicked $ do
+        removeFromApplicationMenu bottle appName
+        onChanged
+      Gtk.toWidget btn
+    else do
+      menuBtn <- new Gtk.MenuButton
+        [ #iconName := "list-add-symbolic"
+        , #tooltipText := tr "Add to application menu"
+        , #valign := Gtk.AlignCenter
+        ]
+
+      popover <- new Gtk.Popover []
+      popBox <- new Gtk.Box
+        [ #orientation := Gtk.OrientationVertical
+        , #spacing := 8
+        , #marginTop := 8, #marginBottom := 8, #marginStart := 8, #marginEnd := 8
+        ]
+      #setChild popover (Just popBox)
+
+      headingLabel <- new Gtk.Label
+        [ #label := tr "Add to application menu"
+        , #halign := Gtk.AlignStart
+        , #cssClasses := ["heading"]
+        ]
+      #append popBox headingLabel
+
+      -- Flache Liste anklickbarer Zeilen statt eines verschachtelten
+      -- Dropdowns (z.B. Adw.ComboRow): ein GTK4-Popup innerhalb eines
+      -- anderen Popups kollidiert beim Pointer-Grab, sodass sich nur der
+      -- erste Eintrag auswählen ließ. Klick auf eine Zeile fügt sofort mit
+      -- dieser Kategorie hinzu, genau wie beim Runner-Popover oben.
+      categoryGroup <- new Adw.PreferencesGroup [ #title := tr "Category" ]
+      #append popBox categoryGroup
+
+      forM_ applicationMenuCategories $ \category -> do
+        row <- new Adw.ActionRow [ #title := category, #activatable := True ]
+        void $ on row #activated $ do
+          #popdown popover
+          addToApplicationMenu bottle appName category
+          onChanged
+        #add categoryGroup row
+
+      #setPopover menuBtn (Just popover)
+      Gtk.toWidget menuBtn
+
 -- | Anzeigename und Beschreibung für einen Direct3D-Wrapper-Zustand.
 direct3DWrapperLabel :: Direct3DWrapperState -> T.Text
 direct3DWrapperLabel WineD3D             = tr "Wine (built-in)"
@@ -436,10 +509,17 @@ buildBottleView window bottle stack refreshCallback = do
           else do
             forM_ lnkFiles $ \path -> do
                 let name = T.pack $ takeBaseName path
-                progBtn <- new Gtk.Button [ #label := name, #halign := Gtk.AlignFill, #tooltipText := T.pack path ]
+                rowBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 4 ]
+
+                progBtn <- new Gtk.Button [ #label := name, #hexpand := True, #halign := Gtk.AlignFill, #tooltipText := T.pack path ]
                 void $ on progBtn #clicked $ runWindowsLnk bottle path
-                #append progBox progBtn
+                #append rowBox progBtn
                 blockIfWineAppsBlocked progBtn
+
+                menuBtn <- buildAppMenuButton bottle name refreshPrograms
+                #append rowBox menuBtn
+
+                #append progBox rowBox
             set progExpander [ #expanded := True ]
 
   refreshBtn <- new Gtk.Button [ #iconName := "view-refresh-symbolic", #tooltipText := tr "Refresh program list", #valign := Gtk.AlignStart ]
