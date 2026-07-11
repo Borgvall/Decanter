@@ -16,7 +16,8 @@ executable decanter
     main-is:          Main.hs
     
     -- Die anderen Module müssen im selben Verzeichnis liegen
-    other-modules:    Bottle.Types
+    other-modules:    Cli
+                    , Bottle.Types
                     , Bottle.Logic
                     , Bottle.Logic.Process
                     , Bottle.Logic.Snapshots
@@ -28,7 +29,7 @@ executable decanter
                     , Gui.NewBottleDialog
                     , Gui.OverviewView
                     , Data.Vdf
-    
+
     -- Dependencies
     build-depends:    base >= 4.16 && < 5
                     , text
@@ -37,7 +38,8 @@ executable decanter
                     , filepath
                     , typed-process
                     , async
-                    
+                    , optparse-applicative
+
                     -- BTRFS Support
                     , btrfs >= 0.2
                     
