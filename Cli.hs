@@ -6,6 +6,7 @@ module Cli
   , runListBottles
   , runListApps
   , runStart
+  , runOpen
   ) where
 
 import Data.List (isPrefixOf, sortOn)
@@ -14,6 +15,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Options.Applicative
+import System.Directory (doesFileExist)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.FilePath (takeBaseName)
@@ -24,6 +26,7 @@ import Bottle.Logic
   , findBottleByName
   , findWineStartMenuLnks
   , listExistingBottles
+  , runFileWithStart
   , runWindowsLnk
   )
 import Bottle.Types (bottleName)
@@ -34,6 +37,7 @@ data Command
   | ListBottles
   | ListApps Text
   | Start Text Text
+  | Open Text FilePath
   deriving (Show, Eq)
 
 parseCommand :: IO Command
@@ -56,16 +60,21 @@ commandParser = subcommands <|> pure (Gui Nothing)
           (progDesc "List the start menu applications of a bottle, one per line"))
      <> command "start" (info startParser
           (progDesc "Start an application (start menu entry) in a bottle"))
+     <> command "open" (info openParser
+          (progDesc "Open a file in a bottle's context (via Wine's start.exe)"))
       )
 
     guiParser = Gui <$> optional bottleArg
     listAppsParser = ListApps <$> bottleArg
     startParser = Start <$> bottleArg <*> appArg
+    openParser = Open <$> bottleArg <*> fileArg
 
     bottleArg = T.pack <$> argument str
       (metavar "BOTTLE" <> help "Name of the bottle" <> completer bottleCompleter)
     appArg = T.pack <$> argument str
       (metavar "APPLICATION" <> help "Name of the application (start menu entry)" <> completer appCompleter)
+    fileArg = argument str
+      (metavar "FILE" <> help "Path to the file to open" <> completer (bashCompleter "file"))
 
 -- | Shell-completion source for BOTTLE arguments: lists the existing
 -- bottles live, filtered by the partial word already typed.
@@ -136,3 +145,16 @@ runStart bottleNm appNm = do
           hPutStrLn stderr $ "Application not found in bottle '" ++ T.unpack bottleNm ++ "': " ++ T.unpack appNm
           exitFailure
         Just lnkPath -> runWindowsLnk bottle lnkPath
+
+runOpen :: Text -> FilePath -> IO ()
+runOpen bottleNm filePath = do
+  bottles <- listExistingBottles
+  case findBottleByName bottleNm bottles of
+    Nothing -> bottleNotFound bottleNm
+    Just bottle -> do
+      exists <- doesFileExist filePath
+      if exists
+        then runFileWithStart bottle filePath
+        else do
+          hPutStrLn stderr $ "File not found: " ++ filePath
+          exitFailure

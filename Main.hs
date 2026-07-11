@@ -13,7 +13,7 @@ import System.IO (hPutStrLn, stderr)
 
 import Bottle.Logic (findBottleByName, listExistingBottles)
 import Bottle.Types (Bottle)
-import Cli (Command(..), parseCommand, runListApps, runListBottles, runStart)
+import Cli (Command(..), parseCommand, runListApps, runListBottles, runOpen, runStart)
 import Gui.OverviewView (buildOverviewPage, navigateToBottle)
 
 main :: IO ()
@@ -24,6 +24,7 @@ main = do
     ListBottles     -> runListBottles
     ListApps b      -> runListApps b
     Start b a       -> runStart b a
+    Open b f        -> runOpen b f
 
 -- | Löst den optionalen Bottle-Namen von 'decanter gui <bottle name>' auf.
 -- Existiert die Bottle nicht, bricht der Prozess ab, bevor überhaupt ein
