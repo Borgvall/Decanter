@@ -36,6 +36,11 @@ module Bottle.Logic
   , runFileManager
   , findWineStartMenuLnks
 
+    -- * Application Menu Integration
+  , addToApplicationMenu
+  , removeFromApplicationMenu
+  , isInApplicationMenu
+
     -- * Direct3D Wrapper
   , Direct3DWrapperState(..)
   , Direct3DWrapperStatus(..)
@@ -69,7 +74,10 @@ import System.Directory
     , listDirectory
     , doesDirectoryExist
     , doesFileExist
+    , doesPathExist
     , removePathForcibly
+    , removeFile
+    , createFileLink
     , findExecutable
     , getHomeDirectory
     )
@@ -346,7 +354,102 @@ deleteBottleLogic bottle@Bottle{..} = do
   if isSubvol
   then deleteSubvolumeForcible bottlePath
   else removePathForcibly bottlePath
+
+  -- 3. Application-Menu-Symlink entfernen (liegt außerhalb des
+  -- Bottle-Verzeichnisses, wird also von obigem Löschen nicht mit erfasst)
+  removeApplicationMenuSymlink bottle
+
   putStrLn "Deletion completed."
+
+-- Application Menu Integration
+--
+-- Die ".desktop"-Dateien werden bewusst *innerhalb* des Bottle-Verzeichnisses
+-- (in "menu/") angelegt statt direkt in ~/.local/share/applications: Da das
+-- Bottle-Verzeichnis ein eigenes BTRFS-Subvolume ist, wandern sie so
+-- automatisch mit jedem Snapshot/Restore mit und bleiben immer konsistent
+-- mit dem tatsächlich installierten Programmstand. In
+-- ~/.local/share/applications liegt lediglich ein Symlink pro Bottle auf
+-- dieses "menu"-Verzeichnis (nach der Desktop-Entry-Spec werden Unterordner
+-- unter "applications/" rekursiv als Desktop-File-IDs erkannt - genauso
+-- verfährt auch Wines eigener winemenubuilder).
+
+-- | Verzeichnis innerhalb der Bottle, in dem die ".desktop"-Dateien liegen.
+bottleMenuDir :: Bottle -> FilePath
+bottleMenuDir Bottle{..} = bottlePath </> "menu"
+
+-- | Pfad der ".desktop"-Datei einer Applikation innerhalb der Bottle.
+desktopFilePath :: Bottle -> T.Text -> FilePath
+desktopFilePath bottle appName = bottleMenuDir bottle </> T.unpack appName ++ ".desktop"
+
+-- | Name des Symlinks in ~/.local/share/applications für eine Bottle.
+applicationMenuSymlinkName :: Bottle -> String
+applicationMenuSymlinkName Bottle{..} = "decanter-" ++ T.unpack bottleName
+
+-- | Escaped einen Exec-Parameter gemäß der Desktop-Entry-Spec-Quoting-Regeln
+-- (innerhalb doppelter Anführungszeichen müssen ", `, $ und \ mit
+-- Backslash escaped werden) und quotet ihn strong.
+quoteExecArg :: T.Text -> T.Text
+quoteExecArg arg = "\"" <> T.concatMap escapeChar arg <> "\""
+  where
+    escapeChar c
+      | c `elem` ("\"`$\\" :: String) = T.pack ['\\', c]
+      | otherwise = T.singleton c
+
+-- | Stellt sicher, dass ~/.local/share/applications/decanter-<bottle> auf
+-- das "menu"-Verzeichnis der Bottle zeigt. Idempotent.
+ensureApplicationMenuSymlink :: Bottle -> IO ()
+ensureApplicationMenuSymlink bottle = do
+  appsDir <- getXdgDirectory XdgData "applications"
+  createDirectoryIfMissing True appsDir
+  let linkPath = appsDir </> applicationMenuSymlinkName bottle
+  exists <- doesPathExist linkPath
+  if exists
+    then return ()
+    else do
+      result <- try (createFileLink (bottleMenuDir bottle) linkPath) :: IO (Either IOException ())
+      case result of
+        Right () -> return ()
+        Left _   -> return () -- Race mit einem parallelen Aufruf; Ziel existiert dann bereits
+
+-- | Entfernt den Application-Menu-Symlink einer Bottle, falls vorhanden.
+removeApplicationMenuSymlink :: Bottle -> IO ()
+removeApplicationMenuSymlink bottle = do
+  appsDir <- getXdgDirectory XdgData "applications"
+  let linkPath = appsDir </> applicationMenuSymlinkName bottle
+  exists <- doesPathExist linkPath
+  if exists
+    then removeFile linkPath
+    else return ()
+
+-- | Legt einen Anwendungsmenü-Eintrag für eine Start-Menü-Applikation an.
+-- Der Eintrag ruft "decanter start <bottle> <app>" auf, läuft also durch
+-- Decanters eigene Ausführungslogik (Env-Merging, Proton-Routing,
+-- Direct3D-Wrapper), statt Wine/die Applikation direkt aufzurufen.
+addToApplicationMenu :: Bottle -> T.Text -> T.Text -> IO ()
+addToApplicationMenu bottle appName category = do
+  createDirectoryIfMissing True (bottleMenuDir bottle)
+  ensureApplicationMenuSymlink bottle
+  writeFile (desktopFilePath bottle appName) $ T.unpack $ T.unlines
+    [ "[Desktop Entry]"
+    , "Type=Application"
+    , "Name=" <> appName
+    , "Exec=decanter start " <> quoteExecArg (bottleName bottle) <> " " <> quoteExecArg appName
+    , "Categories=" <> category <> ";"
+    , "Terminal=false"
+    ]
+
+-- | Entfernt einen zuvor angelegten Anwendungsmenü-Eintrag wieder.
+removeFromApplicationMenu :: Bottle -> T.Text -> IO ()
+removeFromApplicationMenu bottle appName = do
+  let path = desktopFilePath bottle appName
+  exists <- doesFileExist path
+  if exists
+    then removeFile path
+    else return ()
+
+-- | Prüft, ob für eine Applikation bereits ein Anwendungsmenü-Eintrag existiert.
+isInApplicationMenu :: Bottle -> T.Text -> IO Bool
+isInApplicationMenu bottle appName = doesFileExist (desktopFilePath bottle appName)
 
 -- Tools
 runWineCfg :: Bottle -> IO ()

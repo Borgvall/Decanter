@@ -6,7 +6,15 @@ import Test.Hspec
 import Bottle.Logic
 import Bottle.Types
 import qualified Data.Text as T
-import System.Directory (createDirectoryIfMissing, removePathForcibly, getCurrentDirectory, doesFileExist)
+import System.Directory
+  ( createDirectoryIfMissing
+  , removePathForcibly
+  , getCurrentDirectory
+  , doesFileExist
+  , getXdgDirectory
+  , XdgDirectory(XdgData)
+  , getSymbolicLinkTarget
+  )
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import Control.Exception (finally)
@@ -121,6 +129,48 @@ spec = do
 
         contents <- waitForMarker 40 `finally` removePathForcibly markerPath
         contents `shouldBe` Just (bottlePath bottle)
+
+    describe "Application menu integration" $ around_ withTestEnvironment $ do
+      let makeMenuTestBottle = do
+            cwd <- getCurrentDirectory
+            let path = cwd </> "test-env" </> "MenuTestBottle"
+            createDirectoryIfMissing True path
+            return $ Bottle "MenuTestBottle" path SystemWine Win64
+
+      it "creates a .desktop entry inside the bottle and a symlink pointing at its menu dir" $ do
+        bottle <- makeMenuTestBottle
+        addToApplicationMenu bottle "MyGame" "Game"
+
+        isInApplicationMenu bottle "MyGame" `shouldReturn` True
+
+        content <- readFile (bottlePath bottle </> "menu" </> "MyGame.desktop")
+        content `shouldContain` "Name=MyGame"
+        content `shouldContain` "Exec=decanter start \"MenuTestBottle\" \"MyGame\""
+        content `shouldContain` "Categories=Game;"
+
+        appsDir <- getXdgDirectory XdgData "applications"
+        linkTarget <- getSymbolicLinkTarget (appsDir </> "decanter-MenuTestBottle")
+        linkTarget `shouldBe` (bottlePath bottle </> "menu")
+
+      it "reuses the existing symlink for a second application in the same bottle" $ do
+        bottle <- makeMenuTestBottle
+        addToApplicationMenu bottle "FirstApp" "Game"
+        addToApplicationMenu bottle "SecondApp" "Utility"
+
+        isInApplicationMenu bottle "FirstApp" `shouldReturn` True
+        isInApplicationMenu bottle "SecondApp" `shouldReturn` True
+
+      it "removeFromApplicationMenu removes the entry again" $ do
+        bottle <- makeMenuTestBottle
+        addToApplicationMenu bottle "MyApp" "Utility"
+        isInApplicationMenu bottle "MyApp" `shouldReturn` True
+
+        removeFromApplicationMenu bottle "MyApp"
+        isInApplicationMenu bottle "MyApp" `shouldReturn` False
+
+      it "isInApplicationMenu is False when nothing was ever added" $ do
+        bottle <- makeMenuTestBottle
+        isInApplicationMenu bottle "NeverAdded" `shouldReturn` False
 
     -- Integrationstests mit Dateisystem
     describe "Bottle Management (Integration)" $ around_ withTestEnvironment $ do
