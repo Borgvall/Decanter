@@ -136,6 +136,8 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
           (do
             setDirect3DWrapperState bottle DxvkAndVkd3dProton
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperValid
+            getDirect3DWrapperStatus bottle `shouldReturn` WrapperManaged WrapperValid
+            isBottleReadyForWindowsApps bottle `shouldReturn` True
 
             -- Simulate a symlink left over from an older Decanter/DXVK
             -- version: still resolves to a real file, just not the one the
@@ -146,15 +148,29 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
             removeFile dxgiPath
             createFileLink decoyPath dxgiPath
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperOutdated
+            getDirect3DWrapperStatus bottle `shouldReturn` WrapperManaged WrapperOutdated
+            isBottleReadyForWindowsApps bottle `shouldReturn` True
 
             -- Simulate the store path having been garbage-collected since.
             removeFile dxgiPath
             createFileLink (bottlePath bottle </> "does-not-exist.dll") dxgiPath
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperDangling
+            getDirect3DWrapperStatus bottle `shouldReturn` WrapperManaged WrapperDangling
+            isBottleReadyForWindowsApps bottle `shouldReturn` False
 
             -- Repairing must restore a healthy symlink without changing the
             -- nominal state (still DxvkAndVkd3dProton).
             repairDirect3DWrapperState bottle
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperValid
+            isBottleReadyForWindowsApps bottle `shouldReturn` True
             assertDirect3DWrapperState bottle DxvkAndVkd3dProton
             ) `finally` deleteBottleLogic bottle
+
+  describe "getDirect3DWrapperStatus / isBottleReadyForWindowsApps" $
+    it "reports a Proton bottle as unmanaged and always ready" $ do
+      -- Proton brings its own DXVK/vkd3d-proton, so this must hold without
+      -- ever touching the filesystem or requiring an actual Proton install
+      -- -- createBottleObject only builds the Bottle record.
+      bottle <- createBottleObject "Direct3dWrapperStatusProtonTestBottle" Win64 (Proton "/Test/Path")
+      getDirect3DWrapperStatus bottle `shouldReturn` WrapperNotManaged
+      isBottleReadyForWindowsApps bottle `shouldReturn` True

@@ -18,14 +18,6 @@ import Text.Read (readMaybe)
 
 import Bottle.Types
 import Bottle.Logic
-import Bottle.Logic.Direct3dWrappers
-  ( Direct3DWrapperState(..)
-  , getDirect3DWrapperState
-  , setDirect3DWrapperState
-  , WrapperHealth(..)
-  , getDirect3DWrapperHealth
-  , repairDirect3DWrapperState
-  )
 import Bottle.Logic.Snapshots (isSnapshotableBottle)
 import Logic.Translation (tr)
 import Gui.BottleSnapshotsView (buildSnapshotView)
@@ -294,17 +286,15 @@ buildBottleView window bottle stack refreshCallback = do
     ]
   #setChild clamp (Just contentBox)
 
-  -- Gesundheit des Direct3D-Wrappers -- steuert sowohl die Direct3D-Sektion
-  -- unten als auch, ob Windows-Programme überhaupt gestartet werden dürfen
-  -- (siehe "wineAppsBlocked"). Für Proton-Bottles verwaltet Decanter DXVK/
-  -- vkd3d-proton nicht selbst, daher dort immer "WrapperValid".
-  direct3DHealth <- case runner bottle of
-    SystemWine -> getDirect3DWrapperHealth bottle
-    Proton _   -> pure WrapperValid
-  let wineAppsBlocked = direct3DHealth == WrapperDangling
-      blockedTooltip = tr "Blocked until the Direct3D wrapper is repaired (see above)."
+  -- Status des Direct3D-Wrappers -- steuert, ob/wie die Direct3D-Sektion
+  -- unten aufgebaut wird. Ob überhaupt Windows-Programme gestartet werden
+  -- dürfen, fragen wir separat bei der Bottle nach ("readyForWindowsApps"),
+  -- statt hier selbst über Wrapper-Interna zu entscheiden.
+  direct3DStatus <- getDirect3DWrapperStatus bottle
+  readyForWindowsApps <- isBottleReadyForWindowsApps bottle
+  let blockedTooltip = tr "Blocked until the Direct3D wrapper is repaired (see above)."
       blockIfWineAppsBlocked :: Gtk.IsWidget w => w -> IO ()
-      blockIfWineAppsBlocked widget = when wineAppsBlocked $ do
+      blockIfWineAppsBlocked widget = when (not readyForWindowsApps) $ do
         w <- Gtk.toWidget widget
         set w [ #sensitive := False, #tooltipText := blockedTooltip ]
 
@@ -364,11 +354,12 @@ buildBottleView window bottle stack refreshCallback = do
     changeBottleRunner window bottle stack refreshCallback
   #append runnerSectionBox changeRunnerBtn
 
-  -- Direct3D-Wrapper (DXVK/vkd3d-proton) umschalten -- nur für System-Wine-
-  -- Bottles: Proton bringt beides bereits selbst mit.
-  case runner bottle of
-    SystemWine -> buildDirect3DWrapperSection window stack refreshCallback direct3DHealth contentBox bottle
-    Proton _   -> pure ()
+  -- Direct3D-Wrapper (DXVK/vkd3d-proton) umschalten -- nur wenn die Bottle
+  -- das laut "direct3DStatus" überhaupt selbst verwaltet (Proton bringt
+  -- beides bereits selbst mit).
+  case direct3DStatus of
+    WrapperManaged health -> buildDirect3DWrapperSection window stack refreshCallback health contentBox bottle
+    WrapperNotManaged     -> pure ()
 
   let addBtn label tooltip cssClasses action = do
         btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip, #cssClasses := cssClasses, #halign := Gtk.AlignFill ]

@@ -8,6 +8,9 @@ module Bottle.Logic.Direct3dWrappers
   , WrapperHealth(..)
   , getDirect3DWrapperHealth
   , repairDirect3DWrapperState
+  , Direct3DWrapperStatus(..)
+  , getDirect3DWrapperStatus
+  , isBottleReadyForWindowsApps
   ) where
 
 import Bottle.Types
@@ -232,6 +235,31 @@ getDirect3DWrapperHealth bottle = do
       | WrapperDangling `elem` healths = WrapperDangling
       | WrapperOutdated `elem` healths = WrapperOutdated
       | otherwise                     = WrapperValid
+
+-- | Whether, and how, Decanter manages "bottle"'s Direct3D wrapper. This is
+-- the single query the GUI needs to decide whether/how to render the
+-- Direct3D section -- it should never itself branch on 'runner' to figure
+-- this out.
+data Direct3DWrapperStatus
+  = WrapperNotManaged        -- ^ e.g. Proton, which brings its own DXVK/vkd3d-proton.
+  | WrapperManaged WrapperHealth
+  deriving (Show, Eq)
+
+getDirect3DWrapperStatus :: Bottle -> IO Direct3DWrapperStatus
+getDirect3DWrapperStatus bottle = case runner bottle of
+  SystemWine -> WrapperManaged <$> getDirect3DWrapperHealth bottle
+  Proton _   -> pure WrapperNotManaged
+
+-- | Whether "bottle" is currently in a state where Windows programs may be
+-- started. A dangling Direct3D wrapper symlink (e.g. after Nix garbage
+-- collection removed the store path it pointed at) would resolve to a
+-- missing DLL, so launching anything is blocked until it's repaired.
+isBottleReadyForWindowsApps :: Bottle -> IO Bool
+isBottleReadyForWindowsApps bottle = do
+  status <- getDirect3DWrapperStatus bottle
+  pure $ case status of
+    WrapperNotManaged     -> True
+    WrapperManaged health -> health /= WrapperDangling
 
 -- | Unconditionally re-symlinks whichever packages "bottle"'s current
 -- Direct3D wrapper state calls for, pointing them at the currently

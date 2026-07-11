@@ -33,11 +33,31 @@ module Bottle.Logic
   , runWinetricks
   , runFileManager
   , findWineStartMenuLnks
+
+    -- * Direct3D Wrapper
+  , Direct3DWrapperState(..)
+  , Direct3DWrapperStatus(..)
+  , WrapperHealth(..)
+  , getDirect3DWrapperState
+  , getDirect3DWrapperStatus
+  , setDirect3DWrapperState
+  , repairDirect3DWrapperState
+  , isBottleReadyForWindowsApps
   ) where
 
 import Bottle.Types
 import Bottle.Logic.Process (getMergedWineEnv, killBottleProcesses)
 import Bottle.Logic.Snapshots (isBtrfsSubvolume, deleteSubvolumeForcible, deleteAllSnapshots)
+import Bottle.Logic.Direct3dWrappers
+  ( Direct3DWrapperState(..)
+  , Direct3DWrapperStatus(..)
+  , WrapperHealth(..)
+  , getDirect3DWrapperState
+  , getDirect3DWrapperStatus
+  , setDirect3DWrapperState
+  , repairDirect3DWrapperState
+  , isBottleReadyForWindowsApps
+  )
 import Logic.SystemTool (runSystemTool)
 import System.Process.Typed
 import System.Directory
