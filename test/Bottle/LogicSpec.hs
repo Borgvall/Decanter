@@ -10,12 +10,10 @@ import System.Directory
   ( createDirectoryIfMissing
   , removePathForcibly
   , getCurrentDirectory
-  , doesFileExist
   )
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import Control.Exception (finally)
-import Control.Concurrent (threadDelay)
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 
 -- | Sets up an isolated test environment
@@ -95,33 +93,6 @@ spec = do
 
       it "returns Nothing for an unknown name" $ do
         findAppLnkByName "Unknown" lnkPaths `shouldBe` Nothing
-
-    describe "runCmd" $ do
-      it "starts the given command asynchronously with the bottle's merged Wine environment" $ do
-        let markerPath = "/tmp/decanter-test-runcmd-marker"
-        let bottle = Bottle "Test" "/tmp/decanter-test-runcmd-prefix" SystemWine Win64
-
-        removePathForcibly markerPath
-        runCmd bottle "sh" ["-c", "echo -n \"$WINEPREFIX\" > " ++ markerPath]
-
-        -- runCmd starts the process asynchronously (startProcess, not
-        -- runProcess), so poll for the marker file instead of reading it
-        -- immediately.
-        let waitForMarker attempts
-              | attempts <= (0 :: Int) = pure Nothing
-              | otherwise = do
-                  exists <- doesFileExist markerPath
-                  if exists
-                    then do
-                      -- Force full evaluation while the file still exists:
-                      -- readFile is lazy, and 'finally' below removes the
-                      -- marker as soon as this action returns.
-                      s <- readFile markerPath
-                      length s `seq` pure (Just s)
-                    else threadDelay 50000 >> waitForMarker (attempts - 1)
-
-        contents <- waitForMarker 40 `finally` removePathForcibly markerPath
-        contents `shouldBe` Just (bottlePath bottle)
 
     describe "Bottle Management (Integration)" $ around_ withTestEnvironment $ do
 

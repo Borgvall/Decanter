@@ -24,6 +24,7 @@ executable decanter
                     , Bottle.Logic.Direct3dWrappers
                     , Bottle.Logic.ApplicationMenu
                     , Bottle.Logic.Runner
+                    , Bottle.Logic.Programs
                     , Logic.SystemTool
                     , Logic.Translation
                     , Gui.BottleView
@@ -69,6 +70,7 @@ test-suite decanter-test
                     , Bottle.Logic.Direct3dWrappers
                     , Bottle.Logic.ApplicationMenu
                     , Bottle.Logic.Runner
+                    , Bottle.Logic.Programs
                     , Bottle.Types
                     , Logic.SystemTool
                     , Logic.Translation
@@ -78,6 +80,7 @@ test-suite decanter-test
                     , Bottle.Logic.Direct3dWrappersSpec
                     , Bottle.Logic.ApplicationMenuSpec
                     , Bottle.Logic.RunnerSpec
+                    , Bottle.Logic.ProgramsSpec
                     , Logic.SystemToolSpec
                     , Data.Vdf
     
