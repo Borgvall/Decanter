@@ -88,11 +88,10 @@ spec :: Spec
 spec = describe "Bottle.Logic.Process" $ do
 
   describe "getMergedWineEnv" $ do
-    it "sets WINEPREFIX and WINEARCH according to the bottle" $ do
+    it "sets WINEPREFIX according to the bottle" $ do
       let bottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
       env <- getMergedWineEnv bottle
       lookup "WINEPREFIX" env `shouldBe` Just "/tmp/decanter-test-prefix"
-      lookup "WINEARCH" env `shouldBe` Just "win64"
       lookup "PROTONPATH" env `shouldBe` Nothing
 
     it "sets PROTONPATH when using a Proton runner" $ do

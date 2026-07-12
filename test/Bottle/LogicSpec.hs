@@ -133,3 +133,14 @@ spec = do
         runner loaded `shouldBe` runner bottle
 
         deleteBottleLogic bottle
+
+      it "listExistingBottles still reads the legacy (RunnerType, Arch) config format" $ do
+        cwd <- getCurrentDirectory
+        let bottleDir = cwd </> "test-env" </> ".local" </> "share" </> "Decanter" </> "LegacyConfigTest"
+        createDirectoryIfMissing True (bottleDir </> "drive_c")
+        writeFile (bottleDir </> "decanter.cfg") "(Proton \"/legacy/path\",Win64)"
+
+        bottles <- listExistingBottles
+        let loaded = filter (\b -> bottleName b == "LegacyConfigTest") bottles
+        length loaded `shouldBe` 1
+        runner (head loaded) `shouldBe` Proton "/legacy/path"

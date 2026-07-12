@@ -48,12 +48,11 @@ validateName entryRow createBtn errorLabel = do
 -- Kept in Main for now, since it's triggered by the HeaderBar.
 showNewBottleDialog :: Gtk.Window -> IO () -> IO ()
 showNewBottleDialog parent refreshCallback = do
-  dialog <- new Gtk.Window 
+  dialog <- new Gtk.Window
     [ #transientFor := parent
     , #modal := True
     , #title := tr "New Bottle"
     , #defaultWidth := 400
-    , #defaultHeight := 300
     , #resizable := False
     ]
   

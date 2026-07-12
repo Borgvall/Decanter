@@ -49,7 +49,15 @@ saveBottleConfig b = do
     let content = show (runner b)
     writeFile (getConfigPath (bottlePath b)) content
 
--- | Loads the bottle's configuration
+-- | Stand-in for the 'Arch' field pre-existing config files (written before
+-- 32-bit prefix support was removed) still have, so 'loadBottleConfig' can
+-- parse them; the actual value is discarded.
+data LegacyArch = Win32 | Win64 deriving (Read)
+
+-- | Loads the bottle's configuration. Understands both the current format
+-- (just a 'RunnerType') and the legacy '(RunnerType, LegacyArch)' tuple
+-- format from before 32-bit prefix support was removed, so bottles created
+-- with an older Decanter version don't lose their configured runner.
 loadBottleConfig :: FilePath -> IO (Maybe RunnerType)
 loadBottleConfig bottleDir = do
     let path = getConfigPath bottleDir
@@ -60,9 +68,11 @@ loadBottleConfig bottleDir = do
             -- Plain 'reads' for safe parsing
             case reads content of
                 [(r, _)] -> return (Just r)
-                _        -> do
-                    putStrLn $ "Could not parse: " ++ path
-                    return Nothing
+                _ -> case reads content :: [((RunnerType, LegacyArch), String)] of
+                    [((r, _), _)] -> return (Just r)
+                    _ -> do
+                        putStrLn $ "Could not parse: " ++ path
+                        return Nothing
         else return Nothing
 
 -- | Changes a bottle's runner (bottle object only, does not save)
