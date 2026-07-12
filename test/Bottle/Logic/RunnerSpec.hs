@@ -22,16 +22,6 @@ spec = do
         name <- getRunnerTypeDisplayName SystemWine
         T.null name `shouldBe` False
 
-    describe "getSupportedArchitectures" $ do
-      it "always includes Win64" $ do
-        archs <- getSupportedArchitectures
-        archs `shouldContain` [Win64]
-
-      it "includes Win32 exactly when checkSystemWine32Support does" $ do
-        hasWin32 <- checkSystemWine32Support
-        archs <- getSupportedArchitectures
-        (Win32 `elem` archs) `shouldBe` hasWin32
-
     describe "getAvailableRunners" $ do
       it "includes SystemWine exactly when 'wine' is on PATH" $ do
         wineOnPath <- isJust <$> findExecutable "wine"

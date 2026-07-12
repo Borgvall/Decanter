@@ -32,7 +32,7 @@ spec = do
   describe "Bottle.Logic.Snapshots" $ around_ withTestEnvironment $ do
 
     it "handles snapshots if supported" $ do
-      bottle <- createBottleObject "SnapshotTestBottle" Win64 SystemWine
+      bottle <- createBottleObject "SnapshotTestBottle" SystemWine
 
       -- Creates the bottle (this runs wineboot, if Wine is installed)
       createBottleLogic bottle
@@ -91,7 +91,7 @@ spec = do
           deleteBottleLogic bottle
 
     it "deleteAllSnapshots removes every snapshot and the snapshot directory" $ do
-      bottle <- createBottleObject "DeleteAllSnapshotsTestBottle" Win64 SystemWine
+      bottle <- createBottleObject "DeleteAllSnapshotsTestBottle" SystemWine
       createBottleLogic bottle
 
       supportsSnaps <- isSnapshotableBottle bottle

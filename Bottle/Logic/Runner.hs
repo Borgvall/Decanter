@@ -3,8 +3,6 @@
 module Bottle.Logic.Runner
   ( getAvailableRunners
   , getRunnerTypeDisplayName
-  , checkSystemWine32Support
-  , getSupportedArchitectures
   ) where
 
 import Bottle.Types
@@ -18,7 +16,6 @@ import System.Directory
     )
 import System.FilePath ((</>), takeBaseName)
 import System.Process.Typed
-import System.Environment (getEnvironment)
 import System.Exit (ExitCode(..))
 import Control.Monad (filterM)
 import Data.Maybe (isJust)
@@ -69,28 +66,3 @@ getRunnerTypeDisplayName (Proton path) = do
                 then return $ "Proton (" <> T.pack (takeBaseName path) <> ")" -- Fallback
                 else return name
         else return $ "Proton (" <> T.pack (takeBaseName path) <> ")"
-
--- | Checks whether the system supports 32-bit prefixes.
--- Runs 'WINEARCH=win32 wine --version'; if wine32 is missing, this usually returns ExitCode 1.
-checkSystemWine32Support :: IO Bool
-checkSystemWine32Support = do
-    currentEnv <- getEnvironment
-    -- Override WINEARCH, but keep the rest (e.g. PATH)
-    let newEnv = ("WINEARCH", "win32") : filter ((/= "WINEARCH") . fst) currentEnv
-
-    let procConfig = setEnv newEnv
-                   $ setStderr closed
-                   $ setStdout closed
-                   $ proc "wine" ["--version"]
-
-    result <- runProcess procConfig
-    return (result == ExitSuccess)
-
--- | Returns a list of the architectures supported by the system.
--- Win64 is assumed to always be available.
-getSupportedArchitectures :: IO [Arch]
-getSupportedArchitectures = do
-    win32Support <- checkSystemWine32Support
-    if win32Support
-       then return [Win64, Win32]
-       else return [Win64]

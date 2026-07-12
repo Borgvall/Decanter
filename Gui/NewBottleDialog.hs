@@ -20,7 +20,7 @@ import Bottle.Logic
   , createBottleObject
   , createBottleLogic
   )
-import Bottle.Logic.Runner (getSupportedArchitectures, getAvailableRunners, getRunnerTypeDisplayName)
+import Bottle.Logic.Runner (getAvailableRunners, getRunnerTypeDisplayName)
 import Logic.Translation (tr)
 
 -- | Validates the name and updates the UI status accordingly.
@@ -63,17 +63,6 @@ showNewBottleDialog parent refreshCallback = do
   
   nameEntry <- new Adw.EntryRow [ #title := tr "Name" ]
   #add group nameEntry
-  
-  archRow <- new Adw.ComboRow [ #title := tr "Architecture" ]
-
-  supportedArchs <- getSupportedArchitectures
-
-  -- Show the architectures via their derived 'show' string ("Win64"/"Win32")
-  let archStrings = map (T.pack . show) supportedArchs
-  archModel <- Gtk.stringListNew (Just archStrings)
-
-  #setModel archRow (Just archModel)
-  #add group archRow
 
   runnerRow <- new Adw.ComboRow [ #title := tr "Runner" ]
   availableRunners <- getAvailableRunners
@@ -119,18 +108,13 @@ showNewBottleDialog parent refreshCallback = do
     #setLabel statusLabel (tr "Creating prefix (this may take a while)...")
     #setVisible statusLabel True
     
-    selectedArchIdx <- #getSelected archRow
-    let selectedArch = if fromIntegral selectedArchIdx < length supportedArchs
-                       then supportedArchs !! fromIntegral selectedArchIdx
-                       else Win64
-
     selectedRunnerIdx <- #getSelected runnerRow
     let selectedRunner = if fromIntegral selectedRunnerIdx < length availableRunners
                          then availableRunners !! fromIntegral selectedRunnerIdx
                          else SystemWine
 
     void $ async $ do
-      bottleObj <- createBottleObject nameText selectedArch selectedRunner
+      bottleObj <- createBottleObject nameText selectedRunner
       res <- try (createBottleLogic bottleObj) :: IO (Either IOError ())
       
       GLib.idleAdd GLib.PRIORITY_DEFAULT $ do

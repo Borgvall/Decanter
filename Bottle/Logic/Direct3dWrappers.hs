@@ -82,12 +82,10 @@ syswow64Dir :: Bottle -> FilePath
 syswow64Dir Bottle{..} = bottlePath </> "drive_c" </> "windows" </> "syswow64"
 
 -- | Wine-prefix directories to manage, paired with whether they hold
--- 64-bit DLLs. A Win64 prefix has both a 64-bit system32 and a 32-bit
--- syswow64; a Win32 prefix only has a (32-bit) system32.
+-- 64-bit DLLs. Every bottle is a 64-bit (Win64) prefix, with both a
+-- 64-bit system32 and a 32-bit syswow64.
 targetDirs :: Bottle -> [(FilePath, Bool)]
-targetDirs bottle = case arch bottle of
-  Win64 -> [ (system32Dir bottle, True), (syswow64Dir bottle, False) ]
-  Win32 -> [ (system32Dir bottle, False) ]
+targetDirs bottle = [ (system32Dir bottle, True), (syswow64Dir bottle, False) ]
 
 -- | The Nix store path of a wrapper package, exposed via its
 -- 'wrapperEnvVar' (see flake.nix: set as a derivation attribute for the

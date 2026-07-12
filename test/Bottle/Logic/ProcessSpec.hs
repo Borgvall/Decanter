@@ -89,19 +89,19 @@ spec = describe "Bottle.Logic.Process" $ do
 
   describe "getMergedWineEnv" $ do
     it "sets WINEPREFIX and WINEARCH according to the bottle" $ do
-      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine Win64
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
       env <- getMergedWineEnv bottle
       lookup "WINEPREFIX" env `shouldBe` Just "/tmp/decanter-test-prefix"
       lookup "WINEARCH" env `shouldBe` Just "win64"
       lookup "PROTONPATH" env `shouldBe` Nothing
 
     it "sets PROTONPATH when using a Proton runner" $ do
-      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton") Win64
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
       env <- getMergedWineEnv bottle
       lookup "PROTONPATH" env `shouldBe` Just "/opt/GE-Proton"
 
     it "sets PRESSURE_VESSEL_SYSTEMD_SCOPE for a Proton runner, but not for System Wine" $ do
-      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton") Win64
+      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
       protonEnv <- getMergedWineEnv protonBottle
       lookup "PRESSURE_VESSEL_SYSTEMD_SCOPE" protonEnv `shouldBe` Just "1"
 
@@ -110,11 +110,11 @@ spec = describe "Bottle.Logic.Process" $ do
       lookup "PRESSURE_VESSEL_SYSTEMD_SCOPE" systemWineEnv `shouldBe` Nothing
 
     it "always disables winemenubuilder.exe for System Wine, but not for Proton" $ do
-      let systemWineBottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine Win64
+      let systemWineBottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
       systemWineEnv <- getMergedWineEnv systemWineBottle
       lookup "WINEDLLOVERRIDES" systemWineEnv `shouldBe` Just "winemenubuilder.exe="
 
-      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton") Win64
+      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
       protonEnv <- getMergedWineEnv protonBottle
       lookup "WINEDLLOVERRIDES" protonEnv `shouldBe` Nothing
 
@@ -127,7 +127,7 @@ spec = describe "Bottle.Logic.Process" $ do
         (_, Nothing, _) -> pendingWith "DECANTER_DXVK_PATH is not set; enter the Nix dev shell to run this test."
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
-          bottle <- createBottleObject "WineDllOverridesTestBottle" Win64 SystemWine
+          bottle <- createBottleObject "WineDllOverridesTestBottle" SystemWine
           createBottleLogic bottle
 
           (do
@@ -153,7 +153,7 @@ spec = describe "Bottle.Logic.Process" $ do
       case SystemWine `elem` runners of
         False -> pendingWith "No system Wine installation found in this environment; not testable here."
         True -> do
-          let bottle = Bottle "Test" "/tmp/decanter-test-icon-extraction-prefix" SystemWine Win64
+          let bottle = Bottle "Test" "/tmp/decanter-test-icon-extraction-prefix" SystemWine
           let outputPath = "/tmp/decanter-test-icon-extraction-output.png"
 
           removePathForcibly outputPath
@@ -183,7 +183,7 @@ spec = describe "Bottle.Logic.Process" $ do
       case SystemWine `elem` runners of
         False -> pendingWith "No system Wine installation found in this environment; not testable here."
         True -> do
-          let bottle = Bottle "SystemWineKillTestBottle" "/tmp/decanter-test-systemwine-kill-prefix" SystemWine Win64
+          let bottle = Bottle "SystemWineKillTestBottle" "/tmp/decanter-test-systemwine-kill-prefix" SystemWine
           createBottleLogic bottle
           startLongRunningPing bottle
 
@@ -205,7 +205,7 @@ spec = describe "Bottle.Logic.Process" $ do
       let (dwprotonPaths, otherProtonPaths) = partition ("dwproton" `isInfixOf`) [ p | Proton p <- runners ]
       case (maybeUmuRun, dwprotonPaths ++ otherProtonPaths) of
         (Just _, protonPath : _) -> do
-          bottle <- createBottleObject "ProtonKillTestBottle" Win64 (Proton protonPath)
+          bottle <- createBottleObject "ProtonKillTestBottle" (Proton protonPath)
           createBottleLogic bottle
           startLongRunningPing bottle
 

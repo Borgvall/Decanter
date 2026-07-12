@@ -24,7 +24,7 @@ spec = do
     describe "runCmd" $ do
       it "starts the given command asynchronously with the bottle's merged Wine environment" $ do
         let markerPath = "/tmp/decanter-test-runcmd-marker"
-        let bottle = Bottle "Test" "/tmp/decanter-test-runcmd-prefix" SystemWine Win64
+        let bottle = Bottle "Test" "/tmp/decanter-test-runcmd-prefix" SystemWine
 
         removePathForcibly markerPath
         runCmd bottle "sh" ["-c", "echo -n \"$WINEPREFIX\" > " ++ markerPath]
@@ -70,7 +70,7 @@ spec = do
         writeFile (nestedDir </> "Solitaire.lnk") ""
         writeFile (userStartMenu </> "AliceApp.lnk") ""
 
-        let bottle = Bottle "ProgramsSpecBottle" bottleDir SystemWine Win64
+        let bottle = Bottle "ProgramsSpecBottle" bottleDir SystemWine
 
         found <- findWineStartMenuLnks bottle `finally` removePathForcibly bottleDir
 
@@ -84,7 +84,7 @@ spec = do
         cwd <- getCurrentDirectory
         let bottleDir = cwd </> "test-env" </> "EmptyProgramsSpecBottle"
         createDirectoryIfMissing True bottleDir
-        let bottle = Bottle "EmptyProgramsSpecBottle" bottleDir SystemWine Win64
+        let bottle = Bottle "EmptyProgramsSpecBottle" bottleDir SystemWine
 
         found <- findWineStartMenuLnks bottle `finally` removePathForcibly bottleDir
         found `shouldBe` []

@@ -57,7 +57,7 @@ getWineOverrides bottle@Bottle{..} = do
     wineDllOverridesEnv <- getWineDllOverridesEnv bottle
     pure $
       [ ("WINEPREFIX", bottlePath)
-      , ("WINEARCH", archToString arch)
+      , ("WINEARCH", "win64")
       ] ++ (case runner of
                -- PRESSURE_VESSEL_SYSTEMD_SCOPE places the game into a
                -- systemd --user scope (see killProtonProcesses); without
@@ -105,7 +105,7 @@ getIconExtractionWineEnv :: Bottle -> IO [(String, String)]
 getIconExtractionWineEnv Bottle{..} = do
     env <- mergeWithHostEnv $
       [ ("WINEPREFIX", bottlePath)
-      , ("WINEARCH", archToString arch)
+      , ("WINEARCH", "win64")
       ] ++ case runner of
              Proton p -> [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
              _        -> []

@@ -33,7 +33,6 @@ Decanter is heavily inspired by the excellent [**Bottles**](https://usebottles.c
 Decanter provides a clean GUI to manage your Windows applications on Linux:
 
 * **Isolated Environments:** Create and manage multiple Wine prefixes ("Bottles") to keep dependencies separate.
-* **Architecture Support:** Choose between 32-bit (`win32`) and 64-bit (`win64`) architectures when creating a bottle.
 * **Runner Support (Proton):** Choose the runner per bottle - System Wine, or
   any Proton build installed via Steam (auto-detected from
   `~/.steam/root/compatibilitytools.d`, e.g. GE-Proton). Switch it later from

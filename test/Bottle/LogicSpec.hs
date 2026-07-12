@@ -55,14 +55,9 @@ spec = do
         let longName = T.pack $ replicate 300 'a'
         checkNameValidity longName `shouldNotBe` Valid
 
-    describe "Architecture handling" $ do
-      it "converts Arch correctly to string" $ do
-        archToString Win32 `shouldBe` "win32"
-        archToString Win64 `shouldBe` "win64"
-
     describe "findBottleByName" $ do
-      let bottleA = Bottle "Alpha" "/tmp/alpha" SystemWine Win64
-      let bottleB = Bottle "Beta" "/tmp/beta" SystemWine Win32
+      let bottleA = Bottle "Alpha" "/tmp/alpha" SystemWine
+      let bottleB = Bottle "Beta" "/tmp/beta" SystemWine
       let bottles = [bottleA, bottleB]
 
       it "finds a bottle by its exact name" $ do
@@ -98,9 +93,9 @@ spec = do
 
 
       it "creates a bottle object with correct paths" $ do
-        bottle <- createBottleObject "TestBottle" Win64 SystemWine
+        bottle <- createBottleObject "TestBottle" SystemWine
         bottleName bottle `shouldBe` "TestBottle"
-        return () 
+        return ()
 
       it "lists bottles correctly when empty" $ do
         bottles <- listExistingBottles
@@ -116,28 +111,15 @@ spec = do
             noBottles <- listExistingBottles
             noBottles `shouldBe` []
 
-      it "create and delete 32 bit prefix" $ do
-        pendingWith "Skipping 32-bit test: Wine 32-bit is broken."
-      {-
-        -- Check if system supports 32-bit Wine
-        hasWin32 <- checkSystemWine32Support
-        if hasWin32 
-          then do
-            bottle <- createBottleObject "32bitTest" Win32 SystemWine
-            createAndDeleteBottle bottle
-          else
-            pendingWith "Skipping 32-bit test: Wine 32-bit not supported on this system."
-      -}
-
-      it "create and delete 64 bit prefix" $ do
-        bottle <- createBottleObject "64bitTest" Win64 SystemWine
+      it "create and delete a bottle" $ do
+        bottle <- createBottleObject "CreateDeleteTest" SystemWine
         createAndDeleteBottle bottle
 
       it "persists runner configuration (Proton)" $ do
         pendingWith "UMU-Launcher and Proton currently not available in test environment."
 
         let name = "ProtonConfigTest"
-        bottle <- createBottleObject name Win64 (Proton "/Test/Path")
+        bottle <- createBottleObject name (Proton "/Test/Path")
 
         createBottleLogic bottle -- writes the config
 
@@ -149,6 +131,5 @@ spec = do
 
         -- Check that the runner is still Proton
         runner loaded `shouldBe` runner bottle
-        arch loaded `shouldBe` Win64
 
         deleteBottleLogic bottle

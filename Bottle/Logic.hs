@@ -43,14 +43,14 @@ import Logic.Translation (tr)
 getConfigPath :: FilePath -> FilePath
 getConfigPath bottleDir = bottleDir </> "decanter.cfg"
 
--- | Saves the bottle's configuration (runner, arch)
+-- | Saves the bottle's configuration (runner)
 saveBottleConfig :: Bottle -> IO ()
 saveBottleConfig b = do
-    let content = show (runner b, arch b)
+    let content = show (runner b)
     writeFile (getConfigPath (bottlePath b)) content
 
 -- | Loads the bottle's configuration
-loadBottleConfig :: FilePath -> IO (Maybe (RunnerType, Arch))
+loadBottleConfig :: FilePath -> IO (Maybe RunnerType)
 loadBottleConfig bottleDir = do
     let path = getConfigPath bottleDir
     exists <- doesFileExist path
@@ -59,8 +59,8 @@ loadBottleConfig bottleDir = do
             content <- readFile path
             -- Plain 'reads' for safe parsing
             case reads content of
-                [((r, a), _)] -> return (Just (r, a))
-                _              -> do
+                [(r, _)] -> return (Just r)
+                _        -> do
                     putStrLn $ "Could not parse: " ++ path
                     return Nothing
         else return Nothing
@@ -82,14 +82,6 @@ getBottlesBaseDir = do
   createDirectoryIfMissing True base
   return base
 
--- | Detects the architecture from the presence of 'syswow64'
-detectBottleArch :: FilePath -> IO Arch
-detectBottleArch path = do
-    let syswow64 = path </> "drive_c" </> "windows" </> "syswow64"
-    is64 <- doesDirectoryExist syswow64
-    return $ if is64 then Win64 else Win32
-
-
 -- | Finds a bottle by its name (exact, case-sensitive comparison).
 findBottleByName :: T.Text -> [Bottle] -> Maybe Bottle
 findBottleByName name bottles = case filter ((== name) . bottleName) bottles of
@@ -105,7 +97,7 @@ findAppLnkByName name lnkPaths = case filter ((== name) . T.pack . takeBaseName)
   (p : _) -> Just p
   []      -> Nothing
 
--- | Scans the directory for existing bottles and detects their architecture
+-- | Scans the directory for existing bottles
 listExistingBottles :: IO [Bottle]
 listExistingBottles = do
   base <- getBottlesBaseDir
@@ -126,11 +118,9 @@ listExistingBottles = do
           maybeConfig <- loadBottleConfig path
 
           case maybeConfig of
-            Just (r, a) -> return $ Bottle (T.pack name) path r a
-            Nothing -> do
-                -- Fallback for old bottles without a config
-                detectedArch <- detectBottleArch path
-                return $ Bottle (T.pack name) path SystemWine detectedArch
+            Just r  -> return $ Bottle (T.pack name) path r
+            -- Fallback for old bottles without a config
+            Nothing -> return $ Bottle (T.pack name) path SystemWine
 
 createVolume :: FilePath -> IO ()
 createVolume path = do
@@ -162,11 +152,11 @@ explainNameValid status = case status of
   NameTooLong   -> tr "The name is too long (max 256 characters)."
   ContainsSlash -> tr "The name cannot contain a slash ('/')."
 
-createBottleObject :: T.Text -> Arch -> RunnerType -> IO Bottle
-createBottleObject name arch rType = do
+createBottleObject :: T.Text -> RunnerType -> IO Bottle
+createBottleObject name rType = do
   base <- getBottlesBaseDir
   let path = base </> T.unpack name
-  return $ Bottle name path rType arch
+  return $ Bottle name path rType
 
 createBottleLogic :: Bottle -> IO ()
 createBottleLogic bottle@Bottle{..} = do

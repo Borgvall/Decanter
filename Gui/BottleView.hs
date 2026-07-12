@@ -345,13 +345,6 @@ buildBottleView window bottle stack refreshCallback = do
     ]
   #append runnerInfoBox runnerLabel
 
-  archLabel <- new Gtk.Label
-    [ #label := "Architecture: " <> T.pack (archToString (arch bottle))
-    , #cssClasses := ["dim-label", "caption"]
-    , #halign := Gtk.AlignStart
-    ]
-  #append runnerInfoBox archLabel
-
   runnerTypeLabel <- new Gtk.Label
     [ #label := runnerTypeToString (runner bottle)
     , #cssClasses := ["dim-label", "caption"]

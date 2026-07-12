@@ -90,7 +90,7 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
         (_, Nothing, _) -> pendingWith "DECANTER_DXVK_PATH is not set; enter the Nix dev shell to run this test."
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
-          bottle <- createBottleObject "Direct3dWrapperTestBottle" Win64 SystemWine
+          bottle <- createBottleObject "Direct3dWrapperTestBottle" SystemWine
           createBottleLogic bottle
 
           (do
@@ -131,7 +131,7 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
         (_, Nothing, _) -> pendingWith "DECANTER_DXVK_PATH is not set; enter the Nix dev shell to run this test."
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
-          bottle <- createBottleObject "Direct3dWrapperHealthTestBottle" Win64 SystemWine
+          bottle <- createBottleObject "Direct3dWrapperHealthTestBottle" SystemWine
           createBottleLogic bottle
 
           (do
@@ -174,6 +174,6 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
       -- builds the Bottle record and doesn't create the prefix itself, but
       -- still needs a writable XDG_DATA_HOME (see 'withTestEnvironment')
       -- for its own bookkeeping directory.
-      bottle <- createBottleObject "Direct3dWrapperStatusProtonTestBottle" Win64 (Proton "/Test/Path")
+      bottle <- createBottleObject "Direct3dWrapperStatusProtonTestBottle" (Proton "/Test/Path")
       getDirect3DWrapperStatus bottle `shouldReturn` WrapperNotManaged
       isBottleReadyForWindowsApps bottle `shouldReturn` True
