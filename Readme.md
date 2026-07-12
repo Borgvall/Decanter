@@ -2,13 +2,27 @@
 
 **Decanter** is a modern Wine prefix manager written in **Haskell**, utilizing **GTK4** and **Libadwaita** to provide a native Linux experience.
 
-> **⚠️ Experimental Project**
-> This project is a proof-of-concept created to test the coding capabilities of **Gemini V3** (AI). The code, structure, and logic were largely generated as part of this experiment.
+> **⚠️ Experimental Project** This project started as a proof-of-concept to
+> test the coding capabilities of AI models. It began with **Gemini**: every
+> change was driven by a manual prompt, and both the prompt and the model's
+> response were copied verbatim into the commit message.
 >
-> **Analyze the Process:**
-> If you look at the **Git commit history**, you will find the original **German prompts and AI responses** in the commit messages. This history serves as a transparent documentation of the development workflow. It allows you to trace exactly:
-> * Where the AI produced flawless, working code immediately.
-> * Where manual intervention was necessary to fix bugs, resolve compiler errors, or adjust the logic.
+> It has since evolved into **agentic coding** with **Claude Code**, given a
+> proper harness to work in - a pre-commit hook that enforces a successful
+> build and test coverage for new logic, an `AGENTS.md` describing project
+> conventions, and a rule to hand off interactive GUI verification back to a
+> human instead of simulating clicks. The commit history reflects this shift:
+> earlier commits carry the full German prompt/response pair, later ones are
+> shorter and describe requirements and design decisions instead.
+>
+> **Analyze the process:** the **Git commit history** documents this
+> transparently across both eras. It lets you trace exactly:
+>
+> - Where the AI produced flawless, working code immediately.
+> - Where manual intervention was necessary to fix bugs, resolve compiler
+>   errors, or adjust the logic.
+> - How the workflow itself changed - from manually copy-pasted prompts to
+>   an agent operating inside guardrails it has to satisfy on its own.
 
 ## 💡 Inspiration
 
