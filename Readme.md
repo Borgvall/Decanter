@@ -4,7 +4,9 @@
 
 ## 🎯 Vision
 
-Decanter is a serious, daily-usable alternative to [Bottles](https://usebottles.com/) for running Windows applications on Linux — not a feature clone, but a narrower tool built around two strengths Bottles doesn't have: **BTRFS-native storage** (bottles as subvolumes, with fast snapshot/restore built in from the ground up) and **Nix-based reproducibility** (deterministic builds and deploys via flakes, no Docker/Flatpak detour). Rather than chasing feature parity with Bottles, Decanter deepens this niche.
+Decanter is a serious, daily-usable alternative to [Bottles](https://usebottles.com/) for running Windows applications on Linux — not a feature clone, but a narrower tool built around two strengths Bottles doesn't have: **BTRFS-native storage** (bottles as subvolumes, with fast snapshot/restore built in from the ground up) and **Nix-based reproducibility** (deterministic builds and deploys via flakes, no Docker/Flatpak detour, backed by an enforced unit/integration test suite for the backend logic that keeps that determinism meaningful). Rather than chasing feature parity with Bottles, Decanter deepens this niche.
+
+See [Comparison.md](Comparison.md) for a feature-by-feature comparison against Bottles and Faugus Launcher (a point-in-time snapshot, not a living document).
 
 ## 💡 Inspiration
 
