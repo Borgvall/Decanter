@@ -77,6 +77,41 @@ Instead:
 This doesn't apply to non-interactive checks - building, the automated
 test suite, and `nix build` remain fine to run without asking.
 
+## 5. Splitting a module into submodules
+
+When a module grows too large and gets split into cohesive submodules
+(as done for `Bottle.Logic` -> `Bottle.Logic.Process`/`Snapshots`/
+`Direct3dWrappers`/`ApplicationMenu`/`Runner`/`Programs`, and for
+`Gui.BottleView` -> `Gui.ProgramListView`):
+
+- Follow the existing per-directory naming convention. `Bottle.Logic.*`
+  submodules use the nested dotted name (e.g. `Bottle.Logic.
+  ApplicationMenu`). `Gui.*` submodules stay flat instead (e.g.
+  `Gui.ProgramListView`, not `Gui.BottleView.ProgramList`), matching
+  the sibling files already there (`Gui.BottleSnapshotsView`,
+  `Gui.OverviewView`, ...).
+- Don't leave the split-off functions re-exported through the original
+  module "for convenience". Have every caller (Cli, Main, Gui.*, the
+  test suite) import each submodule directly for what it actually
+  uses; the original module itself should only import (without
+  re-exporting) whatever it still genuinely calls internally. A pure
+  passthrough re-export just hides the real dependency graph and makes
+  GHC rebuild every caller whenever any submodule changes, even ones
+  unrelated to what that caller uses.
+- Watch out for a trap in the test-coverage hook from rule 2: it diffs
+  a file's export list against its content at `HEAD`. For a
+  brand-new file, that means *every* exported function counts as
+  "newly exported" - even ones that only moved there from elsewhere
+  and already had tests. Don't satisfy this mechanically (e.g. by just
+  mentioning the name in a comment); move the existing test cases into
+  a new spec module alongside the split-off code, and only write
+  genuinely new tests for functions that were newly made public in the
+  process (e.g. a helper that used to be private).
+- Prefer one commit per extracted submodule so the history stays
+  reviewable. Dropping the original module's re-exports in favor of
+  direct imports at every call site is naturally its own follow-up
+  commit, once the split itself is confirmed working.
+
 ## Commit messages
 
 The author of an AI commit shall be the used LLM name and version e.g. Opus
