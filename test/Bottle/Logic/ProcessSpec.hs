@@ -4,7 +4,9 @@ module Bottle.Logic.ProcessSpec (spec) where
 
 import Test.Hspec
 import Bottle.Logic.Process
-import Bottle.Logic (getAvailableRunners, createBottleObject, createBottleLogic, deleteBottleLogic, runCmd)
+import Bottle.Logic (createBottleObject, createBottleLogic, deleteBottleLogic)
+import Bottle.Logic.Runner (getAvailableRunners)
+import Bottle.Logic.Programs (runCmd)
 import Bottle.Logic.Direct3dWrappers (Direct3DWrapperState(..), setDirect3DWrapperState)
 import Bottle.Types
 import System.Directory (createDirectoryIfMissing, findExecutable, getCurrentDirectory, removePathForcibly)

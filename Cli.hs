@@ -24,8 +24,10 @@ import System.IO (hPutStrLn, stderr)
 import Bottle.Logic
   ( findAppLnkByName
   , findBottleByName
-  , findWineStartMenuLnks
   , listExistingBottles
+  )
+import Bottle.Logic.Programs
+  ( findWineStartMenuLnks
   , runFileWithStart
   , runWindowsLnk
   )

@@ -12,7 +12,12 @@ import Control.Monad (forM_, when, void)
 import System.FilePath (takeBaseName)
 
 import Bottle.Types
-import Bottle.Logic
+import Bottle.Logic.ApplicationMenu
+  ( addToApplicationMenu
+  , removeFromApplicationMenu
+  , isInApplicationMenu
+  )
+import Bottle.Logic.Programs (findWineStartMenuLnks, runWindowsLnk)
 import Logic.Translation (tr)
 
 -- | Categories offered for application-menu entries (see

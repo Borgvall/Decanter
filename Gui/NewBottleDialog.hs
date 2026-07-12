@@ -14,6 +14,13 @@ import System.FilePath (takeBaseName)
 
 import Bottle.Types
 import Bottle.Logic
+  ( checkNameValidity
+  , NameValid(Valid)
+  , explainNameValid
+  , createBottleObject
+  , createBottleLogic
+  )
+import Bottle.Logic.Runner (getSupportedArchitectures, getAvailableRunners, getRunnerTypeDisplayName)
 import Logic.Translation (tr)
 
 -- | Validates the name and updates the UI status accordingly.

@@ -9,7 +9,7 @@ import qualified Data.Text as T
 import Control.Monad (forM_, void)
 
 import Bottle.Types
-import Bottle.Logic
+import Bottle.Logic (listExistingBottles)
 import Logic.Translation (tr)
 import Gui.BottleView (buildBottleView)
 import Gui.NewBottleDialog (showNewBottleDialog)

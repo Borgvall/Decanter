@@ -6,90 +6,21 @@ module Bottle.Logic
     listExistingBottles
   , findBottleByName
   , findAppLnkByName
-  , getAvailableRunners
-  , getRunnerTypeDisplayName
   , createBottleObject
   , createBottleLogic
   , changeBottleRunnerLogic
   , deleteBottleLogic
-  , checkSystemWine32Support
-  , getSupportedArchitectures
 
     -- * Validation
   , checkNameValidity
   , NameValid(Valid)
   , explainNameValid
-
-    -- * Running Programs
-  , runExecutable
-  , runFileWithStart
-  , runWindowsLnk
-  , killBottleProcesses
-  , runCmd
-
-    -- * System Tools
-  , runWineCfg
-  , runRegedit
-  , runUninstaller
-  , isWinetricksAvailable
-  , runWinetricks
-  , runFileManager
-  , findWineStartMenuLnks
-
-    -- * Application Menu Integration
-  , addToApplicationMenu
-  , removeFromApplicationMenu
-  , isInApplicationMenu
-
-    -- * Direct3D Wrapper
-  , Direct3DWrapperState(..)
-  , Direct3DWrapperStatus(..)
-  , WrapperHealth(..)
-  , getDirect3DWrapperState
-  , getDirect3DWrapperStatus
-  , setDirect3DWrapperState
-  , repairDirect3DWrapperState
-  , isBottleReadyForWindowsApps
   ) where
 
 import Bottle.Types
 import Bottle.Logic.Process (getMergedWineEnv, killBottleProcesses)
 import Bottle.Logic.Snapshots (isBtrfsSubvolume, deleteSubvolumeForcible, deleteAllSnapshots)
-import Bottle.Logic.ApplicationMenu
-  ( addToApplicationMenu
-  , removeFromApplicationMenu
-  , isInApplicationMenu
-  , removeApplicationMenuSymlink
-  )
-import Bottle.Logic.Runner
-  ( getAvailableRunners
-  , getRunnerTypeDisplayName
-  , checkSystemWine32Support
-  , getSupportedArchitectures
-  )
-import Bottle.Logic.Programs
-  ( runCmd
-  , runExecutable
-  , runFileWithStart
-  , runWindowsLnk
-  , runWineCfg
-  , runRegedit
-  , runUninstaller
-  , isWinetricksAvailable
-  , runWinetricks
-  , runFileManager
-  , findWineStartMenuLnks
-  )
-import Bottle.Logic.Direct3dWrappers
-  ( Direct3DWrapperState(..)
-  , Direct3DWrapperStatus(..)
-  , WrapperHealth(..)
-  , getDirect3DWrapperState
-  , getDirect3DWrapperStatus
-  , setDirect3DWrapperState
-  , repairDirect3DWrapperState
-  , isBottleReadyForWindowsApps
-  )
+import Bottle.Logic.ApplicationMenu (removeApplicationMenuSymlink)
 import System.Process.Typed
 import System.Directory
     ( createDirectoryIfMissing

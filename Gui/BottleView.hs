@@ -17,7 +17,29 @@ import System.FilePath (takeBaseName)
 import Text.Read (readMaybe)
 
 import Bottle.Types
-import Bottle.Logic
+import Bottle.Logic (deleteBottleLogic, changeBottleRunnerLogic)
+import Bottle.Logic.Process (killBottleProcesses)
+import Bottle.Logic.Runner (getAvailableRunners, getRunnerTypeDisplayName)
+import Bottle.Logic.Programs
+  ( runExecutable
+  , runFileWithStart
+  , runWineCfg
+  , runRegedit
+  , runUninstaller
+  , isWinetricksAvailable
+  , runWinetricks
+  , runFileManager
+  )
+import Bottle.Logic.Direct3dWrappers
+  ( Direct3DWrapperState(..)
+  , Direct3DWrapperStatus(..)
+  , WrapperHealth(..)
+  , getDirect3DWrapperState
+  , getDirect3DWrapperStatus
+  , setDirect3DWrapperState
+  , repairDirect3DWrapperState
+  , isBottleReadyForWindowsApps
+  )
 import Bottle.Logic.Snapshots (isSnapshotableBottle)
 import Logic.Translation (tr)
 import Gui.BottleSnapshotsView (buildSnapshotView)

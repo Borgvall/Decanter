@@ -4,7 +4,8 @@ module Bottle.Logic.Direct3dWrappersSpec (spec) where
 
 import Test.Hspec
 import Bottle.Logic.Direct3dWrappers
-import Bottle.Logic (getAvailableRunners, createBottleObject, createBottleLogic, deleteBottleLogic)
+import Bottle.Logic (createBottleObject, createBottleLogic, deleteBottleLogic)
+import Bottle.Logic.Runner (getAvailableRunners)
 import Bottle.Types
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, pathIsSymbolicLink, removeFile, createFileLink)
 import System.Environment (setEnv, unsetEnv, lookupEnv)
