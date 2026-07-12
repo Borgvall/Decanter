@@ -34,10 +34,19 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
 
 * **Isolated Environments:** Create and manage multiple Wine prefixes ("Bottles") to keep dependencies separate.
 * **Architecture Support:** Choose between 32-bit (`win32`) and 64-bit (`win64`) architectures when creating a bottle.
+* **Runner Support (Proton):** Choose the runner per bottle - System Wine, or
+  any Proton build installed via Steam (auto-detected from
+  `~/.steam/root/compatibilitytools.d`, e.g. GE-Proton). Switch it later from
+  the bottle view.
 * **Modern UI:** Built with GTK4 and Libadwaita for a seamless GNOME integration.
 * **Smart Storage (BTRFS):** Automatically attempts to create bottles as BTRFS subvolumes for better storage management. It gracefully falls back to standard directories if BTRFS is unavailable.
 * **Snapshots (BTRFS):** Using BTRFS-subvolume snapshots the state of a battle can be stored and restored fast.
 * **Program Detection:** Automatically scans the bottle's Start Menu to find and list installed applications.
+* **Application Menu Integration:** Add or remove a detected program to/from
+  the host's Linux application menu with one click, complete with its real
+  icon (extracted via `winemenubuilder`). Launching it from there routes
+  through `decanter start`, so it goes through the same environment/runner
+  logic as launching it from the GUI.
 * **Drag & Drop:** Simply drag `.exe` or `.msi` files into the bottle view to run or install them.
 * **Integrated Tools:** Quick access to essential Wine utilities:
     * `winecfg`
@@ -49,6 +58,9 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
   built-in Direct3D implementation, DXVK, and DXVK + vkd3d-proton right from
   the bottle view. Unlike Proton, plain Wine doesn't ship these on its own;
   "DXVK + vkd3d-proton" is recommended for modern (Direct3D 12) games.
+* **Command Line Interface:** Manage bottles and launch applications from the
+  terminal (`decanter gui/list-bottles/list-apps/start/open`), with shell
+  completion for bash, zsh and fish.
 
 ## 🛠 Tech Stack
 
