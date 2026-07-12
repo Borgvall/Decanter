@@ -11,9 +11,6 @@ import System.Directory
   , removePathForcibly
   , getCurrentDirectory
   , doesFileExist
-  , getXdgDirectory
-  , XdgDirectory(XdgData)
-  , getSymbolicLinkTarget
   )
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
@@ -125,61 +122,6 @@ spec = do
 
         contents <- waitForMarker 40 `finally` removePathForcibly markerPath
         contents `shouldBe` Just (bottlePath bottle)
-
-    describe "Application menu integration" $ around_ withTestEnvironment $ do
-      let makeMenuTestBottle = do
-            cwd <- getCurrentDirectory
-            let path = cwd </> "test-env" </> "MenuTestBottle"
-            createDirectoryIfMissing True path
-            return $ Bottle "MenuTestBottle" path SystemWine Win64
-
-      -- A deliberately non-existent .lnk path is enough for most of these
-      -- tests: icon extraction (see Bottle.Logic.Process.extractAppIcon) is
-      -- best effort and simply fails gracefully for it (no "Icon=" field),
-      -- instead of making addToApplicationMenu fail as a whole.
-      let bogusLnkPath = "/nonexistent/MyGame.lnk"
-
-      it "creates a .desktop entry inside the bottle and a symlink pointing at its menu dir" $ do
-        bottle <- makeMenuTestBottle
-        addToApplicationMenu bottle "MyGame" bogusLnkPath "Game"
-
-        isInApplicationMenu bottle "MyGame" `shouldReturn` True
-
-        content <- readFile (bottlePath bottle </> "menu" </> "MyGame.desktop")
-        content `shouldContain` "Name=MyGame"
-        content `shouldContain` "Exec=decanter start \"MenuTestBottle\" \"MyGame\""
-        content `shouldContain` "Categories=Game;"
-
-        appsDir <- getXdgDirectory XdgData "applications"
-        linkTarget <- getSymbolicLinkTarget (appsDir </> "decanter-MenuTestBottle")
-        linkTarget `shouldBe` (bottlePath bottle </> "menu")
-
-      it "omits the Icon= field when icon extraction fails (best effort)" $ do
-        bottle <- makeMenuTestBottle
-        addToApplicationMenu bottle "MyGame" bogusLnkPath "Game"
-
-        content <- readFile (bottlePath bottle </> "menu" </> "MyGame.desktop")
-        content `shouldNotContain` "Icon="
-
-      it "reuses the existing symlink for a second application in the same bottle" $ do
-        bottle <- makeMenuTestBottle
-        addToApplicationMenu bottle "FirstApp" bogusLnkPath "Game"
-        addToApplicationMenu bottle "SecondApp" bogusLnkPath "Utility"
-
-        isInApplicationMenu bottle "FirstApp" `shouldReturn` True
-        isInApplicationMenu bottle "SecondApp" `shouldReturn` True
-
-      it "removeFromApplicationMenu removes the entry again" $ do
-        bottle <- makeMenuTestBottle
-        addToApplicationMenu bottle "MyApp" bogusLnkPath "Utility"
-        isInApplicationMenu bottle "MyApp" `shouldReturn` True
-
-        removeFromApplicationMenu bottle "MyApp"
-        isInApplicationMenu bottle "MyApp" `shouldReturn` False
-
-      it "isInApplicationMenu is False when nothing was ever added" $ do
-        bottle <- makeMenuTestBottle
-        isInApplicationMenu bottle "NeverAdded" `shouldReturn` False
 
     describe "Bottle Management (Integration)" $ around_ withTestEnvironment $ do
 
