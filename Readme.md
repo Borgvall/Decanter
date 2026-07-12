@@ -67,7 +67,9 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
 * **Language:** Haskell
 * **UI Toolkit:** GTK4 + Libadwaita (via `haskell-gi`)
 * **Build System:** Cabal
-* **Dependencies:** `typed-process`, `directory`, `btrfs`, `text`
+
+See [`Decanter.cabal`](Decanter.cabal) and [`flake.nix`](flake.nix) for the
+full, authoritative dependency list.
 
 ## Build with Nix
 
@@ -149,6 +151,12 @@ cabal run decanter
 Decanter stores its bottles in the standard XDG Data directory:
 
  * `~/.local/share/Decanter/`
+
+For bottles with an entry added to the application menu, it also creates a
+symlink per bottle in the standard XDG applications directory, pointing at
+that bottle's own `menu/` folder:
+
+ * `~/.local/share/applications/decanter-<bottle>`
 
 ## 🏃 Running Tests
 
