@@ -112,6 +112,22 @@ When a module grows too large and gets split into cohesive submodules
   direct imports at every call site is naturally its own follow-up
   commit, once the split itself is confirmed working.
 
+## 6. Removing a feature: keep reading old persisted data
+
+Decanter persists per-bottle state to disk across versions (e.g.
+`decanter.cfg`). When a feature that affected that format gets
+removed (as happened when 32-bit prefix support was dropped, changing
+`decanter.cfg` from a `(RunnerType, Arch)` tuple to a bare
+`RunnerType`), keep read-compatibility for the old format even though
+writing it is gone - don't let existing installs silently fall through
+to a generic fallback that discards previously-recorded settings (e.g.
+which runner a bottle used).
+
+A private, non-exported stand-in type/parser for the old shape (see
+`Bottle.Logic`'s `LegacyArch`) is enough; it doesn't need to be part of
+the public API, just present so `reads`/parsing can still recognize
+and salvage the old data.
+
 ## Commit messages
 
 The author of an AI commit shall be the used LLM name and version e.g. Opus
