@@ -4,7 +4,6 @@ module Bottle.Types where
 
 import Data.Text (Text)
 
--- Architekturen
 data Arch = Win32 | Win64
   deriving (Show, Eq, Enum, Read)
 
@@ -13,11 +12,9 @@ archToString a = case a of
   Win32 -> "win32"
   Win64 -> "win64"
 
--- Runner
 data RunnerType = SystemWine | Proton FilePath
   deriving (Show, Eq, Read)
 
--- Bottle Definition
 data Bottle = Bottle
   { bottleName :: Text
   , bottlePath :: FilePath

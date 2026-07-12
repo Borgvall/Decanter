@@ -51,7 +51,7 @@ getWineDllOverridesEnv bottle = case runner bottle of
         let entries = menuBuilderOverrideEntry : maybe [] (: []) maybeDirect3DEntry
         pure [("WINEDLLOVERRIDES", intercalate ";" entries)]
 
--- | Wine-spezifische Umgebungsvariablen, die gesetzt/überschrieben werden müssen.
+-- | Wine-specific environment variables that need to be set/overridden.
 getWineOverrides :: Bottle -> IO [(String, String)]
 getWineOverrides bottle@Bottle{..} = do
     wineDllOverridesEnv <- getWineDllOverridesEnv bottle
@@ -66,9 +66,9 @@ getWineOverrides bottle@Bottle{..} = do
                _ -> [])
         ++ wineDllOverridesEnv
 
--- | Merged bottelspezifische Wine-Umgebungsvariablen mit der Host-Umgebung
--- (diese haben Vorrang vor bereits gesetzten, gleichnamigen Variablen).
--- Von 'getMergedWineEnv' und 'getIconExtractionWineEnv' gemeinsam genutzt.
+-- | Merges bottle-specific Wine environment variables with the host
+-- environment (the former take precedence over already-set variables of
+-- the same name). Shared by 'getMergedWineEnv' and 'getIconExtractionWineEnv'.
 mergeWithHostEnv :: [(String, String)] -> IO [(String, String)]
 mergeWithHostEnv wineSpecificEnv = do
     let overrideKeys = map fst wineSpecificEnv
@@ -84,23 +84,23 @@ mergeWithHostEnv wineSpecificEnv = do
 
     return (wineSpecificEnv ++ filteredEnv)
 
--- | Erstellt die Umgebungsvariablen für Wine/Proton
+-- | Builds the environment variables for Wine/Proton
 getMergedWineEnv :: Bottle -> IO [(String, String)]
 getMergedWineEnv bottle = getWineOverrides bottle >>= mergeWithHostEnv
 
--- | Wine-Umgebung speziell für die Icon-Extraktion via winemenubuilder.exe
--- (siehe 'extractAppIcon'). Bewusst eine eigene, parallele Funktion statt
--- eines Bool-Flags durch 'getWineOverrides'/'getMergedWineEnv': diese setzen
--- für System-Wine-Bottles immer WINEDLLOVERRIDES=winemenubuilder.exe=
--- (siehe 'menuBuilderOverrideEntry'), was den hier benötigten Aufruf von
--- winemenubuilder.exe selbst blockieren würde. Da Icon-Extraktion kein
--- Direct3D braucht, lassen wir WINEDLLOVERRIDES hier komplett weg, statt
--- die überall sonst verwendeten Funktionen mit einem Sonderfall zu belasten.
+-- | Wine environment specifically for icon extraction via winemenubuilder.exe
+-- (see 'extractAppIcon'). Deliberately its own, parallel function instead of
+-- a Bool flag through 'getWineOverrides'/'getMergedWineEnv': those always set
+-- WINEDLLOVERRIDES=winemenubuilder.exe= for System Wine bottles (see
+-- 'menuBuilderOverrideEntry'), which would block the very call to
+-- winemenubuilder.exe needed here. Since icon extraction needs no Direct3D,
+-- we drop WINEDLLOVERRIDES entirely here instead of burdening the
+-- functions used everywhere else with a special case.
 --
--- DISPLAY/WAYLAND_DISPLAY werden entfernt, damit Wine bei einer noch nicht
--- initialisierten Bottle (z.B. in Tests) nicht den Gecko/Mono-Installer-
--- Dialog aufpoppen lässt -- extractAppIcon soll immer headless laufen (vgl.
--- die gleiche Begründung bei Bottle.Logic.createBottleLogic für wineboot).
+-- DISPLAY/WAYLAND_DISPLAY are removed so Wine doesn't pop up the Gecko/Mono
+-- installer dialog for a not-yet-initialized bottle (e.g. in tests) --
+-- extractAppIcon should always run headless (same reasoning as for wineboot
+-- in Bottle.Logic.createBottleLogic).
 getIconExtractionWineEnv :: Bottle -> IO [(String, String)]
 getIconExtractionWineEnv Bottle{..} = do
     env <- mergeWithHostEnv $
@@ -111,16 +111,16 @@ getIconExtractionWineEnv Bottle{..} = do
              _        -> []
     pure $ filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) env
 
--- | Extrahiert das Icon einer Start-Menü-Applikation (".lnk") als PNG-Datei,
--- über Wines eigenes winemenubuilder.exe ("-t"-Flag, "thumbnail_lnk"): löst
--- den .lnk-Link auf die eigentliche .exe auf und schreibt das gefundene
--- Icon-Ressource per WIC, vollständig headless (kein Display nötig).
+-- | Extracts a start-menu application's (".lnk") icon as a PNG file, via
+-- Wine's own winemenubuilder.exe ("-t" flag, "thumbnail_lnk"): resolves the
+-- .lnk link to the actual .exe and writes the found icon resource via WIC,
+-- fully headless (no display needed).
 --
--- Läuft -- anders als 'runCmd' -- synchron: Aufrufer brauchen die fertige
--- Datei direkt im Anschluss (z.B. um sie in eine .desktop-Datei
--- einzutragen). Schlägt die Extraktion fehl, wird False zurückgegeben statt
--- eine Exception zu werfen -- Aufrufer behandeln das als Best-Effort-Schritt,
--- der z.B. das Hinzufügen eines Anwendungsmenü-Eintrags nicht verhindern soll.
+-- Runs synchronously, unlike 'runCmd': callers need the finished file right
+-- afterwards (e.g. to enter it into a .desktop file). If extraction fails,
+-- False is returned instead of throwing an exception -- callers treat this
+-- as a best-effort step that e.g. shouldn't prevent adding an
+-- application-menu entry overall.
 extractAppIcon :: Bottle -> FilePath -> FilePath -> IO Bool
 extractAppIcon bottle lnkPath outputPngPath = do
     env <- getIconExtractionWineEnv bottle

@@ -12,11 +12,11 @@ import Bottle.Types
 import Bottle.Logic
 import Logic.Translation (tr)
 import Gui.BottleView (buildBottleView)
-import Gui.NewBottleDialog (showNewBottleDialog) -- Import für den Dialog
+import Gui.NewBottleDialog (showNewBottleDialog)
 
--- | Wechselt im Stack zur Detailansicht der übergebenen Bottle (baut sie bei
--- Bedarf auf). Wird sowohl von der Übersichtsseite (Klick auf eine Zeile) als
--- auch beim CLI-Start via 'decanter gui <bottle name>' verwendet.
+-- | Switches the stack to the detail view of the given bottle (building it
+-- if needed). Used both from the overview page (clicking a row) and on CLI
+-- start via 'decanter gui <bottle name>'.
 navigateToBottle :: Gtk.Window -> Gtk.Stack -> Bottle -> IO () -> IO ()
 navigateToBottle window stack bottle refreshAction = do
   detailView <- buildBottleView window bottle stack refreshAction
@@ -25,41 +25,35 @@ navigateToBottle window stack bottle refreshAction = do
   void $ #addNamed stack detailView (Just viewName)
   #setVisibleChildName stack viewName
 
--- | Baut die Übersichtsseite und gibt das Widget sowie eine Refresh-Funktion zurück
+-- | Builds the overview page and returns the widget along with a refresh function
 buildOverviewPage :: Gtk.Window -> Gtk.Stack -> IO (Gtk.Widget, IO ())
 buildOverviewPage window stack = do
-  
-  -- 1. Outer Container: Adw.ToolbarView (Standard für Views mit Header)
+
+  -- Adw.ToolbarView is the standard outer container for views with a header
   toolbarView <- new Adw.ToolbarView []
 
-  -- 2. HeaderBar erstellen
   header <- new Adw.HeaderBar []
-  
-  -- Fenstertitel Widget (Optional, aber gut für Konsistenz)
+
   titleWidget <- new Adw.WindowTitle [ #title := "Decanter", #subtitle := tr "Library" ]
   #setTitleWidget header (Just titleWidget)
-  
-  -- Add Button (War vorher in Main.hs)
+
   addBtn <- new Gtk.Button [ #iconName := "list-add-symbolic", #tooltipText := tr "Create new Bottle" ]
   #packEnd header addBtn
-  
+
   #addTopBar toolbarView header
 
-  -- 3. Content Area
   scrolled <- new Gtk.ScrolledWindow [ #hscrollbarPolicy := Gtk.PolicyTypeNever ]
   #setVexpand scrolled True
-  
+
   clamp <- new Adw.Clamp [ #maximumSize := 600, #tighteningThreshold := 400 ]
-  
+
   listBox <- new Gtk.ListBox [ #selectionMode := Gtk.SelectionModeNone, #cssClasses := ["boxed-list"], #marginTop := 20, #marginBottom := 20 ]
-  
+
   #setChild clamp (Just listBox)
   #setChild scrolled (Just clamp)
-  
-  -- ScrolledWindow als Content der ToolbarView setzen
+
   #setContent toolbarView (Just scrolled)
 
-  -- Refresh Logic
   let refreshAction = do
         let removeAll = do
               child <- Gtk.widgetGetFirstChild listBox
@@ -85,10 +79,9 @@ buildOverviewPage window stack = do
                void $ on row #activated $ navigateToBottle window stack b refreshAction
 
                #append listBox row
-  
-  -- Action für Add Button verbinden
+
   void $ on addBtn #clicked $ showNewBottleDialog window refreshAction
-  
-  -- Das Widget zurückgeben (muss gecastet werden, ToolbarView ist ein Widget)
+
+  -- Cast needed since ToolbarView is a Widget, not returned as one directly
   widget <- Gtk.toWidget toolbarView
   return (widget, refreshAction)

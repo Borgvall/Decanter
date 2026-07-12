@@ -26,9 +26,9 @@ main = do
     Start b a       -> runStart b a
     Open b f        -> runOpen b f
 
--- | Löst den optionalen Bottle-Namen von 'decanter gui <bottle name>' auf.
--- Existiert die Bottle nicht, bricht der Prozess ab, bevor überhaupt ein
--- Fenster erzeugt wird.
+-- | Resolves the optional bottle name from 'decanter gui <bottle name>'.
+-- If the bottle doesn't exist, the process aborts before a window is even
+-- created.
 runGuiCommand :: Maybe Text -> IO ()
 runGuiCommand Nothing = startGui Nothing
 runGuiCommand (Just name) = do
@@ -54,20 +54,18 @@ buildUI app mBottle = do
 
   Just windowAsGtk <- castTo Gtk.Window window
 
-  -- HIER GEÄNDERT: Kein globales ToolbarView/HeaderBar mehr.
-  -- Wir erstellen direkt den Stack.
+  -- No global ToolbarView/HeaderBar: each stack page builds and manages its
+  -- own header instead, so the stack itself is the window's content.
   stack <- new Gtk.Stack [ #transitionType := Gtk.StackTransitionTypeSlideLeftRight ]
 
   (overviewWidget, refreshList) <- buildOverviewPage windowAsGtk stack
   void $ #addNamed stack overviewWidget (Just "overview")
 
-  -- Der Stack ist jetzt direkt der Inhalt des Fensters
   #setContent window (Just stack)
 
-  -- Initiales Laden
   refreshList
 
-  -- Bei 'decanter gui <bottle name>' direkt zur Detailansicht wechseln
+  -- With 'decanter gui <bottle name>', switch straight to the detail view
   case mBottle of
     Nothing     -> return ()
     Just bottle -> navigateToBottle windowAsGtk stack bottle refreshList

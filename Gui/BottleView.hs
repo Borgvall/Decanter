@@ -22,7 +22,7 @@ import Bottle.Logic.Snapshots (isSnapshotableBottle)
 import Logic.Translation (tr)
 import Gui.BottleSnapshotsView (buildSnapshotView)
 
--- | Zeigt den Bestätigungsdialog zum Löschen einer Bottle
+-- | Shows the confirmation dialog for deleting a bottle
 showDeleteConfirmationDialog :: Gtk.Window -> Gtk.Stack -> Bottle -> IO () -> IO ()
 showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
   let fullMessage = T.concat 
@@ -48,10 +48,10 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
                       Left err -> putStrLn $ "Error: " ++ show err
                     return False
   
-  -- FIX: Explizite Typannotation für Nothing
+  -- Explicit type annotation to disambiguate Nothing
   Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleAlertDialogResult)
 
--- | Zeigt den Bestätigungsdialog zum Beenden aller Programme
+-- | Shows the confirmation dialog for stopping all programs
 showKillConfirmationDialog :: Gtk.Window -> Bottle -> IO ()
 showKillConfirmationDialog parent bottle = do
   let message = tr "Stop all programs in this bottle?"
@@ -65,15 +65,15 @@ showKillConfirmationDialog parent bottle = do
                   Left err -> putStrLn $ "Error: " ++ show err
                   Right _  -> putStrLn "Processes killed."
   
-  -- FIX: Explizite Typannotation für Nothing
+  -- Explicit type annotation to disambiguate Nothing
   Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleResult)
 
--- | Baut den Inhalt des Runner-Auswahl-Popovers: eine Zeile pro verfügbarem
--- Runner, mit Checkmark beim aktuell aktiven. Ein Klick auf eine Zeile
--- ändert den Runner, lädt die Bottle-Ansicht neu und schließt das Popover
--- wieder -- ein Popover schließt sich zusätzlich schon von selbst bei Klick
--- daneben oder Escape, daher gibt es (anders als beim vorherigen
--- Adw.MessageDialog) keinen expliziten Cancel-Button mehr.
+-- | Builds the content of the runner-selection popover: one row per
+-- available runner, with a checkmark on the currently active one. Clicking
+-- a row changes the runner, reloads the bottle view, and closes the
+-- popover again -- a popover also already closes itself on a click outside
+-- it or Escape, so (unlike the previous Adw.MessageDialog) there is no
+-- explicit Cancel button anymore.
 buildRunnerPopover :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> [RunnerType] -> IO Gtk.Popover
 buildRunnerPopover window bottle stack refreshCallback availableRunners = do
   popover <- new Gtk.Popover []
@@ -103,11 +103,11 @@ buildRunnerPopover window bottle stack refreshCallback availableRunners = do
 
   pure popover
 
--- | Baut den "Change Windows Runner"-MenuButton: klappt bei Klick ein
--- Popover direkt unter sich selbst auf (statt, wie zuvor, ein separates
--- Dialogfenster zu öffnen), siehe 'buildRunnerPopover'. Ohne verfügbare
--- Runner bleibt der Button deaktiviert, mit erklärendem Tooltip, statt
--- (wie zuvor) erst nach einem Klick einen Fehlerdialog zu zeigen.
+-- | Builds the "Change Windows Runner" menu button: on click, opens a
+-- popover directly below itself (instead of, as before, opening a separate
+-- dialog window), see 'buildRunnerPopover'. Without any available runners
+-- the button stays disabled, with an explanatory tooltip, instead of (as
+-- before) only showing an error dialog after a click.
 buildChangeRunnerButton :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.MenuButton
 buildChangeRunnerButton window bottle stack refreshCallback = do
   availableRunners <- getAvailableRunners
@@ -134,52 +134,48 @@ buildChangeRunnerButton window bottle stack refreshCallback = do
 
   pure btn
 
--- | Lädt die Bottle-Ansicht neu
+-- | Reloads the bottle view
 reloadBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO ()
 reloadBottleView window bottle stack refreshCallback = do
-  -- Aktuelle View aus dem Stack entfernen. Der Name muss mit dem
-  -- übereinstimmen, unter dem Gui.OverviewView die Detailansicht ursprünglich
-  -- via #addNamed hinzugefügt hat -- sonst wird die alte View nie entfernt
-  -- und stattdessen läuft hier bei jedem Aufruf eine zusätzliche, unsichtbare
-  -- Karteikarte im Stack auf.
+  -- Remove the current view from the stack. The name must match the one
+  -- Gui.OverviewView originally added the detail view under via #addNamed
+  -- -- otherwise the old view is never removed, and instead every call here
+  -- adds another, invisible card to the stack.
   let viewName = "detail_" <> bottleName bottle
   mOldChild <- #getChildByName stack viewName
   case mOldChild of
     Just oldChild -> #remove stack oldChild
     Nothing -> return ()
-  
-  -- Neue View erstellen und hinzufügen
+
   newView <- buildBottleView window bottle stack refreshCallback
   #addNamed stack newView (Just viewName)
   #setVisibleChildName stack viewName
-  
-  -- Übersicht aktualisieren
+
   refreshCallback
 
--- | Hilfsfunktion zur Konvertierung von RunnerType zu String
+-- | Helper function to convert RunnerType to String
 runnerTypeToString :: RunnerType -> T.Text
 runnerTypeToString SystemWine = tr "System Wine"
 runnerTypeToString (Proton path) = T.pack ("Proton (" ++ takeBaseName path ++ ")")
 
--- | Zur Auswahl angebotene Kategorien für Anwendungsmenü-Einträge (siehe
--- 'Bottle.Logic.addToApplicationMenu'). Dies sind exakte Freedesktop-
--- "Main Category"-Bezeichner (landen 1:1 im "Categories="-Feld der
--- ".desktop"-Datei) und werden daher bewusst nicht übersetzt. "Game" steht
--- an erster Stelle, da das der häufigste Anwendungsfall von Decanter ist.
+-- | Categories offered for application-menu entries (see
+-- 'Bottle.Logic.addToApplicationMenu'). These are exact Freedesktop
+-- "Main Category" identifiers (they end up verbatim in the ".desktop"
+-- file's "Categories=" field), so they are deliberately not translated.
+-- "Game" comes first since that's Decanter's most common use case.
 applicationMenuCategories :: [T.Text]
 applicationMenuCategories =
   [ "Game", "Utility", "Office", "Graphics", "Network", "Development", "AudioVideo", "Education", "System" ]
 
--- | Baut den Button, mit dem eine einzelne Start-Menü-Applikation zum
--- Anwendungsmenü des Hosts hinzugefügt bzw. wieder daraus entfernt werden
--- kann (siehe 'Bottle.Logic.addToApplicationMenu'/'removeFromApplicationMenu').
--- Der Zustand (schon hinzugefügt oder nicht) wird bei jedem Aufruf frisch
--- über 'isInApplicationMenu' geprüft; "onChanged" lässt den Aufrufer nach
--- einer Änderung die Programmliste neu aufbauen, damit der Button seinen
--- Zustand aktualisiert. Bleibt bewusst ungesperrt, auch wenn Windows-
--- Programme aktuell blockiert sind (siehe "Browse Files" weiter unten): es
--- wird nur eine ".desktop"-Datei geschrieben/gelöscht, kein Wine-Programm
--- selbst gestartet.
+-- | Builds the button used to add or remove a single start-menu
+-- application to/from the host's application menu (see
+-- 'Bottle.Logic.addToApplicationMenu'/'removeFromApplicationMenu'). The
+-- state (already added or not) is freshly checked via 'isInApplicationMenu'
+-- on every call; "onChanged" lets the caller rebuild the program list after
+-- a change, so the button's state updates. Deliberately left unlocked even
+-- while Windows programs are currently blocked (see "Browse Files" further
+-- below): this only writes/deletes a ".desktop" file, it doesn't start a
+-- Wine program itself.
 buildAppMenuButton :: Bottle -> T.Text -> FilePath -> IO () -> IO Gtk.Widget
 buildAppMenuButton bottle appName lnkPath onChanged = do
   alreadyAdded <- isInApplicationMenu bottle appName
@@ -216,21 +212,20 @@ buildAppMenuButton bottle appName lnkPath onChanged = do
         ]
       #append popBox headingLabel
 
-      -- Flache Liste anklickbarer Zeilen statt eines verschachtelten
-      -- Dropdowns (z.B. Adw.ComboRow): ein GTK4-Popup innerhalb eines
-      -- anderen Popups kollidiert beim Pointer-Grab, sodass sich nur der
-      -- erste Eintrag auswählen ließ. Klick auf eine Zeile fügt sofort mit
-      -- dieser Kategorie hinzu, genau wie beim Runner-Popover oben.
+      -- A flat list of clickable rows instead of a nested dropdown (e.g.
+      -- Adw.ComboRow): a GTK4 popup inside another popup collides during
+      -- the pointer grab, so only the first entry could ever be selected.
+      -- Clicking a row adds immediately with that category, just like the
+      -- runner popover above.
       categoryGroup <- new Adw.PreferencesGroup [ #title := tr "Category" ]
       #append popBox categoryGroup
 
       forM_ applicationMenuCategories $ \category -> do
         row <- new Adw.ActionRow [ #title := category, #activatable := True ]
-        -- addToApplicationMenu extrahiert dabei per Wine/winemenubuilder ein
-        -- Icon (siehe Bottle.Logic.Process.extractAppIcon) und kann daher
-        -- ein paar Sekunden brauchen -- läuft deshalb (wie das
-        -- Bottle-Löschen oben) in einem eigenen Thread, damit die UI nicht
-        -- kurz einfriert.
+        -- addToApplicationMenu extracts an icon via Wine/winemenubuilder
+        -- (see Bottle.Logic.Process.extractAppIcon), so it can take a few
+        -- seconds -- runs in its own thread (like the bottle deletion
+        -- above), so this doesn't briefly freeze the UI.
         void $ on row #activated $ do
           #popdown popover
           void $ async $ do
@@ -243,32 +238,31 @@ buildAppMenuButton bottle appName lnkPath onChanged = do
       #setPopover menuBtn (Just popover)
       Gtk.toWidget menuBtn
 
--- | Anzeigename und Beschreibung für einen Direct3D-Wrapper-Zustand.
+-- | Display name and description for a Direct3D wrapper state.
 direct3DWrapperLabel :: Direct3DWrapperState -> T.Text
 direct3DWrapperLabel WineD3D             = tr "Wine (built-in)"
 direct3DWrapperLabel Dxvk                = tr "DXVK"
 direct3DWrapperLabel DxvkAndVkd3dProton  = tr "DXVK + vkd3d-proton"
 
--- | Eindeutiger Name eines Direct3D-Wrapper-Zustands innerhalb der
--- AdwToggleGroup; über 'Direct3DWrapperState's abgeleitetes 'Show'/'Read'
--- verlustfrei in beide Richtungen konvertierbar.
+-- | Unique name of a Direct3D wrapper state within the AdwToggleGroup;
+-- losslessly convertible in both directions via 'Direct3DWrapperState's
+-- derived 'Show'/'Read'.
 direct3DWrapperName :: Direct3DWrapperState -> T.Text
 direct3DWrapperName = T.pack . show
 
--- | Baut die Direct3D-Sektion der Bottle-Ansicht. Bei "WrapperValid" eine
--- AdwToggleGroup (ein modernes, segmentiertes Umschalt-Widget), mit der
--- zwischen Wines eingebauter Direct3D-Implementierung, DXVK und DXVK +
--- vkd3d-proton umgeschaltet werden kann. Symlinken der DLLs ist eine reine
--- Dateisystem-Operation (keine externen Prozesse, keine spürbare
--- Verzögerung), daher genügt ein synchroner Aufruf ohne Fortschrittsanzeige
--- -- wie bei den übrigen schnellen Logic-Aufrufen in dieser Datei (z.B.
--- changeBottleRunnerLogic).
+-- | Builds the Direct3D section of the bottle view. For "WrapperValid", an
+-- AdwToggleGroup (a modern, segmented toggle widget) that switches between
+-- Wine's built-in Direct3D implementation, DXVK, and DXVK + vkd3d-proton.
+-- Symlinking the DLLs is a pure filesystem operation (no external
+-- processes, no noticeable delay), so a synchronous call without a
+-- progress indicator is enough -- like the other fast Logic calls in this
+-- file (e.g. changeBottleRunnerLogic).
 --
--- Ist der Symlink veraltet oder defekt ("WrapperOutdated"/"WrapperDangling",
--- siehe Bottle.Logic.Direct3dWrappers.getDirect3DWrapperHealth), wird die
--- ToggleGroup durch einen einzelnen "Update"-Button ersetzt, der repariert
--- und danach die ganze Ansicht neu lädt (damit Zustand und Health frisch neu
--- ermittelt werden und -- bei Erfolg -- wieder die ToggleGroup erscheint).
+-- If the symlink is outdated or broken ("WrapperOutdated"/"WrapperDangling",
+-- see Bottle.Logic.Direct3dWrappers.getDirect3DWrapperHealth), the
+-- ToggleGroup is replaced by a single "Update" button that repairs it and
+-- then reloads the whole view (so state and health are freshly determined
+-- again and -- on success -- the ToggleGroup reappears).
 buildDirect3DWrapperSection :: Gtk.Window -> Gtk.Stack -> IO () -> WrapperHealth -> Gtk.Box -> Bottle -> IO ()
 buildDirect3DWrapperSection window stack refreshCallback health contentBox bottle = do
   currentState <- getDirect3DWrapperState bottle
@@ -333,16 +327,15 @@ buildDirect3DWrapperSection window stack refreshCallback health contentBox bottl
           Right () -> reloadBottleView window bottle stack refreshCallback
       #append sectionBox updateBtn
 
--- | Erstellt die Detailansicht für eine Bottle
+-- | Creates the detail view for a bottle
 buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildBottleView window bottle stack refreshCallback = do
-  
-  -- === KONSISTENZ: Adw.ToolbarView statt Gtk.Box ===
+
+  -- Adw.ToolbarView instead of Gtk.Box, for consistency with the other views
   toolbarView <- new Adw.ToolbarView []
 
-  -- HeaderBar
   header <- new Adw.HeaderBar []
-  
+
   backBtn <- new Gtk.Button [ #iconName := "go-previous-symbolic", #tooltipText := tr "Back to Library" ]
   void $ on backBtn #clicked $ #setVisibleChildName stack "overview"
   #packStart header backBtn
@@ -352,8 +345,7 @@ buildBottleView window bottle stack refreshCallback = do
   
   #addTopBar toolbarView header
 
-  -- Content Bereich
-  scrolledWindow <- new Gtk.ScrolledWindow 
+  scrolledWindow <- new Gtk.ScrolledWindow
     [ #hscrollbarPolicy := Gtk.PolicyTypeNever
     , #vscrollbarPolicy := Gtk.PolicyTypeAutomatic
     , #vexpand := True
@@ -375,10 +367,10 @@ buildBottleView window bottle stack refreshCallback = do
     ]
   #setChild clamp (Just contentBox)
 
-  -- Status des Direct3D-Wrappers -- steuert, ob/wie die Direct3D-Sektion
-  -- unten aufgebaut wird. Ob überhaupt Windows-Programme gestartet werden
-  -- dürfen, fragen wir separat bei der Bottle nach ("readyForWindowsApps"),
-  -- statt hier selbst über Wrapper-Interna zu entscheiden.
+  -- Status of the Direct3D wrapper -- controls whether/how the Direct3D
+  -- section below is built. Whether Windows programs may be started at all
+  -- is asked separately from the bottle ("readyForWindowsApps"), instead of
+  -- deciding that here based on wrapper internals.
   direct3DStatus <- getDirect3DWrapperStatus bottle
   readyForWindowsApps <- isBottleReadyForWindowsApps bottle
   let blockedTooltip = tr "Blocked until the Direct3D wrapper is repaired (see above)."
@@ -387,7 +379,6 @@ buildBottleView window bottle stack refreshCallback = do
         w <- Gtk.toWidget widget
         set w [ #sensitive := False, #tooltipText := blockedTooltip ]
 
-  -- NEU: Runner-Information anzeigen mit Änderungs-Button
   runnerSectionBox <- new Gtk.Box
     [ #orientation := Gtk.OrientationHorizontal
     , #spacing := 8
@@ -402,8 +393,7 @@ buildBottleView window bottle stack refreshCallback = do
     , #halign := Gtk.AlignStart
     ]
   #append runnerSectionBox runnerInfoBox
-  
-  -- Runner-Text anzeigen
+
   runnerDisplayName <- getRunnerTypeDisplayName (runner bottle)
   runnerLabel <- new Gtk.Label 
     [ #label := runnerDisplayName
@@ -411,30 +401,27 @@ buildBottleView window bottle stack refreshCallback = do
     , #cssClasses := ["title-4"]
     ]
   #append runnerInfoBox runnerLabel
-  
-  -- Architektur anzeigen
-  archLabel <- new Gtk.Label 
+
+  archLabel <- new Gtk.Label
     [ #label := "Architecture: " <> T.pack (archToString (arch bottle))
     , #cssClasses := ["dim-label", "caption"]
     , #halign := Gtk.AlignStart
     ]
   #append runnerInfoBox archLabel
-  
-  -- Runner-Typ anzeigen
-  runnerTypeLabel <- new Gtk.Label 
+
+  runnerTypeLabel <- new Gtk.Label
     [ #label := runnerTypeToString (runner bottle)
     , #cssClasses := ["dim-label", "caption"]
     , #halign := Gtk.AlignStart
     ]
   #append runnerInfoBox runnerTypeLabel
-  
-  -- Änderungs-Button
+
   changeRunnerBtn <- buildChangeRunnerButton window bottle stack refreshCallback
   #append runnerSectionBox changeRunnerBtn
 
-  -- Direct3D-Wrapper (DXVK/vkd3d-proton) umschalten -- nur wenn die Bottle
-  -- das laut "direct3DStatus" überhaupt selbst verwaltet (Proton bringt
-  -- beides bereits selbst mit).
+  -- Toggle the Direct3D wrapper (DXVK/vkd3d-proton) -- only if the bottle
+  -- actually manages it itself per "direct3DStatus" (Proton already brings
+  -- both along on its own).
   case direct3DStatus of
     WrapperManaged health -> buildDirect3DWrapperSection window stack refreshCallback health contentBox bottle
     WrapperNotManaged     -> pure ()
@@ -445,13 +432,11 @@ buildBottleView window bottle stack refreshCallback = do
         #append contentBox btn
         return btn
 
-  -- Buttons & Content (Run, DropZone, etc. wie gehabt)
   runBtn <- new Gtk.Button [ #label := tr "Run Executable / Installer", #cssClasses := ["suggested-action", "pill"], #halign := Gtk.AlignFill ]
   void $ on runBtn #clicked $ openExecutableFileDialog window $ runExecutable bottle
   #append contentBox runBtn
   blockIfWineAppsBlocked runBtn
 
-  -- Drop Zone
   dropZone <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #cssClasses := ["card", "view"], #heightRequest := 48, #valign := Gtk.AlignStart, #halign := Gtk.AlignFill, #marginTop := 5 ]
   dropContent <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #valign := Gtk.AlignCenter ]
   dropIcon <- new Gtk.Image [ #iconName := "document-open-symbolic", #pixelSize := 32, #cssClasses := ["dim-label"] ]
@@ -475,8 +460,7 @@ buildBottleView window bottle stack refreshCallback = do
 
   sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep1
-  
-  -- Snapshot Button
+
   supportsSnapshots <- isSnapshotableBottle bottle
   when supportsSnapshots $ do
     snapBtn <- new Gtk.Button [ #cssClasses := ["pill"], #halign := Gtk.AlignFill, #marginBottom := 10 ]
@@ -494,7 +478,6 @@ buildBottleView window bottle stack refreshCallback = do
     sepSnap <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginBottom := 10 ]
     #append contentBox sepSnap
 
-  -- Program List
   progSectionBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10 ]
   #append contentBox progSectionBox
   progExpander <- new Gtk.Expander [ #label := tr "Installed Programs", #hexpand := True ]
@@ -539,7 +522,6 @@ buildBottleView window bottle stack refreshCallback = do
   sep2 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep2
 
-  -- Tools
   toolsLabel <- new Gtk.Label [ #label := tr "System Tools", #halign := Gtk.AlignStart, #cssClasses := ["heading"] ]
   #append contentBox toolsLabel
   addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle) >>= blockIfWineAppsBlocked
@@ -548,8 +530,8 @@ buildBottleView window bottle stack refreshCallback = do
   hasWinetricks <- isWinetricksAvailable
   when hasWinetricks $
     addBtn (tr "Winetricks") (tr "Manage packages") [] (runWinetricks bottle) >>= blockIfWineAppsBlocked
-  -- Bleibt bewusst nicht gesperrt: öffnet nur den Linux-Dateimanager (xdg-open)
-  -- auf drive_c, startet also kein Wine-Programm.
+  -- Deliberately left unlocked: only opens the Linux file manager (xdg-open)
+  -- on drive_c, so it doesn't start a Wine program.
   void $ addBtn (tr "Browse Files") (tr "Open drive_c") [] (runFileManager bottle)
   
   void $ addBtn (tr "Stop all Programs") (tr "Forcefully close all running processes") ["destructive-action"] $ showKillConfirmationDialog window bottle
@@ -559,7 +541,6 @@ buildBottleView window bottle stack refreshCallback = do
 
   Gtk.toWidget toolbarView
 
--- ... (openExecutableFileDialog und handleFileDialogResponse bleiben unverändert) ...
 type FileSelectedCallback = FilePath -> IO ()
 
 openExecutableFileDialog :: Gtk.Window -> FileSelectedCallback -> IO ()

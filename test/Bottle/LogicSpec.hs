@@ -21,29 +21,25 @@ import Control.Exception (finally)
 import Control.Concurrent (threadDelay)
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 
--- | Hilfsfunktion: Setzt eine isolierte Testumgebung auf
+-- | Sets up an isolated test environment
 withTestEnvironment :: IO () -> IO ()
 withTestEnvironment action = do
-    -- Wir erstellen einen temporären Ordner für die Tests
     cwd <- getCurrentDirectory
     let testDir = cwd </> "test-env"
     let xdgDataHome = testDir </> ".local" </> "share"
-    
-    -- Setup
+
     createDirectoryIfMissing True xdgDataHome
-    
-    -- Wir biegen XDG_DATA_HOME um, damit Decanter in unseren Testordner schreibt
+
+    -- Redirect XDG_DATA_HOME so Decanter writes into our test folder
     setEnv "XDG_DATA_HOME" xdgDataHome
-    
-    -- Führe den Test aus
+
     action `finally` do
-        -- Teardown: Aufräumen
         removePathForcibly testDir
         unsetEnv "XDG_DATA_HOME"
 
 spec :: Spec
 spec = do
-  -- Fix für CI/CD Umgebungen, die oft auf ASCII (C/POSIX) stehen
+  -- Fix for CI/CD environments, which often default to ASCII (C/POSIX)
   runIO $ setLocaleEncoding utf8
   
   describe "Bottle.Logic" $ do
@@ -137,11 +133,10 @@ spec = do
             createDirectoryIfMissing True path
             return $ Bottle "MenuTestBottle" path SystemWine Win64
 
-      -- Ein absichtlich nicht existierender .lnk-Pfad genügt für die meisten
-      -- dieser Tests: die Icon-Extraktion (siehe Bottle.Logic.Process.
-      -- extractAppIcon) ist best effort und schlägt dafür einfach graceful
-      -- fehl (kein "Icon="-Feld), statt addToApplicationMenu insgesamt
-      -- scheitern zu lassen.
+      -- A deliberately non-existent .lnk path is enough for most of these
+      -- tests: icon extraction (see Bottle.Logic.Process.extractAppIcon) is
+      -- best effort and simply fails gracefully for it (no "Icon=" field),
+      -- instead of making addToApplicationMenu fail as a whole.
       let bogusLnkPath = "/nonexistent/MyGame.lnk"
 
       it "creates a .desktop entry inside the bottle and a symlink pointing at its menu dir" $ do
@@ -186,9 +181,9 @@ spec = do
         bottle <- makeMenuTestBottle
         isInApplicationMenu bottle "NeverAdded" `shouldReturn` False
 
-    -- Integrationstests mit Dateisystem
     describe "Bottle Management (Integration)" $ around_ withTestEnvironment $ do
-      
+
+
       it "creates a bottle object with correct paths" $ do
         bottle <- createBottleObject "TestBottle" Win64 SystemWine
         bottleName bottle `shouldBe` "TestBottle"
@@ -230,20 +225,17 @@ spec = do
 
         let name = "ProtonConfigTest"
         bottle <- createBottleObject name Win64 (Proton "/Test/Path")
-        
-        -- Erstellen (schreibt Config)
-        createBottleLogic bottle
-        
-        -- Listen (lädt Config)
-        bottles <- listExistingBottles
+
+        createBottleLogic bottle -- writes the config
+
+        bottles <- listExistingBottles -- loads the config
         let loadedBottles = filter (\b -> bottleName b == name) bottles
-        
+
         length loadedBottles `shouldBe` 1
         let loaded = head loadedBottles
-        
-        -- Prüfung: Ist der Runner immer noch Proton?
+
+        -- Check that the runner is still Proton
         runner loaded `shouldBe` runner bottle
         arch loaded `shouldBe` Win64
-        
-        -- Cleanup
+
         deleteBottleLogic bottle

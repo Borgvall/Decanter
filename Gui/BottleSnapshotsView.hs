@@ -17,7 +17,6 @@ import Bottle.Logic
 import Bottle.Logic.Snapshots
 import Logic.Translation (tr)
 
--- ... (validateSnapshotName, showCreateSnapshotPopover und createMenuBtn bleiben unverändert) ...
 validateSnapshotName :: Adw.EntryRow -> Gtk.Button -> Gtk.Label -> IO ()
 validateSnapshotName entryRow createBtn errorLabel = do
   nameText <- #getText entryRow
@@ -68,22 +67,21 @@ createMenuBtn labelText iconName cssClassesList = do
     return btn
 
 
--- | Baut die Snapshot-Liste.
+-- | Builds the snapshot list.
 --
--- "reloadDetailView" ist Gui.BottleView.reloadBottleView, bereits mit Fenster,
--- Bottle und Stack angewendet (als reines IO () durchgereicht statt direkt
--- importiert, um den zyklischen Modul-Import zu vermeiden, da Gui.BottleView
--- umgekehrt schon 'buildSnapshotView' importiert). Wird nach einem
--- erfolgreichen Snapshot-Restore aufgerufen, damit die Detailansicht (u.a.
--- die Direct3D-Wrapper-Anzeige) den wiederhergestellten Dateisystemzustand
--- zeigt, statt nur stumpf auf die alte, unveränderte Ansicht zurückzuschalten.
+-- "reloadDetailView" is Gui.BottleView.reloadBottleView, already applied to
+-- the window, bottle and stack (passed through as a plain IO () instead of
+-- imported directly, to avoid a cyclic module import, since Gui.BottleView
+-- in turn already imports 'buildSnapshotView'). Called after a successful
+-- snapshot restore so the detail view (including the Direct3D wrapper
+-- display) reflects the restored filesystem state, instead of just
+-- switching back to the old, unchanged view.
 buildSnapshotView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
 buildSnapshotView _window bottle stack reloadDetailView = do
-  
-  -- === KONSISTENZ: Adw.ToolbarView statt Gtk.Box ===
+
+  -- Adw.ToolbarView instead of Gtk.Box, for consistency with the other views
   toolbarView <- new Adw.ToolbarView []
-  
-  -- Header
+
   header <- new Adw.HeaderBar []
   
   backBtn <- new Gtk.Button [ #iconName := "go-previous-symbolic" ]
@@ -100,7 +98,6 @@ buildSnapshotView _window bottle stack reloadDetailView = do
   
   #addTopBar toolbarView header
 
-  -- Content Area
   scrolled <- new Gtk.ScrolledWindow [ #vexpand := True ]
   #setContent toolbarView (Just scrolled)
   
@@ -132,12 +129,10 @@ buildSnapshotView _window bottle stack reloadDetailView = do
                icon <- new Gtk.Image [ #iconName := "emblem-readonly-symbolic" ]
                #addPrefix row icon
 
-               -- Menu Button
                menuBtn <- new Gtk.MenuButton [ #iconName := "view-more-symbolic", #valign := Gtk.AlignCenter, #cssClasses := ["flat"] ]
                popover <- new Gtk.Popover []
                popBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 6, #marginTop := 6, #marginBottom := 6, #marginStart := 6, #marginEnd := 6 ]
                
-               -- 1. Browse Files
                browseBtn <- createMenuBtn (tr "Browse Files") "system-file-manager-symbolic" ["flat"]
                void $ on browseBtn #clicked $ #popdown popover >> openSnapshotFileManager s
                #append popBox browseBtn
@@ -145,7 +140,6 @@ buildSnapshotView _window bottle stack reloadDetailView = do
                sep1 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal ]
                #append popBox sep1
                
-               -- 2. Restore
                restoreBtn <- createMenuBtn (tr "Restore Bottle") "document-revert-symbolic" ["destructive-action"]
                void $ on restoreBtn #clicked $ do
                    #popdown popover
@@ -158,7 +152,6 @@ buildSnapshotView _window bottle stack reloadDetailView = do
                            return False
                #append popBox restoreBtn
                
-               -- 3. Delete Snapshot
                deleteBtn <- createMenuBtn (tr "Delete Snapshot") "user-trash-symbolic" ["destructive-action"]
                void $ on deleteBtn #clicked $ do
                    #popdown popover

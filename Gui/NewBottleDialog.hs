@@ -16,31 +16,29 @@ import Bottle.Types
 import Bottle.Logic
 import Logic.Translation (tr)
 
--- | Die Logik zur Validierung des Namens und Aktualisierung des UI-Status.
+-- | Validates the name and updates the UI status accordingly.
 validateName :: Adw.EntryRow -> Gtk.Button -> Gtk.Label -> IO ()
 validateName entryRow createBtn errorLabel = do
   nameText <- #getText entryRow
-  
+
   let status = checkNameValidity nameText
   let valid = status == Valid
-  
+
   #setSensitive createBtn valid
-  
+
   if valid
     then do
-      -- Gültiger Name
-      Gtk.widgetRemoveCssClass entryRow (T.pack "error") 
+      Gtk.widgetRemoveCssClass entryRow (T.pack "error")
       #setVisible errorLabel False
     else do
-      -- Ungültiger Name
       Gtk.widgetAddCssClass entryRow (T.pack "error")
-      
+
       let errorMsg = explainNameValid status
       #setLabel errorLabel errorMsg
       #setVisible errorLabel True
 
--- | Dialog zum Erstellen einer neuen Bottle
--- Diesen lassen wir vorerst in Main, da er von der HeaderBar getriggert wird.
+-- | Dialog for creating a new bottle.
+-- Kept in Main for now, since it's triggered by the HeaderBar.
 showNewBottleDialog :: Gtk.Window -> IO () -> IO ()
 showNewBottleDialog parent refreshCallback = do
   dialog <- new Gtk.Window 
@@ -60,32 +58,28 @@ showNewBottleDialog parent refreshCallback = do
   #add group nameEntry
   
   archRow <- new Adw.ComboRow [ #title := tr "Architecture" ]
-  
-  -- NEU: Unterstützte Architekturen dynamisch abrufen
+
   supportedArchs <- getSupportedArchitectures
-  
-  -- Konvertiere die Architekturen in Strings für die Anzeige (nutze show für "Win64"/"Win32")
+
+  -- Show the architectures via their derived 'show' string ("Win64"/"Win32")
   let archStrings = map (T.pack . show) supportedArchs
   archModel <- Gtk.stringListNew (Just archStrings)
-  
+
   #setModel archRow (Just archModel)
   #add group archRow
 
-  -- NEU: Runner Auswahl
   runnerRow <- new Adw.ComboRow [ #title := tr "Runner" ]
   availableRunners <- getAvailableRunners
 
-  -- NEU: Echte Anzeigenamen abrufen
   runnerStrings <- mapM getRunnerTypeDisplayName availableRunners
   runnerModel <- Gtk.stringListNew (Just runnerStrings)
-  
+
   #setModel runnerRow (Just runnerModel)
   #add group runnerRow
-  
+
   #append contentBox group
-  
-  -- Das Label für die Fehlermeldung
-  errorLabel <- new Gtk.Label 
+
+  errorLabel <- new Gtk.Label
     [ #label := ""
     , #halign := Gtk.AlignStart
     , #vexpand := False
@@ -106,7 +100,6 @@ showNewBottleDialog parent refreshCallback = do
   
   statusLabel <- new Gtk.Label [ #label := "", #visible := False ]
 
-  -- Validierung initialisieren
   validateName nameEntry createBtn errorLabel
 
   void $ on nameEntry #changed $
@@ -119,20 +112,17 @@ showNewBottleDialog parent refreshCallback = do
     #setLabel statusLabel (tr "Creating prefix (this may take a while)...")
     #setVisible statusLabel True
     
-    -- Architektur bestimmen
     selectedArchIdx <- #getSelected archRow
     let selectedArch = if fromIntegral selectedArchIdx < length supportedArchs
                        then supportedArchs !! fromIntegral selectedArchIdx
-                       else Win64 
-    
-    -- Runner bestimmen
+                       else Win64
+
     selectedRunnerIdx <- #getSelected runnerRow
     let selectedRunner = if fromIntegral selectedRunnerIdx < length availableRunners
                          then availableRunners !! fromIntegral selectedRunnerIdx
                          else SystemWine
 
     void $ async $ do
-      -- Wir übergeben jetzt auch den ausgewählten Runner
       bottleObj <- createBottleObject nameText selectedArch selectedRunner
       res <- try (createBottleLogic bottleObj) :: IO (Either IOError ())
       

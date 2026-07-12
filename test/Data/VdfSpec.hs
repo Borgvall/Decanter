@@ -9,7 +9,7 @@ import qualified Data.Text as T
 spec :: Spec
 spec = do
   describe "extractDisplayName" $ do
-    it "extrahiert den display_name aus einem typischen Proton-VDF" $ do
+    it "extracts the display_name from a typical Proton VDF" $ do
       let vdfContent = T.unlines 
             [ "\"compatibilitytools\""
             , "{"
@@ -27,13 +27,13 @@ spec = do
             ]
       extractDisplayName vdfContent `shouldBe` "GE-Proton10-25"
     
-    it "kommt mit Kommentaren in der gleichen Zeile zurecht" $ do
-      let line = " \"display_name\" \"Proton 9.0\" // Kommentar hier"
+    it "handles comments on the same line" $ do
+      let line = " \"display_name\" \"Proton 9.0\" // comment here"
       extractDisplayName line `shouldBe` "Proton 9.0"
 
-    it "ignoriert führende/folgende Leerzeichen und Tabs" $ do
+    it "ignores leading/trailing spaces and tabs" $ do
       let line = " \t \"display_name\" \t   \"Custom Proton Build\"  "
       extractDisplayName line `shouldBe` "Custom Proton Build"
 
-    it "gibt leeren Text zurück, wenn der Key fehlt" $ do
+    it "returns empty text when the key is missing" $ do
       extractDisplayName "{ \"other_key\" \"value\" }" `shouldBe` ""

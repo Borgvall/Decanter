@@ -31,7 +31,7 @@ import Bottle.Logic
   )
 import Bottle.Types (bottleName)
 
--- | Die von der CLI unterstützten Kommandos.
+-- | The commands supported by the CLI.
 data Command
   = Gui (Maybe Text)
   | ListBottles

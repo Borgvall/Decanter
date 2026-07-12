@@ -45,13 +45,13 @@ getSnapshotsDir = do
     createDirectoryIfMissing True snapDir
     return snapDir
 
--- | Prüft, ob ein Pfad ein BTRFS Subvolume ist
+-- | Checks whether a path is a BTRFS subvolume
 isBtrfsSubvolume :: FilePath -> IO Bool
 isBtrfsSubvolume path = do
     result <- try (Btrfs.getSubvolReadOnly path) :: IO (Either IOException Bool)
     case result of
-        Right _ -> return True  -- Aufruf erfolgreich -> Es ist ein Subvolume
-        Left _  -> return False -- Fehler -> Kein Subvolume (oder FS Error)
+        Right _ -> return True  -- call succeeded -> it's a subvolume
+        Left _  -> return False -- error -> not a subvolume (or FS error)
 
 -- | Safely deletes a BTRFS subvolume.
 --
@@ -63,7 +63,7 @@ isBtrfsSubvolume path = do
 deleteSubvolumeForcible :: FilePath -> IO ()
 deleteSubvolumeForcible subvolPath = do
   putStrLn $ "Forcing deletion of subvolume: " ++ subvolPath
-  -- Erst Read-Only entfernen, sonst darf man nicht löschen
+  -- Remove read-only first, otherwise deletion is not allowed
   Btrfs.setSubvolReadOnly subvolPath False
   destroyResult <- tryIOError (Btrfs.destroySubvol subvolPath)
   case destroyResult of
@@ -124,27 +124,27 @@ createSnapshotLogic bottle sName = do
 
     Btrfs.snapshot (bottlePath bottle) destPath True
 
--- | Stellt eine Bottle aus einem Snapshot wieder her
+-- | Restores a bottle from a snapshot
 restoreSnapshotLogic :: Bottle -> BottleSnapshot -> IO ()
 restoreSnapshotLogic bottle snapshot = do
     putStrLn $ "Restoring bottle '" ++ T.unpack (bottleName bottle) ++ "' from snapshot " ++ show (snapshotId snapshot)
 
-    -- Auch hier: Erst Prozess sicher beenden, bevor wir das Filesystem anfassen
-    -- killBottleProcesses ist jetzt synchron und wartet auf Abschluss.
+    -- Here too: stop processes safely before touching the filesystem.
+    -- killBottleProcesses is now synchronous and waits for completion.
     _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
 
     deleteSubvolumeForcible (bottlePath bottle)
     Btrfs.snapshot (snapshotPath snapshot) (bottlePath bottle) False
     putStrLn "Restore successful."
 
--- | Löscht einen spezifischen Snapshot
+-- | Deletes a specific snapshot
 deleteSnapshotLogic :: BottleSnapshot -> IO ()
 deleteSnapshotLogic snapshot = do
     putStrLn $ "Deleting snapshot: " ++ snapshotPath snapshot
     deleteSubvolumeForcible (snapshotPath snapshot)
 
--- | Löscht alle Snapshots einer Bottle sowie den (danach leeren) Snapshot-Ordner.
--- Wird von "Bottle.Logic.deleteBottleLogic" beim Löschen einer ganzen Bottle benutzt.
+-- | Deletes all of a bottle's snapshots along with the (then-empty) snapshot folder.
+-- Used by "Bottle.Logic.deleteBottleLogic" when deleting an entire bottle.
 deleteAllSnapshots :: Bottle -> IO ()
 deleteAllSnapshots bottle = do
     baseSnapDir <- getSnapshotsDir
@@ -155,7 +155,7 @@ deleteAllSnapshots bottle = do
 
     removePathForcibly bottleSnapDir
 
--- | Öffnet den Dateimanager im drive_c des Snapshots
+-- | Opens the file manager in the snapshot's drive_c
 openSnapshotFileManager :: BottleSnapshot -> IO ()
 openSnapshotFileManager snapshot = do
     let driveC = snapshotPath snapshot </> "drive_c"

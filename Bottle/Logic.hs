@@ -7,7 +7,7 @@ module Bottle.Logic
   , findBottleByName
   , findAppLnkByName
   , getAvailableRunners
-  , getRunnerTypeDisplayName -- NEU exportiert
+  , getRunnerTypeDisplayName
   , createBottleObject
   , createBottleLogic
   , changeBottleRunnerLogic
@@ -90,30 +90,30 @@ import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode(..))
-import qualified Data.ByteString.Lazy.Char8 as LBS8 -- Für einfache Konvertierung von Prozess-Output
+import qualified Data.ByteString.Lazy.Char8 as LBS8 -- for easy conversion of process output
 
 import Logic.Translation (tr)
-import Data.Vdf (extractDisplayName) -- NEU
+import Data.Vdf (extractDisplayName)
 
--- | Pfad zur Konfigurationsdatei innerhalb einer Bottle
+-- | Path to a bottle's configuration file
 getConfigPath :: FilePath -> FilePath
 getConfigPath bottleDir = bottleDir </> "decanter.cfg"
 
--- | Speichert die Bottle-Konfiguration (Runner, Arch)
+-- | Saves the bottle's configuration (runner, arch)
 saveBottleConfig :: Bottle -> IO ()
 saveBottleConfig b = do
     let content = show (runner b, arch b)
     writeFile (getConfigPath (bottlePath b)) content
 
--- | Lädt die Bottle-Konfiguration
+-- | Loads the bottle's configuration
 loadBottleConfig :: FilePath -> IO (Maybe (RunnerType, Arch))
 loadBottleConfig bottleDir = do
     let path = getConfigPath bottleDir
     exists <- doesFileExist path
-    if exists 
+    if exists
         then do
             content <- readFile path
-            -- Einfaches 'reads' für sicheres Parsen
+            -- Plain 'reads' for safe parsing
             case reads content of
                 [((r, a), _)] -> return (Just (r, a))
                 _              -> do
@@ -121,14 +121,13 @@ loadBottleConfig bottleDir = do
                     return Nothing
         else return Nothing
 
--- | Ändert den Runner einer Bottle (nur Bottle-Objekt, speichert nicht)
+-- | Changes a bottle's runner (bottle object only, does not save)
 changeBottleRunnerLogic :: Bottle -> RunnerType -> IO Bottle
 changeBottleRunnerLogic bottle newRunner = do
-  putStrLn $ "Changing runner for bottle '" ++ T.unpack (bottleName bottle) 
-             ++ "' from " ++ show (runner bottle) 
+  putStrLn $ "Changing runner for bottle '" ++ T.unpack (bottleName bottle)
+             ++ "' from " ++ show (runner bottle)
              ++ " to " ++ show newRunner
   let updatedBottle = bottle { runner = newRunner }
-  -- decanter.cfg speichern
   saveBottleConfig updatedBottle
   pure updatedBottle
 
@@ -140,35 +139,35 @@ isWinetricksAvailable = do
 runWinetricks :: Bottle -> IO ()
 runWinetricks bottle = runCmd bottle "winetricks" []
 
--- | Helper um Prozesse zu starten (asynchron)
--- Passt den Befehl an, falls Proton verwendet wird.
+-- | Helper to start processes (asynchronously).
+-- Adjusts the command if Proton is used.
 runCmd :: Bottle -> String -> [String] -> IO ()
 runCmd bottle cmd args = do
   mergedEnv <- getMergedWineEnv bottle
-  
+
   case runner bottle of
-    SystemWine -> 
+    SystemWine ->
         void $ startProcess $ setEnv mergedEnv $ proc cmd args
-        
-    Proton _ -> do -- Proton
-        -- Wenn der Befehl "wine" ist, ersetzen wir ihn durch "umu-run".
-        -- Andere Tools (wie winetricks) müssen eventuell gesondert behandelt werden,
-        -- aber umu-run kann oft auch einfach davor gesetzt werden.
+
+    Proton _ -> do
+        -- If the command is "wine", replace it with "umu-run".
+        -- Other tools (like winetricks) may need separate handling,
+        -- but umu-run can often just be prepended to them too.
         let (realCmd, realArgs) = if cmd == "wine"
                                   then ("umu-run", args)
-                                  else (cmd, args) -- Vorerst unverändert für andere Tools
-        
-        -- TODO: Prüfen, ob umu-run im PATH ist oder explizit konfiguriert werden muss
+                                  else (cmd, args) -- left unchanged for other tools, for now
+
+        -- TODO: check whether umu-run is on PATH or needs to be configured explicitly
         void $ startProcess $ setEnv mergedEnv $ proc realCmd realArgs
 
--- | Bestimmt das Basisverzeichnis für alle Bottles
+-- | Determines the base directory for all bottles
 getBottlesBaseDir :: IO FilePath
 getBottlesBaseDir = do
   base <- getXdgDirectory XdgData "Decanter"
   createDirectoryIfMissing True base
   return base
 
--- | Erkennt die Architektur anhand des Vorhandenseins von 'syswow64'
+-- | Detects the architecture from the presence of 'syswow64'
 detectBottleArch :: FilePath -> IO Arch
 detectBottleArch path = do
     let syswow64 = path </> "drive_c" </> "windows" </> "syswow64"
@@ -176,48 +175,45 @@ detectBottleArch path = do
     return $ if is64 then Win64 else Win32
 
 
--- | Findet eine Bottle anhand ihres Namens (exakter, case-sensitiver Vergleich).
+-- | Finds a bottle by its name (exact, case-sensitive comparison).
 findBottleByName :: T.Text -> [Bottle] -> Maybe Bottle
 findBottleByName name bottles = case filter ((== name) . bottleName) bottles of
   (b : _) -> Just b
   []      -> Nothing
 
--- | Findet den Pfad zu einer Windows-Applikation (.lnk) anhand ihres
--- Anzeigenamens, wie er auch im GUI aus dem Dateinamen abgeleitet wird
--- (siehe 'Gui.BottleView'). Bei mehreren Treffern (z.B. gleicher Name in
--- verschiedenen Benutzerverzeichnissen) wird der erste zurückgegeben.
+-- | Finds the path to a Windows application (.lnk) by its display name, the
+-- same one the GUI derives from the file name (see 'Gui.BottleView'). If
+-- there are multiple matches (e.g. the same name in different user
+-- directories), the first one is returned.
 findAppLnkByName :: T.Text -> [FilePath] -> Maybe FilePath
 findAppLnkByName name lnkPaths = case filter ((== name) . T.pack . takeBaseName) lnkPaths of
   (p : _) -> Just p
   []      -> Nothing
 
--- | Scannt das Verzeichnis nach existierenden Bottles und erkennt deren Architektur
+-- | Scans the directory for existing bottles and detects their architecture
 listExistingBottles :: IO [Bottle]
 listExistingBottles = do
   base <- getBottlesBaseDir
   exists <- doesDirectoryExist base
-  if not exists 
+  if not exists
     then return []
     else do
       entries <- listDirectory base
-      
-      -- Wir bauen den Pfad zusammen und prüfen, ob es ein Verzeichnis ist
+
       dirs <- filterM (\e -> doesDirectoryExist (base </> e)) entries
-      
-      -- Wir prüfen, ob 'drive_c' existiert (gültiges Prefix)
+
+      -- Check that 'drive_c' exists (valid prefix)
       validDirs <- filterM (\e -> doesDirectoryExist (base </> e </> "drive_c")) dirs
-      
-      -- Jetzt mappen wir über die validen Verzeichnisse und erkennen die Architektur
+
       forM validDirs $ \name -> do
           let path = base </> name
-          
-          -- Config laden
+
           maybeConfig <- loadBottleConfig path
-          
+
           case maybeConfig of
             Just (r, a) -> return $ Bottle (T.pack name) path r a
             Nothing -> do
-                -- Fallback für alte Bottles ohne Config
+                -- Fallback for old bottles without a config
                 detectedArch <- detectBottleArch path
                 return $ Bottle (T.pack name) path SystemWine detectedArch
 
@@ -234,7 +230,7 @@ getAvailableRunners = do
     if exists
       then do
         entries <- listDirectory compatDir
-        -- Filter: Muss ein Verzeichnis sein UND compatibilitytools.vdf enthalten
+        -- Filter: must be a directory AND contain compatibilitytool.vdf
         paths <- filterM (\e -> do
             let fullPath = compatDir </> e
             isDir <- doesDirectoryExist fullPath
@@ -246,10 +242,9 @@ getAvailableRunners = do
 
   return (wineList ++ protonList)
 
--- | Ermittelt den Anzeigenamen für einen Runner
+-- | Determines the display name for a runner
 getRunnerTypeDisplayName :: RunnerType -> IO T.Text
 getRunnerTypeDisplayName SystemWine = do
-    -- Führt 'wine --version' aus
     (exitCode, out) <- readProcessStdout (proc "wine" ["--version"])
     case exitCode of
         ExitSuccess -> return $ T.strip $ T.pack $ LBS8.unpack out
@@ -260,7 +255,6 @@ getRunnerTypeDisplayName (Proton path) = do
     exists <- doesFileExist vdfPath
     if exists
         then do
-            -- VDF parsen
             content <- readFile vdfPath
             let name = extractDisplayName (T.pack content)
             if T.null name
@@ -309,19 +303,18 @@ createBottleLogic bottle@Bottle{..} = do
   case checkNameValidity bottleName of
     Valid -> do
       createVolume bottlePath
-      
-      -- NEU: Konfiguration speichern
+
       saveBottleConfig bottle
-      
+
       mergedEnv <- getMergedWineEnv bottle
-      
-      -- Wir entfernen DISPLAY und WAYLAND_DISPLAY aus dem Environment, damit wineboot
-      -- keine Fenster (wie den Gecko/Mono-Installer Dialog) öffnet.
+
+      -- Remove DISPLAY and WAYLAND_DISPLAY from the environment so wineboot
+      -- doesn't open a window (like the Gecko/Mono installer dialog).
       let headlessEnv = filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) mergedEnv
-      
-      -- Bei Proton nutzen wir auch wineboot (via umu-run wineboot?), 
-      -- aber umu-run initialisiert das Prefix oft selbst beim ersten Start.
-      -- Für Konsistenz rufen wir wineboot auf, passen aber den Befehl an.
+
+      -- For Proton we also use wineboot (via umu-run wineboot), even though
+      -- umu-run often initializes the prefix itself on first start. We call
+      -- wineboot regardless for consistency, just adjusting the command.
       let bootCmd = case runner of
             SystemWine -> "wineboot"
             Proton _   -> "umu-run"
@@ -335,24 +328,24 @@ createBottleLogic bottle@Bottle{..} = do
     invalidName -> do
       putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
--- | Löscht eine Bottle und alle zugehörigen Snapshots
+-- | Deletes a bottle and all its snapshots
 deleteBottleLogic :: Bottle -> IO ()
 deleteBottleLogic bottle@Bottle{..} = do
   putStrLn $ "Starting deletion process for: " ++ T.unpack bottleName
 
-  -- WICHTIG: Laufende Prozesse beenden, bevor wir Dateien löschen.
-  -- Dies verhindert Zombie-Wineserver, die spätere Tests oder Neuerstellungen blockieren.
+  -- IMPORTANT: stop running processes before deleting files.
+  -- This prevents zombie wineservers that would block later tests or re-creation.
   putStrLn "Stopping running processes..."
   _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
 
-  -- 1. Alle Snapshots der Bottle löschen
+  -- 1. Delete all of the bottle's snapshots
   deleteAllSnapshots bottle
 
-  -- 2. Application-Menu-Symlink entfernen, bevor die Bottle selbst
-  -- verschwindet -- so zeigt der Symlink zu keinem Zeitpunkt ins Leere.
+  -- 2. Remove the application-menu symlink before the bottle itself
+  -- disappears -- so the symlink never points into nothing.
   removeApplicationMenuSymlink bottle
 
-  -- 3. Die Bottle selbst löschen
+  -- 3. Delete the bottle itself
   putStrLn $ "Deleting Wine prefix: " ++ bottlePath
   isSubvol <- isBtrfsSubvolume bottlePath
   if isSubvol
@@ -363,37 +356,37 @@ deleteBottleLogic bottle@Bottle{..} = do
 
 -- Application Menu Integration
 --
--- Die ".desktop"-Dateien werden bewusst *innerhalb* des Bottle-Verzeichnisses
--- (in "menu/") angelegt statt direkt in ~/.local/share/applications: Da das
--- Bottle-Verzeichnis ein eigenes BTRFS-Subvolume ist, wandern sie so
--- automatisch mit jedem Snapshot/Restore mit und bleiben immer konsistent
--- mit dem tatsächlich installierten Programmstand. In
--- ~/.local/share/applications liegt lediglich ein Symlink pro Bottle auf
--- dieses "menu"-Verzeichnis (nach der Desktop-Entry-Spec werden Unterordner
--- unter "applications/" rekursiv als Desktop-File-IDs erkannt - genauso
--- verfährt auch Wines eigener winemenubuilder).
+-- The ".desktop" files are deliberately created *inside* the bottle
+-- directory (in "menu/") instead of directly in
+-- ~/.local/share/applications: since the bottle directory is its own BTRFS
+-- subvolume, they automatically travel along with every snapshot/restore
+-- and stay consistent with the actually installed program state. In
+-- ~/.local/share/applications there is only a single symlink per bottle,
+-- pointing at this "menu" directory (per the Desktop Entry Spec,
+-- subdirectories under "applications/" are recursively recognized as
+-- desktop file IDs -- Wine's own winemenubuilder does the same).
 
--- | Verzeichnis innerhalb der Bottle, in dem die ".desktop"-Dateien liegen.
+-- | Directory inside the bottle where the ".desktop" files live.
 bottleMenuDir :: Bottle -> FilePath
 bottleMenuDir Bottle{..} = bottlePath </> "menu"
 
--- | Pfad der ".desktop"-Datei einer Applikation innerhalb der Bottle.
+-- | Path of an application's ".desktop" file inside the bottle.
 desktopFilePath :: Bottle -> T.Text -> FilePath
 desktopFilePath bottle appName = bottleMenuDir bottle </> T.unpack appName ++ ".desktop"
 
--- | Pfad des (best-effort extrahierten) Icons einer Applikation innerhalb
--- der Bottle. Liegt wie die ".desktop"-Datei selbst im "menu"-Verzeichnis,
--- wandert also ebenso mit Snapshots mit.
+-- | Path of an application's (best-effort extracted) icon inside the
+-- bottle. Lives in the "menu" directory just like the ".desktop" file
+-- itself, so it travels along with snapshots too.
 iconFilePath :: Bottle -> T.Text -> FilePath
 iconFilePath bottle appName = bottleMenuDir bottle </> "icons" </> T.unpack appName ++ ".png"
 
--- | Name des Symlinks in ~/.local/share/applications für eine Bottle.
+-- | Name of the symlink in ~/.local/share/applications for a bottle.
 applicationMenuSymlinkName :: Bottle -> String
 applicationMenuSymlinkName Bottle{..} = "decanter-" ++ T.unpack bottleName
 
--- | Escaped einen Exec-Parameter gemäß der Desktop-Entry-Spec-Quoting-Regeln
--- (innerhalb doppelter Anführungszeichen müssen ", `, $ und \ mit
--- Backslash escaped werden) und quotet ihn strong.
+-- | Escapes an Exec parameter per the Desktop Entry Spec quoting rules
+-- (inside double quotes, ", `, $ and \ must be backslash-escaped) and
+-- wraps it in double quotes.
 quoteExecArg :: T.Text -> T.Text
 quoteExecArg arg = "\"" <> T.concatMap escapeChar arg <> "\""
   where
@@ -401,8 +394,8 @@ quoteExecArg arg = "\"" <> T.concatMap escapeChar arg <> "\""
       | c `elem` ("\"`$\\" :: String) = T.pack ['\\', c]
       | otherwise = T.singleton c
 
--- | Stellt sicher, dass ~/.local/share/applications/decanter-<bottle> auf
--- das "menu"-Verzeichnis der Bottle zeigt. Idempotent.
+-- | Ensures ~/.local/share/applications/decanter-<bottle> points at the
+-- bottle's "menu" directory. Idempotent.
 ensureApplicationMenuSymlink :: Bottle -> IO ()
 ensureApplicationMenuSymlink bottle = do
   appsDir <- getXdgDirectory XdgData "applications"
@@ -415,9 +408,9 @@ ensureApplicationMenuSymlink bottle = do
       result <- try (createFileLink (bottleMenuDir bottle) linkPath) :: IO (Either IOException ())
       case result of
         Right () -> return ()
-        Left _   -> return () -- Race mit einem parallelen Aufruf; Ziel existiert dann bereits
+        Left _   -> return () -- race with a concurrent call; the target then already exists
 
--- | Entfernt den Application-Menu-Symlink einer Bottle, falls vorhanden.
+-- | Removes a bottle's application-menu symlink, if present.
 removeApplicationMenuSymlink :: Bottle -> IO ()
 removeApplicationMenuSymlink bottle = do
   appsDir <- getXdgDirectory XdgData "applications"
@@ -427,14 +420,14 @@ removeApplicationMenuSymlink bottle = do
     then removeFile linkPath
     else return ()
 
--- | Legt einen Anwendungsmenü-Eintrag für eine Start-Menü-Applikation an.
--- Der Eintrag ruft "decanter start <bottle> <app>" auf, läuft also durch
--- Decanters eigene Ausführungslogik (Env-Merging, Proton-Routing,
--- Direct3D-Wrapper), statt Wine/die Applikation direkt aufzurufen.
+-- | Creates an application-menu entry for a start-menu application. The
+-- entry calls "decanter start <bottle> <app>", so it runs through
+-- Decanter's own execution logic (env merging, Proton routing, Direct3D
+-- wrapper) instead of invoking Wine/the application directly.
 --
--- Das Icon wird per 'extractAppIcon' aus der ".lnk"-Datei extrahiert
--- (best effort, siehe dort): Schlägt das fehl, bekommt der Eintrag einfach
--- kein "Icon="-Feld, statt dass das Hinzufügen insgesamt scheitert.
+-- The icon is extracted from the ".lnk" file via 'extractAppIcon' (best
+-- effort, see there): if that fails, the entry simply gets no "Icon="
+-- field, instead of the whole addition failing.
 addToApplicationMenu :: Bottle -> T.Text -> FilePath -> T.Text -> IO ()
 addToApplicationMenu bottle appName lnkPath category = do
   createDirectoryIfMissing True (bottleMenuDir bottle)
@@ -454,8 +447,8 @@ addToApplicationMenu bottle appName lnkPath category = do
     , "Terminal=false"
     ] ++ iconLine
 
--- | Entfernt einen zuvor angelegten Anwendungsmenü-Eintrag (samt Icon, falls
--- eines extrahiert wurde) wieder.
+-- | Removes a previously created application-menu entry again (including
+-- its icon, if one was extracted).
 removeFromApplicationMenu :: Bottle -> T.Text -> IO ()
 removeFromApplicationMenu bottle appName = do
   let path = desktopFilePath bottle appName
@@ -470,7 +463,7 @@ removeFromApplicationMenu bottle appName = do
     then removeFile iconPath
     else return ()
 
--- | Prüft, ob für eine Applikation bereits ein Anwendungsmenü-Eintrag existiert.
+-- | Checks whether an application-menu entry already exists for an application.
 isInApplicationMenu :: Bottle -> T.Text -> IO Bool
 isInApplicationMenu bottle appName = doesFileExist (desktopFilePath bottle appName)
 
@@ -533,12 +526,12 @@ findWineStartMenuLnks Bottle{..} = do
                     else return []
         return (concat paths)
 
--- | Prüft, ob das System 32-Bit Prefixe unterstützt.
--- Führt 'WINEARCH=win32 wine --version' aus. Wenn wine32 fehlt, gibt dies meist ExitCode 1 zurück.
+-- | Checks whether the system supports 32-bit prefixes.
+-- Runs 'WINEARCH=win32 wine --version'; if wine32 is missing, this usually returns ExitCode 1.
 checkSystemWine32Support :: IO Bool
 checkSystemWine32Support = do
     currentEnv <- getEnvironment
-    -- Wir überschreiben WINEARCH, behalten aber den Rest bei (z.B. PATH)
+    -- Override WINEARCH, but keep the rest (e.g. PATH)
     let newEnv = ("WINEARCH", "win32") : filter ((/= "WINEARCH") . fst) currentEnv
     
     let procConfig = setEnv newEnv 
@@ -549,11 +542,11 @@ checkSystemWine32Support = do
     result <- runProcess procConfig
     return (result == ExitSuccess)
 
--- | Gibt eine Liste der vom System unterstützten Architekturen zurück.
--- Win64 wird als immer verfügbar angenommen.
+-- | Returns a list of the architectures supported by the system.
+-- Win64 is assumed to always be available.
 getSupportedArchitectures :: IO [Arch]
 getSupportedArchitectures = do
     win32Support <- checkSystemWine32Support
-    if win32Support 
+    if win32Support
        then return [Win64, Win32]
        else return [Win64]
