@@ -1,32 +1,14 @@
 # Decanter
 
-**Decanter** is a modern Wine prefix manager written in **Haskell**, utilizing **GTK4** and **Libadwaita** to provide a native Linux experience.
+**Decanter** is a Wine prefix manager for Linux built around two ideas Bottles doesn't offer: BTRFS-native snapshots and Nix-reproducible builds — written in Haskell with GTK4/Libadwaita.
 
-> **⚠️ Experimental Project** This project started as a proof-of-concept to
-> test the coding capabilities of AI models. It began with **Gemini**: every
-> change was driven by a manual prompt, and both the prompt and the model's
-> response were copied verbatim into the commit message.
->
-> It has since evolved into **agentic coding** with **Claude Code**, given a
-> proper harness to work in - a pre-commit hook that enforces a successful
-> build and test coverage for new logic, an `AGENTS.md` describing project
-> conventions, and a rule to hand off interactive GUI verification back to a
-> human instead of simulating clicks. The commit history reflects this shift:
-> earlier commits carry the full German prompt/response pair, later ones are
-> shorter and describe requirements and design decisions instead.
->
-> **Analyze the process:** the **Git commit history** documents this
-> transparently across both eras. It lets you trace exactly:
->
-> - Where the AI produced flawless, working code immediately.
-> - Where manual intervention was necessary to fix bugs, resolve compiler
->   errors, or adjust the logic.
-> - How the workflow itself changed - from manually copy-pasted prompts to
->   an agent operating inside guardrails it has to satisfy on its own.
+## 🎯 Vision
+
+Decanter is a serious, daily-usable alternative to [Bottles](https://usebottles.com/) for running Windows applications on Linux — not a feature clone, but a narrower tool built around two strengths Bottles doesn't have: **BTRFS-native storage** (bottles as subvolumes, with fast snapshot/restore built in from the ground up) and **Nix-based reproducibility** (deterministic builds and deploys via flakes, no Docker/Flatpak detour). Rather than chasing feature parity with Bottles, Decanter deepens this niche.
 
 ## 💡 Inspiration
 
-Decanter is heavily inspired by the excellent [**Bottles**](https://usebottles.com/) project. It aims to replicate the core concept of easy-to-manage "bottles" (isolated Wine environments) using a purely functional programming approach with Haskell.
+Decanter is heavily inspired by the excellent [Bottles](https://usebottles.com/) project. It aims to replicate the core concept of easy-to-manage "bottles" (isolated Wine environments) using a purely functional programming approach with Haskell.
 
 ## 🚀 Features
 
@@ -51,8 +33,8 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
     * `winecfg`
     * `regedit`
     * `uninstaller`
-    * `wineserver -k` (Kill all processes)
     * `winetricks` (if installed)
+    * `wineserver -k` (Kill all processes of a Bottle)
 * **Direct3D Wrapper Switch:** For System Wine bottles, toggle between Wine's
   built-in Direct3D implementation, DXVK, and DXVK + vkd3d-proton right from
   the bottle view. Unlike Proton, plain Wine doesn't ship these on its own;
@@ -60,6 +42,30 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
 * **Command Line Interface:** Manage bottles and launch applications from the
   terminal (`decanter gui/list-bottles/list-apps/start/open`), with shell
   completion for bash, zsh and fish.
+
+## 🤖 An AI Coding Experiment
+
+> This project started as a proof-of-concept to test the coding capabilities
+> of AI models. It began with **Gemini**: every change was driven by a
+> manual prompt, and both the prompt and the model's response were copied
+> verbatim into the commit message.
+>
+> It has since evolved into **agentic coding** with **Claude Code**, given a
+> proper harness to work in - a pre-commit hook that enforces a successful
+> build and test coverage for new logic, an `AGENTS.md` describing project
+> conventions, and a rule to hand off interactive GUI verification back to a
+> human instead of simulating clicks. The commit history reflects this shift:
+> earlier commits carry the full German prompt/response pair, later ones are
+> shorter and describe requirements and design decisions instead.
+>
+> **Analyze the process:** the **Git commit history** documents this
+> transparently across both eras. It lets you trace exactly:
+>
+> - Where the AI produced flawless, working code immediately.
+> - Where manual intervention was necessary to fix bugs, resolve compiler
+>   errors, or adjust the logic.
+> - How the workflow itself changed - from manually copy-pasted prompts to
+>   an agent operating inside guardrails it has to satisfy on its own.
 
 ## 🛠 Tech Stack
 
