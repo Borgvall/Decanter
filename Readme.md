@@ -56,7 +56,10 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
   `/usr/local/share/steam/compatibilitytools.d`,
   `$STEAM_EXTRA_COMPAT_TOOLS_PATHS`, and `~/.steam/root/compatibilitytools.d`
   - the same paths and precedence order Steam itself uses, e.g. GE-Proton).
-  Switch it later from the bottle view.
+  Switch it later from the bottle view. If the configured runner is no
+  longer found (e.g. a Proton build was removed or renamed), Windows-app
+  actions are greyed out with an explanation instead of failing silently -
+  both in the GUI and from `decanter start`/`decanter open`.
 * **Modern UI:** Built with GTK4 and Libadwaita for a seamless GNOME integration.
 * **Smart Storage (BTRFS):** Automatically attempts to create bottles as BTRFS subvolumes for better storage management. It gracefully falls back to standard directories if BTRFS is unavailable.
 * **Snapshots (BTRFS):** Using BTRFS-subvolume snapshots the state of a battle can be stored and restored fast.
