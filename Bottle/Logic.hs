@@ -52,7 +52,7 @@ import qualified System.Linux.Btrfs as Btrfs
 
 import Logic.Translation (tr)
 
--- | Changes a bottle's runner (bottle object only, does not save)
+-- | Changes a bottle's runner, persisting the change via 'saveBottleConfig'
 changeBottleRunnerLogic :: Bottle -> RunnerType -> IO Bottle
 changeBottleRunnerLogic bottle newRunner = do
   putStrLn $ "Changing runner for bottle '" ++ T.unpack (bottleName bottle)

@@ -156,19 +156,28 @@ buildChangeRunnerButton window bottle stack refreshCallback = do
 
   pure btn
 
+-- | Adds a widget to a 'Gtk.Stack' under the given name, first removing
+-- whatever child is already registered under that same name, if any.
+-- 'Gtk.Stack' doesn't enforce unique names on its own -- 'addNamed'ing a
+-- second child under a name already in use leaves both in the stack rather
+-- than replacing the first, and 'setVisibleChildName' isn't guaranteed to
+-- then resolve to the newly added one. Any call site that may re-add a page
+-- under a name it could have already added before (e.g. re-entering the
+-- same bottle's detail view, or reopening its snapshots view) needs this
+-- instead of a bare 'addNamed', or a stale duplicate can silently linger
+-- and resurface later.
+replaceStackChild :: Gtk.Stack -> T.Text -> Gtk.Widget -> IO ()
+replaceStackChild stack name widget = do
+  mOldChild <- #getChildByName stack name
+  forM_ mOldChild (#remove stack)
+  void $ #addNamed stack widget (Just name)
+
 -- | Reloads the bottle view
 reloadBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO ()
 reloadBottleView window bottle stack refreshCallback = do
-  -- Remove the current view from the stack. The name must match the one
-  -- Gui.OverviewView originally added the detail view under via #addNamed
-  -- -- otherwise the old view is never removed, and instead every call here
-  -- adds another, invisible card to the stack.
   let viewName = "detail_" <> bottleName bottle
-  mOldChild <- #getChildByName stack viewName
-  forM_ mOldChild (#remove stack)
-
   newView <- buildBottleView window bottle stack refreshCallback
-  void $ #addNamed stack newView (Just viewName)
+  replaceStackChild stack viewName newView
   #setVisibleChildName stack viewName
 
   refreshCallback
@@ -409,7 +418,7 @@ buildBottleView window bottle stack refreshCallback = do
     void $ on snapBtn #clicked $ do
        snapView <- buildSnapshotView window bottle stack (reloadBottleView window bottle stack refreshCallback)
        let viewName = "snapshots_" <> bottleName bottle
-       void $ #addNamed stack snapView (Just viewName)
+       replaceStackChild stack viewName snapView
        #setVisibleChildName stack viewName
     #append contentBox snapBtn
     sepSnap <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginBottom := 10 ]

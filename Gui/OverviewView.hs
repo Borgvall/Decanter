@@ -11,7 +11,7 @@ import Control.Monad (forM_, void)
 import Bottle.Types
 import Bottle.Logic (listExistingBottles)
 import Logic.Translation (tr)
-import Gui.BottleView (buildBottleView)
+import Gui.BottleView (buildBottleView, replaceStackChild)
 import Gui.NewBottleDialog (showNewBottleDialog)
 
 -- | Switches the stack to the detail view of the given bottle (building it
@@ -22,7 +22,7 @@ navigateToBottle window stack bottle refreshAction = do
   detailView <- buildBottleView window bottle stack refreshAction
   let viewName = "detail_" <> bottleName bottle
 
-  void $ #addNamed stack detailView (Just viewName)
+  replaceStackChild stack viewName detailView
   #setVisibleChildName stack viewName
 
 -- | Builds the overview page and returns the widget along with a refresh function
