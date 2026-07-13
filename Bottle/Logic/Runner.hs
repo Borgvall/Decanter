@@ -9,6 +9,7 @@ module Bottle.Logic.Runner
 
 import Bottle.Types
 import Data.Vdf (extractDisplayName)
+import Logic.Translation (tr)
 import System.Directory
     ( doesDirectoryExist
     , doesFileExist
@@ -111,3 +112,8 @@ getRunnerTypeDisplayName (Proton path) = do
                 then return $ "Proton (" <> T.pack (takeBaseName path) <> ")" -- Fallback
                 else return name
         else return $ "Proton (" <> T.pack (takeBaseName path) <> ")"
+
+getRunnerTypeDisplayName MissingSystemWine = pure $ tr "System Wine" <> " - " <> tr "not found"
+
+getRunnerTypeDisplayName (MissingProton path) =
+    pure $ "Proton (" <> T.pack (takeBaseName path) <> ")" <> " - " <> tr "not found"

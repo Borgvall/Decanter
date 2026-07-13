@@ -20,6 +20,7 @@ import Logic.SystemTool (runSystemTool)
 import System.Process.Typed
 import System.Directory (doesDirectoryExist, listDirectory, findExecutable)
 import System.FilePath ((</>), takeExtension)
+import Control.Exception (throwIO)
 import Control.Monad (void, filterM, forM)
 import Data.List (isSuffixOf)
 import Data.Maybe (isJust)
@@ -52,6 +53,12 @@ runCmd bottle cmd args = do
 
         -- TODO: check whether umu-run is on PATH or needs to be configured explicitly
         void $ startProcess $ setEnv mergedEnv $ proc realCmd realArgs
+
+    -- Should never be reached -- callers are expected to check
+    -- Bottle.Logic.blockReason first (both the GUI and 'decanter start'/
+    -- 'decanter open' do). See Bottle.Types.RunnerMissingError.
+    MissingSystemWine -> throwIO (RunnerMissingError (runner bottle))
+    MissingProton _   -> throwIO (RunnerMissingError (runner bottle))
 
 runWineCfg :: Bottle -> IO ()
 runWineCfg bottle = runCmd bottle "wine" ["winecfg"]

@@ -25,13 +25,15 @@ import Bottle.Logic
   ( findAppLnkByName
   , findBottleByName
   , listExistingBottles
+  , blockReason
+  , explainBlockReason
   )
 import Bottle.Logic.Programs
   ( findWineStartMenuLnks
   , runFileWithStart
   , runWindowsLnk
   )
-import Bottle.Types (bottleName)
+import Bottle.Types (Bottle, bottleName)
 
 -- | The commands supported by the CLI.
 data Command
@@ -135,12 +137,27 @@ runListApps name = do
       lnkPaths <- findWineStartMenuLnks bottle
       mapM_ TIO.putStrLn (sortOn id (map (T.pack . takeBaseName) lnkPaths))
 
+-- | Aborts with 'explainBlockReason' if "bottle" currently can't run
+-- Windows programs (see 'Bottle.Logic.blockReason') -- shared by 'runStart'
+-- and 'runOpen' so a stale/removed runner fails with a clear message up
+-- front instead of silently doing nothing inside 'runWindowsLnk'/
+-- 'runFileWithStart'.
+abortIfBlocked :: Bottle -> IO ()
+abortIfBlocked bottle = do
+  mReason <- blockReason bottle
+  case mReason of
+    Nothing -> pure ()
+    Just reason -> do
+      hPutStrLn stderr $ T.unpack (explainBlockReason reason)
+      exitFailure
+
 runStart :: Text -> Text -> IO ()
 runStart bottleNm appNm = do
   bottles <- listExistingBottles
   case findBottleByName bottleNm bottles of
     Nothing -> bottleNotFound bottleNm
     Just bottle -> do
+      abortIfBlocked bottle
       lnkPaths <- findWineStartMenuLnks bottle
       case findAppLnkByName appNm lnkPaths of
         Nothing -> do
@@ -154,6 +171,7 @@ runOpen bottleNm filePath = do
   case findBottleByName bottleNm bottles of
     Nothing -> bottleNotFound bottleNm
     Just bottle -> do
+      abortIfBlocked bottle
       exists <- doesFileExist filePath
       if exists
         then runFileWithStart bottle filePath

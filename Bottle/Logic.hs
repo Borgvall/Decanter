@@ -11,6 +11,11 @@ module Bottle.Logic
   , changeBottleRunnerLogic
   , deleteBottleLogic
 
+    -- * Readiness
+  , BlockReason(..)
+  , blockReason
+  , explainBlockReason
+
     -- * Validation
   , checkNameValidity
   , NameValid(Valid)
@@ -21,6 +26,7 @@ import Bottle.Types
 import Bottle.Logic.Process (getMergedWineEnv, killBottleProcesses)
 import Bottle.Logic.Snapshots (isBtrfsSubvolume, deleteSubvolumeForcible, deleteAllSnapshots)
 import Bottle.Logic.ApplicationMenu (removeApplicationMenuSymlink)
+import Bottle.Logic.Direct3dWrappers (isBottleReadyForWindowsApps)
 import System.Process.Typed
 import System.Directory
     ( createDirectoryIfMissing
@@ -30,10 +36,12 @@ import System.Directory
     , doesDirectoryExist
     , doesFileExist
     , removePathForcibly
+    , findExecutable
     )
 import System.FilePath ((</>), takeBaseName)
-import Control.Exception (try, IOException, SomeException)
+import Control.Exception (try, throw, IOException, SomeException)
 import Control.Monad (filterM, forM)
+import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 
@@ -67,13 +75,30 @@ loadBottleConfig bottleDir = do
             content <- readFile path
             -- Plain 'reads' for safe parsing
             case reads content of
-                [(r, _)] -> return (Just r)
+                [(r, _)] -> Just <$> resolveRunnerAvailability r
                 _ -> case reads content :: [((RunnerType, LegacyArch), String)] of
-                    [((r, _), _)] -> return (Just r)
+                    [((r, _), _)] -> Just <$> resolveRunnerAvailability r
                     _ -> do
                         putStrLn $ "Could not parse: " ++ path
                         return Nothing
         else return Nothing
+
+-- | Re-checks a freshly parsed runner's availability, downgrading it to
+-- 'MissingSystemWine'/'MissingProton' if it can no longer be found (e.g. a
+-- Proton build was removed, or moved to a directory the multi-directory
+-- search in "Bottle.Logic.Runner" now resolves differently). Deliberately
+-- never persisted -- always recomputed on load, since availability can
+-- change between runs independently of the bottle's own configuration.
+resolveRunnerAvailability :: RunnerType -> IO RunnerType
+resolveRunnerAvailability SystemWine = do
+    available <- isJust <$> findExecutable "wine"
+    pure $ if available then SystemWine else MissingSystemWine
+resolveRunnerAvailability (Proton p) = do
+    available <- doesFileExist (p </> "compatibilitytool.vdf")
+    pure $ if available then Proton p else MissingProton p
+-- Never actually persisted (see 'saveBottleConfig'), kept only so this
+-- function is total.
+resolveRunnerAvailability alreadyMissing = pure alreadyMissing
 
 -- | Changes a bottle's runner (bottle object only, does not save)
 changeBottleRunnerLogic :: Bottle -> RunnerType -> IO Bottle
@@ -84,6 +109,37 @@ changeBottleRunnerLogic bottle newRunner = do
   let updatedBottle = bottle { runner = newRunner }
   saveBottleConfig updatedBottle
   pure updatedBottle
+
+-- | Why a bottle currently can't run Windows programs, if at all --
+-- 'Nothing' means it's ready. This is the single check both the GUI
+-- (to grey out/explain the relevant buttons) and 'decanter start'/
+-- 'decanter open' (to fail up front with a clear message, instead of
+-- silently doing nothing deep inside "Bottle.Logic.Programs".runCmd)
+-- should use, rather than separately querying runner/Direct3D internals.
+data BlockReason
+  = RunnerMissing RunnerType
+  | Direct3DWrapperDangling
+  deriving (Eq, Show)
+
+explainBlockReason :: BlockReason -> T.Text
+explainBlockReason (RunnerMissing MissingSystemWine) =
+  tr "System Wine was not found. Install it, or change the runner."
+explainBlockReason (RunnerMissing (MissingProton path)) = T.concat
+  [ tr "Proton build '", T.pack (takeBaseName path), tr "' was not found. Change the runner, or reinstall it." ]
+-- Unreachable (RunnerMissing is only ever constructed with a Missing*
+-- runner, see 'blockReason'), kept only so this function is total.
+explainBlockReason (RunnerMissing _) =
+  tr "The configured runner was not found."
+explainBlockReason Direct3DWrapperDangling =
+  tr "The Direct3D wrapper's files are missing (e.g. removed by Nix garbage collection). Windows programs are blocked until this is repaired."
+
+blockReason :: Bottle -> IO (Maybe BlockReason)
+blockReason bottle = case runner bottle of
+  r@MissingSystemWine -> pure (Just (RunnerMissing r))
+  r@(MissingProton _) -> pure (Just (RunnerMissing r))
+  _ -> do
+    ready <- isBottleReadyForWindowsApps bottle
+    pure $ if ready then Nothing else Just Direct3DWrapperDangling
 
 -- | Determines the base directory for all bottles
 getBottlesBaseDir :: IO FilePath
@@ -185,14 +241,23 @@ createBottleLogic bottle@Bottle{..} = do
       -- For Proton we also use wineboot (via umu-run wineboot), even though
       -- umu-run often initializes the prefix itself on first start. We call
       -- wineboot regardless for consistency, just adjusting the command.
+      --
+      -- MissingSystemWine/MissingProton can't actually occur here: "runner"
+      -- was just freshly chosen from 'createBottleObject' (fed by currently
+      -- available runners), never loaded from a config file. Handled only
+      -- for exhaustiveness, per Bottle.Types.RunnerMissingError.
       let bootCmd = case runner of
-            SystemWine -> "wineboot"
-            Proton _   -> "umu-run"
-            
+            SystemWine        -> "wineboot"
+            Proton _          -> "umu-run"
+            MissingSystemWine -> throw (RunnerMissingError runner)
+            MissingProton _   -> throw (RunnerMissingError runner)
+
       let bootArgs = case runner of
-            SystemWine -> ["-u"]
-            Proton _   -> ["wineboot", "-u"]
-      
+            SystemWine        -> ["-u"]
+            Proton _          -> ["wineboot", "-u"]
+            MissingSystemWine -> throw (RunnerMissingError runner)
+            MissingProton _   -> throw (RunnerMissingError runner)
+
       let procConfig = setEnv headlessEnv $ proc bootCmd bootArgs
       runProcess_ procConfig
     invalidName -> do

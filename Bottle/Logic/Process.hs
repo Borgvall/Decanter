@@ -16,7 +16,7 @@ import System.Environment (getEnvironment)
 import System.Directory (canonicalizePath, doesFileExist)
 import System.Exit (ExitCode(..))
 import Data.List (intercalate)
-import Control.Exception (try, IOException)
+import Control.Exception (try, IOException, throwIO)
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 
 -- | The WINEDLLOVERRIDES entry for winemenubuilder.exe needed to stop Wine
@@ -50,19 +50,29 @@ getWineDllOverridesEnv bottle = case runner bottle of
         maybeDirect3DEntry <- direct3DOverrideEntry bottle
         let entries = menuBuilderOverrideEntry : maybe [] (: []) maybeDirect3DEntry
         pure [("WINEDLLOVERRIDES", intercalate ";" entries)]
+    -- Should never be reached -- see Bottle.Types.RunnerMissingError.
+    MissingSystemWine -> throwIO (RunnerMissingError (runner bottle))
+    MissingProton _   -> throwIO (RunnerMissingError (runner bottle))
 
 -- | Wine-specific environment variables that need to be set/overridden.
 getWineOverrides :: Bottle -> IO [(String, String)]
 getWineOverrides bottle@Bottle{..} = do
     wineDllOverridesEnv <- getWineDllOverridesEnv bottle
-    pure $
-      [ ("WINEPREFIX", bottlePath)
-      ] ++ (case runner of
+    -- Deliberately not a wildcard catch-all here (unlike before): that
+    -- would silently swallow MissingSystemWine/MissingProton into the "no
+    -- PROTONPATH" branch instead of throwing, and -Wall's incomplete-
+    -- pattern check can't catch a wildcard doing the wrong thing.
+    protonEnv <- case runner of
                -- PRESSURE_VESSEL_SYSTEMD_SCOPE places the game into a
                -- systemd --user scope (see killProtonProcesses); without
                -- it, reliably killing Proton processes isn't possible.
-               Proton p -> [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
-               _ -> [])
+               Proton p          -> pure [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
+               SystemWine        -> pure []
+               MissingSystemWine -> throwIO (RunnerMissingError runner)
+               MissingProton _   -> throwIO (RunnerMissingError runner)
+    pure $
+      [ ("WINEPREFIX", bottlePath)
+      ] ++ protonEnv
         ++ wineDllOverridesEnv
 
 -- | Merges bottle-specific Wine environment variables with the host
@@ -102,11 +112,13 @@ getMergedWineEnv bottle = getWineOverrides bottle >>= mergeWithHostEnv
 -- in Bottle.Logic.createBottleLogic).
 getIconExtractionWineEnv :: Bottle -> IO [(String, String)]
 getIconExtractionWineEnv Bottle{..} = do
-    env <- mergeWithHostEnv $
-      [ ("WINEPREFIX", bottlePath)
-      ] ++ case runner of
-             Proton p -> [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
-             _        -> []
+    -- Deliberately not a wildcard catch-all -- see getWineOverrides.
+    protonEnv <- case runner of
+             Proton p          -> pure [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
+             SystemWine        -> pure []
+             MissingSystemWine -> throwIO (RunnerMissingError runner)
+             MissingProton _   -> throwIO (RunnerMissingError runner)
+    env <- mergeWithHostEnv $ [ ("WINEPREFIX", bottlePath) ] ++ protonEnv
     pure $ filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) env
 
 -- | Extracts a start-menu application's (".lnk") icon as a PNG file, via
@@ -123,9 +135,11 @@ extractAppIcon :: Bottle -> FilePath -> FilePath -> IO Bool
 extractAppIcon bottle lnkPath outputPngPath = do
     env <- getIconExtractionWineEnv bottle
     let args = ["winemenubuilder.exe", "-t", lnkPath, outputPngPath]
-        cmd = case runner bottle of
-                Proton _   -> "umu-run"
-                SystemWine -> "wine"
+    cmd <- case runner bottle of
+                Proton _          -> pure "umu-run"
+                SystemWine        -> pure "wine"
+                MissingSystemWine -> throwIO (RunnerMissingError (runner bottle))
+                MissingProton _   -> throwIO (RunnerMissingError (runner bottle))
     result <- try (runProcess (setEnv env (proc cmd args))) :: IO (Either IOException ExitCode)
     case result of
       Right ExitSuccess -> doesFileExist outputPngPath
@@ -140,6 +154,12 @@ killBottleProcesses bottle = case runner bottle of
     -- We use runProcess_ instead of startProcess to wait until the command has finished.
     runProcess_ $ setEnv mergedEnv $ proc "wineserver" ["-k"]
   Proton _ -> killProtonProcesses bottle
+  -- Should never be reached -- see Bottle.Types.RunnerMissingError. Both
+  -- callers (Gui.BottleView's "Stop all Programs", Bottle.Logic's
+  -- deleteBottleLogic) already wrap this in 'try', so this degrades to a
+  -- logged error rather than a crash.
+  MissingSystemWine -> throwIO (RunnerMissingError (runner bottle))
+  MissingProton _   -> throwIO (RunnerMissingError (runner bottle))
 
 -- | Stops Proton processes via their systemd --user scope.
 --

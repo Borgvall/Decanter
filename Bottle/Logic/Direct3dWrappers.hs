@@ -243,10 +243,19 @@ data Direct3DWrapperStatus
   | WrapperManaged WrapperHealth
   deriving (Show, Eq)
 
+-- | 'MissingSystemWine'/'MissingProton' are deliberately treated the same
+-- as their healthy counterpart here: this is queried unconditionally while
+-- building the bottle view (to decide whether/how to render the Direct3D
+-- section at all), not gated behind runner availability the way actually
+-- launching something is (see "Bottle.Logic".blockReason) -- and wrapper
+-- health itself is a pure filesystem check (symlinks under "system32"),
+-- never actually needing Wine/Proton to run.
 getDirect3DWrapperStatus :: Bottle -> IO Direct3DWrapperStatus
 getDirect3DWrapperStatus bottle = case runner bottle of
-  SystemWine -> WrapperManaged <$> getDirect3DWrapperHealth bottle
-  Proton _   -> pure WrapperNotManaged
+  SystemWine        -> WrapperManaged <$> getDirect3DWrapperHealth bottle
+  MissingSystemWine -> WrapperManaged <$> getDirect3DWrapperHealth bottle
+  Proton _          -> pure WrapperNotManaged
+  MissingProton _   -> pure WrapperNotManaged
 
 -- | Whether "bottle" is currently in a state where Windows programs may be
 -- started. A dangling Direct3D wrapper symlink (e.g. after Nix garbage

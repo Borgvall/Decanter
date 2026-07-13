@@ -17,7 +17,7 @@ import System.FilePath (takeBaseName)
 import Text.Read (readMaybe)
 
 import Bottle.Types
-import Bottle.Logic (deleteBottleLogic, changeBottleRunnerLogic)
+import Bottle.Logic (deleteBottleLogic, changeBottleRunnerLogic, blockReason, explainBlockReason)
 import Bottle.Logic.Process (killBottleProcesses)
 import Bottle.Logic.Runner (getAvailableRunners, getRunnerTypeDisplayName)
 import Bottle.Logic.Programs
@@ -38,7 +38,6 @@ import Bottle.Logic.Direct3dWrappers
   , getDirect3DWrapperStatus
   , setDirect3DWrapperState
   , repairDirect3DWrapperState
-  , isBottleReadyForWindowsApps
   )
 import Bottle.Logic.Snapshots (isSnapshotableBottle)
 import Logic.Translation (tr)
@@ -180,6 +179,8 @@ reloadBottleView window bottle stack refreshCallback = do
 runnerTypeToString :: RunnerType -> T.Text
 runnerTypeToString SystemWine = tr "System Wine"
 runnerTypeToString (Proton path) = T.pack ("Proton (" ++ takeBaseName path ++ ")")
+runnerTypeToString MissingSystemWine = tr "System Wine" <> " - " <> tr "not found"
+runnerTypeToString (MissingProton path) = T.pack ("Proton (" ++ takeBaseName path ++ ")") <> " - " <> tr "not found"
 
 -- | Display name and description for a Direct3D wrapper state.
 direct3DWrapperLabel :: Direct3DWrapperState -> T.Text
@@ -312,15 +313,17 @@ buildBottleView window bottle stack refreshCallback = do
 
   -- Status of the Direct3D wrapper -- controls whether/how the Direct3D
   -- section below is built. Whether Windows programs may be started at all
-  -- is asked separately from the bottle ("readyForWindowsApps"), instead of
+  -- is asked separately from the bottle (via 'blockReason', which also
+  -- covers a missing runner, not just Direct3D-wrapper health), instead of
   -- deciding that here based on wrapper internals.
   direct3DStatus <- getDirect3DWrapperStatus bottle
-  readyForWindowsApps <- isBottleReadyForWindowsApps bottle
-  let blockedTooltip = tr "Blocked until the Direct3D wrapper is repaired (see above)."
-      blockIfWineAppsBlocked :: Gtk.IsWidget w => w -> IO ()
-      blockIfWineAppsBlocked widget = when (not readyForWindowsApps) $ do
-        w <- Gtk.toWidget widget
-        set w [ #sensitive := False, #tooltipText := blockedTooltip ]
+  mBlockReason <- blockReason bottle
+  let blockIfWineAppsBlocked :: Gtk.IsWidget w => w -> IO ()
+      blockIfWineAppsBlocked widget = case mBlockReason of
+        Nothing -> pure ()
+        Just reason -> do
+          w <- Gtk.toWidget widget
+          set w [ #sensitive := False, #tooltipText := explainBlockReason reason ]
 
   runnerSectionBox <- new Gtk.Box
     [ #orientation := Gtk.OrientationHorizontal
@@ -414,7 +417,7 @@ buildBottleView window bottle stack refreshCallback = do
     sepSnap <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginBottom := 10 ]
     #append contentBox sepSnap
 
-  buildProgramListSection bottle readyForWindowsApps contentBox
+  buildProgramListSection bottle (explainBlockReason <$> mBlockReason) contentBox
 
   sep2 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep2

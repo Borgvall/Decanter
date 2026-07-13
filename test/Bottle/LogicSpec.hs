@@ -134,7 +134,7 @@ spec = do
 
         deleteBottleLogic bottle
 
-      it "listExistingBottles still reads the legacy (RunnerType, Arch) config format" $ do
+      it "listExistingBottles still reads the legacy (RunnerType, Arch) config format, downgrading a no-longer-existing Proton path to MissingProton" $ do
         cwd <- getCurrentDirectory
         let bottleDir = cwd </> "test-env" </> ".local" </> "share" </> "Decanter" </> "LegacyConfigTest"
         createDirectoryIfMissing True (bottleDir </> "drive_c")
@@ -143,4 +143,40 @@ spec = do
         bottles <- listExistingBottles
         let loaded = filter (\b -> bottleName b == "LegacyConfigTest") bottles
         length loaded `shouldBe` 1
-        runner (head loaded) `shouldBe` Proton "/legacy/path"
+        -- "/legacy/path" never existed on disk in this test environment --
+        -- correctly downgraded on load rather than trusted as-is (see
+        -- Bottle.Logic.resolveRunnerAvailability).
+        runner (head loaded) `shouldBe` MissingProton "/legacy/path"
+
+      it "listExistingBottles keeps a legacy-format Proton runner intact when its path is still a valid compatibility tool" $ do
+        cwd <- getCurrentDirectory
+        let bottleDir = cwd </> "test-env" </> ".local" </> "share" </> "Decanter" </> "LegacyConfigStillValidTest"
+        let protonDir = cwd </> "test-env" </> "FakeProton"
+        createDirectoryIfMissing True (bottleDir </> "drive_c")
+        createDirectoryIfMissing True protonDir
+        writeFile (protonDir </> "compatibilitytool.vdf") ""
+        writeFile (bottleDir </> "decanter.cfg") ("(Proton " ++ show protonDir ++ ",Win64)")
+
+        bottles <- listExistingBottles
+        let loaded = filter (\b -> bottleName b == "LegacyConfigStillValidTest") bottles
+        length loaded `shouldBe` 1
+        runner (head loaded) `shouldBe` Proton protonDir
+
+      describe "blockReason / explainBlockReason" $ do
+        let dummyBottle r = Bottle "BlockReasonTest" "/nonexistent" r
+
+        it "reports RunnerMissing for MissingSystemWine, without touching the filesystem" $ do
+          blockReason (dummyBottle MissingSystemWine) `shouldReturn` Just (RunnerMissing MissingSystemWine)
+
+        it "reports RunnerMissing for MissingProton, without touching the filesystem" $ do
+          blockReason (dummyBottle (MissingProton "/legacy/path")) `shouldReturn` Just (RunnerMissing (MissingProton "/legacy/path"))
+
+        it "explains a missing System Wine runner" $ do
+          explainBlockReason (RunnerMissing MissingSystemWine) `shouldNotBe` ""
+
+        it "explains a missing Proton runner, naming it" $ do
+          let explanation = explainBlockReason (RunnerMissing (MissingProton "/some/path/GE-Proton10-25"))
+          T.isInfixOf "GE-Proton10-25" explanation `shouldBe` True
+
+        it "explains a dangling Direct3D wrapper" $ do
+          explainBlockReason Direct3DWrapperDangling `shouldNotBe` ""

@@ -8,7 +8,7 @@ import qualified GI.GLib as GLib
 import Data.GI.Base
 import Control.Concurrent.Async (async)
 import qualified Data.Text as T
-import Control.Monad (forM_, when, void)
+import Control.Monad (forM_, void)
 import System.FilePath (takeBaseName)
 
 import Bottle.Types
@@ -106,11 +106,14 @@ buildAppMenuButton bottle appName lnkPath onChanged = do
 -- 'buildAppMenuButton'). Appends itself directly into "contentBox", like
 -- 'Gui.BottleView.buildDirect3DWrapperSection' does.
 --
--- "readyForWindowsApps" mirrors the check 'Gui.BottleView.buildBottleView'
--- does for its own buttons: if False, every program's run button is
--- disabled (but not its application-menu button, see 'buildAppMenuButton').
-buildProgramListSection :: Bottle -> Bool -> Gtk.Box -> IO ()
-buildProgramListSection bottle readyForWindowsApps contentBox = do
+-- "mBlockTooltip" mirrors the check 'Gui.BottleView.buildBottleView' does
+-- for its own buttons (via 'Bottle.Logic.blockReason'): 'Nothing' means
+-- ready, 'Just tooltip' disables every program's run button (but not its
+-- application-menu button, see 'buildAppMenuButton') with that explanation.
+-- Passed down as already-rendered text rather than a 'BlockReason' so this
+-- module doesn't need to know about Direct3D/runner internals itself.
+buildProgramListSection :: Bottle -> Maybe T.Text -> Gtk.Box -> IO ()
+buildProgramListSection bottle mBlockTooltip contentBox = do
   progSectionBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10 ]
   #append contentBox progSectionBox
   progExpander <- new Gtk.Expander [ #label := tr "Installed Programs", #hexpand := True ]
@@ -118,10 +121,10 @@ buildProgramListSection bottle readyForWindowsApps contentBox = do
   progBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #marginTop := 10 ]
   #setChild progExpander (Just progBox)
 
-  let blockedTooltip = tr "Blocked until the Direct3D wrapper is repaired (see above)."
-      blockIfBlocked :: Gtk.Button -> IO ()
-      blockIfBlocked btn = when (not readyForWindowsApps) $
-        set btn [ #sensitive := False, #tooltipText := blockedTooltip ]
+  let blockIfBlocked :: Gtk.Button -> IO ()
+      blockIfBlocked btn = case mBlockTooltip of
+        Nothing      -> pure ()
+        Just tooltip -> set btn [ #sensitive := False, #tooltipText := tooltip ]
 
   let clearBox box = do
         mChild <- Gtk.widgetGetFirstChild box
