@@ -1,0 +1,12 @@
+# Cabal build artifacts
+dist-newstyle/
+cabal.project.local
+cabal.project.local~
+.ghc.environment.*
+*.o
+*.hi
+
+# Nix
+.direnv/
+result
+result-*
