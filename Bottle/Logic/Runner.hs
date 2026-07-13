@@ -3,6 +3,8 @@
 module Bottle.Logic.Runner
   ( getAvailableRunners
   , getRunnerTypeDisplayName
+  , compatibilityToolSearchDirs
+  , dedupToolsByName
   ) where
 
 import Bottle.Types
@@ -14,13 +16,67 @@ import System.Directory
     , findExecutable
     , getHomeDirectory
     )
+import System.Environment (lookupEnv)
 import System.FilePath ((</>), takeBaseName)
 import System.Process.Typed
 import System.Exit (ExitCode(..))
 import Control.Monad (filterM)
-import Data.Maybe (isJust)
+import Data.List (nubBy)
+import Data.Maybe (isJust, fromMaybe)
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy.Char8 as LBS8
+
+-- | Directories to scan for compatibility tools (Proton builds), in the
+-- same low-to-high precedence order Steam itself uses -- a tool discovered
+-- in a later directory overrides one of the same name found in an earlier
+-- one (see 'dedupToolsByName'). This mirrors Steam's own search, added in
+-- the 2019-10-30 Steam client update per
+-- https://github.com/ValveSoftware/steam-for-linux/issues/6310#issuecomment-511468221 :
+--
+--   /usr/share/steam/compatibilitytools.d
+--   /usr/local/share/steam/compatibilitytools.d
+--   $STEAM_EXTRA_COMPAT_TOOLS_PATHS (colon-separated)
+--   ~/.steam/root/compatibilitytools.d
+--
+-- The system-wide paths matter for Decanter specifically: they let a
+-- Proton build be provided by the system's own package manager (or a Nix
+-- profile placing files there) instead of requiring a per-user Steam
+-- install.
+compatibilityToolSearchDirs :: FilePath -> Maybe String -> [FilePath]
+compatibilityToolSearchDirs home extraPathsEnv =
+  [ "/usr/share/steam/compatibilitytools.d"
+  , "/usr/local/share/steam/compatibilitytools.d"
+  ] ++ extraPaths ++
+  [ home </> ".steam/root/compatibilitytools.d" ]
+  where
+    extraPaths = filter (not . null) (splitOnColon (fromMaybe "" extraPathsEnv))
+    splitOnColon s = case break (== ':') s of
+      (chunk, [])      -> [chunk]
+      (chunk, _ : rest) -> chunk : splitOnColon rest
+
+-- | Keeps only the highest-precedence entry for each compatibility tool
+-- name, given a list of (name, path) pairs in low-to-high precedence order
+-- (as produced by scanning 'compatibilityToolSearchDirs' in order). Mirrors
+-- Steam's own "last-registered wins" behaviour for same-named tools.
+dedupToolsByName :: [(String, FilePath)] -> [(String, FilePath)]
+dedupToolsByName = reverse . nubBy (\a b -> fst a == fst b) . reverse
+
+-- | Compatibility tools (name, path) found directly inside one directory:
+-- subdirectories that contain a "compatibilitytool.vdf".
+findCompatibilityToolsIn :: FilePath -> IO [(String, FilePath)]
+findCompatibilityToolsIn dir = do
+  exists <- doesDirectoryExist dir
+  if not exists
+    then return []
+    else do
+      entries <- listDirectory dir
+      paths <- filterM (\e -> do
+          let fullPath = dir </> e
+          isDir <- doesDirectoryExist fullPath
+          hasVdf <- doesFileExist (fullPath </> "compatibilitytool.vdf")
+          return (isDir && hasVdf)
+          ) entries
+      return [ (p, dir </> p) | p <- paths ]
 
 getAvailableRunners :: IO [RunnerType]
 getAvailableRunners = do
@@ -28,22 +84,11 @@ getAvailableRunners = do
   let wineList = if isJust sysWine then [SystemWine] else []
 
   home <- getHomeDirectory
-  let compatDir = home </> ".steam/root/compatibilitytools.d"
+  extraPathsEnv <- lookupEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS"
+  let searchDirs = compatibilityToolSearchDirs home extraPathsEnv
 
-  protonList <- do
-    exists <- doesDirectoryExist compatDir
-    if exists
-      then do
-        entries <- listDirectory compatDir
-        -- Filter: must be a directory AND contain compatibilitytool.vdf
-        paths <- filterM (\e -> do
-            let fullPath = compatDir </> e
-            isDir <- doesDirectoryExist fullPath
-            hasVdf <- doesFileExist (fullPath </> "compatibilitytool.vdf")
-            return (isDir && hasVdf)
-            ) entries
-        return [ Proton (compatDir </> p) | p <- paths ]
-      else return []
+  toolsPerDir <- mapM findCompatibilityToolsIn searchDirs
+  let protonList = [ Proton path | (_, path) <- dedupToolsByName (concat toolsPerDir) ]
 
   return (wineList ++ protonList)
 

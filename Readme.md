@@ -27,7 +27,7 @@ feature-parity trap that section already warns against.
   bottle, from the "Installed Programs" list) - it doesn't duplicate the
   launching experience itself.
 * **Downloading or managing Proton versions.** Decanter only *detects*
-  Proton builds already present under `~/.steam/root/compatibilitytools.d`
+  Proton builds already present in the same directories Steam itself scans
   (see "Runner Support" below); it doesn't fetch, install, or update them
   itself. That job belongs to Nix, the system's own package manager, or a
   dedicated tool like [ProtonUp-Qt](https://github.com/DavidoTek/ProtonUp-Qt).
@@ -50,9 +50,13 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
 
 * **Isolated Environments:** Create and manage multiple Wine prefixes ("Bottles") to keep dependencies separate.
 * **Runner Support (Proton):** Choose the runner per bottle - System Wine, or
-  any Proton build installed via Steam (auto-detected from
-  `~/.steam/root/compatibilitytools.d`, e.g. GE-Proton). Switch it later from
-  the bottle view.
+  any Proton build installed via Steam or otherwise present in a
+  compatibility-tools directory (auto-detected from
+  `/usr/share/steam/compatibilitytools.d`,
+  `/usr/local/share/steam/compatibilitytools.d`,
+  `$STEAM_EXTRA_COMPAT_TOOLS_PATHS`, and `~/.steam/root/compatibilitytools.d`
+  - the same paths and precedence order Steam itself uses, e.g. GE-Proton).
+  Switch it later from the bottle view.
 * **Modern UI:** Built with GTK4 and Libadwaita for a seamless GNOME integration.
 * **Smart Storage (BTRFS):** Automatically attempts to create bottles as BTRFS subvolumes for better storage management. It gracefully falls back to standard directories if BTRFS is unavailable.
 * **Snapshots (BTRFS):** Using BTRFS-subvolume snapshots the state of a battle can be stored and restored fast.
