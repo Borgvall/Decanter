@@ -52,6 +52,34 @@ spec = do
       content <- readFile (dir </> "decanter.cfg")
       content `shouldBe` "PersistedProtonName \"CoolProton\""
 
+    it "persists and resolves a Proton runner by its VDF display_name, even when that differs from the directory's own basename" $ do
+      dir <- testBottleDir "PersistVdfNameTest"
+      cwd <- getCurrentDirectory
+      let extraToolsDir = cwd </> "config-spec-test-env" </> "ExtraCompatToolsVdfName"
+      let protonDir = extraToolsDir </> "SomeOpaqueDirName"
+      createDirectoryIfMissing True dir
+      createDirectoryIfMissing True protonDir
+      writeFile (protonDir </> "compatibilitytool.vdf") $ unlines
+        [ "\"compatibilitytools\""
+        , "{"
+        , "  \"compat_tools\""
+        , "  {"
+        , "    \"proton_experimental\""
+        , "    {"
+        , "      \"display_name\" \"MyFakeProtonDisplayName\""
+        , "    }"
+        , "  }"
+        , "}"
+        ]
+
+      saveBottleConfig (Bottle "PersistVdfNameTest" dir (Proton protonDir))
+      content <- readFile (dir </> "decanter.cfg")
+      content `shouldBe` "PersistedProtonName \"MyFakeProtonDisplayName\""
+
+      setEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS" extraToolsDir
+      (loadBottleConfig dir `shouldReturn` Just (Proton protonDir))
+        `finally` unsetEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS"
+
     it "resolves a persisted Proton name to wherever that name is currently found, even if the path moved" $ do
       dir <- testBottleDir "PersistedNameTest"
       cwd <- getCurrentDirectory

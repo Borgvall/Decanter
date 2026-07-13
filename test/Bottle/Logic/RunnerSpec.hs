@@ -94,3 +94,34 @@ spec = do
 
       it "returns Nothing for a name no currently available tool has" $ do
         findProtonPathByName "NoSuchProtonBuild" `shouldReturn` Nothing
+
+    describe "compatibilityToolName" $ do
+      it "prefers the VDF's display_name over the directory's own basename" $ do
+        cwd <- getCurrentDirectory
+        let toolDir = cwd </> "runner-spec-test-env" </> "SomeOpaqueDirName"
+        createDirectoryIfMissing True toolDir
+        writeFile (toolDir </> "compatibilitytool.vdf") $ unlines
+          [ "\"compatibilitytools\""
+          , "{"
+          , "  \"compat_tools\""
+          , "  {"
+          , "    \"proton_experimental\""
+          , "    {"
+          , "      \"display_name\" \"GE-Proton10-25\""
+          , "    }"
+          , "  }"
+          , "}"
+          ]
+        (compatibilityToolName toolDir `shouldReturn` "GE-Proton10-25")
+          `finally` removePathForcibly (cwd </> "runner-spec-test-env")
+
+      it "falls back to the directory's basename when compatibilitytool.vdf has no display_name" $ do
+        cwd <- getCurrentDirectory
+        let toolDir = cwd </> "runner-spec-test-env" </> "GE-Proton10-25"
+        createDirectoryIfMissing True toolDir
+        writeFile (toolDir </> "compatibilitytool.vdf") ""
+        (compatibilityToolName toolDir `shouldReturn` "GE-Proton10-25")
+          `finally` removePathForcibly (cwd </> "runner-spec-test-env")
+
+      it "falls back to the directory's basename when there is no compatibilitytool.vdf at all" $ do
+        compatibilityToolName "/nonexistent/GE-Proton10-25" `shouldReturn` "GE-Proton10-25"

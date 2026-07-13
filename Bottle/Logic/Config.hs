@@ -6,9 +6,9 @@ module Bottle.Logic.Config
   ) where
 
 import Bottle.Types
-import Bottle.Logic.Runner (findProtonPathByName)
+import Bottle.Logic.Runner (findProtonPathByName, compatibilityToolName)
 import System.Directory (doesFileExist, findExecutable)
-import System.FilePath ((</>), takeBaseName)
+import System.FilePath ((</>))
 import Data.Maybe (isJust)
 import qualified Data.Text as T
 
@@ -17,27 +17,26 @@ getConfigPath :: FilePath -> FilePath
 getConfigPath bottleDir = bottleDir </> "decanter.cfg"
 
 -- | On-disk shape for a bottle's runner -- deliberately not 'RunnerType'
--- itself. A Proton build is identified by its *name* (the compatibility
--- tool directory's basename, e.g. "GE-Proton10-25") rather than its path:
--- unlike a path, a name survives the tool moving between the multiple
--- directories "Bottle.Logic.Runner" now searches (a system package update,
--- a Nix rebuild, or Steam's own precedence changing which directory wins),
--- mirroring how Steam's own "compatibilitytool.vdf" identifies tools by
--- name too. Never itself holds "missing" state -- see 'resolvePersistedRunner'.
+-- itself. A Proton build is identified by its *name* (see
+-- 'Bottle.Logic.Runner.compatibilityToolName') rather than its path: unlike
+-- a path, a name survives the tool moving between the multiple directories
+-- "Bottle.Logic.Runner" now searches (a system package update, a Nix
+-- rebuild, or Steam's own precedence changing which directory wins). Never
+-- itself holds "missing" state -- see 'resolvePersistedRunner'.
 data PersistedRunner = PersistedSystemWine | PersistedProtonName T.Text
   deriving (Show, Read)
 
-toPersistedRunner :: RunnerType -> PersistedRunner
-toPersistedRunner SystemWine        = PersistedSystemWine
-toPersistedRunner (Proton p)        = PersistedProtonName (T.pack (takeBaseName p))
-toPersistedRunner MissingSystemWine = PersistedSystemWine
-toPersistedRunner (MissingProton p) = PersistedProtonName (T.pack (takeBaseName p))
+toPersistedRunner :: RunnerType -> IO PersistedRunner
+toPersistedRunner SystemWine        = pure PersistedSystemWine
+toPersistedRunner (Proton p)        = PersistedProtonName <$> compatibilityToolName p
+toPersistedRunner MissingSystemWine = pure PersistedSystemWine
+toPersistedRunner (MissingProton p) = PersistedProtonName <$> compatibilityToolName p
 
 -- | Saves the bottle's configuration (runner)
 saveBottleConfig :: Bottle -> IO ()
 saveBottleConfig b = do
-    let content = show (toPersistedRunner (runner b))
-    writeFile (getConfigPath (bottlePath b)) content
+    persisted <- toPersistedRunner (runner b)
+    writeFile (getConfigPath (bottlePath b)) (show persisted)
 
 -- | Stand-in for the 'Arch' field pre-existing config files (written before
 -- 32-bit prefix support was removed) still have, so 'loadBottleConfig' can

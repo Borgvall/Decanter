@@ -6,6 +6,7 @@ module Bottle.Logic.Runner
   , compatibilityToolSearchDirs
   , dedupToolsByName
   , findProtonPathByName
+  , compatibilityToolName
   ) where
 
 import Bottle.Types
@@ -63,7 +64,8 @@ dedupToolsByName :: [(String, FilePath)] -> [(String, FilePath)]
 dedupToolsByName = reverse . nubBy (\a b -> fst a == fst b) . reverse
 
 -- | Compatibility tools (name, path) found directly inside one directory:
--- subdirectories that contain a "compatibilitytool.vdf".
+-- subdirectories that contain a "compatibilitytool.vdf". The name is each
+-- tool's 'compatibilityToolName', not the directory entry itself.
 findCompatibilityToolsIn :: FilePath -> IO [(String, FilePath)]
 findCompatibilityToolsIn dir = do
   exists <- doesDirectoryExist dir
@@ -71,13 +73,34 @@ findCompatibilityToolsIn dir = do
     then return []
     else do
       entries <- listDirectory dir
-      paths <- filterM (\e -> do
+      toolDirs <- filterM (\e -> do
           let fullPath = dir </> e
           isDir <- doesDirectoryExist fullPath
           hasVdf <- doesFileExist (fullPath </> "compatibilitytool.vdf")
           return (isDir && hasVdf)
           ) entries
-      return [ (p, dir </> p) | p <- paths ]
+      mapM (\e -> do
+          let fullPath = dir </> e
+          name <- compatibilityToolName fullPath
+          pure (T.unpack name, fullPath)
+          ) toolDirs
+
+-- | The name identifying a compatibility tool at the given path: the
+-- "display_name" from its "compatibilitytool.vdf" (the same string already
+-- shown in the runner-selection UI, see 'getRunnerTypeDisplayName'), falling
+-- back to the directory's own basename if the VDF is missing or has no
+-- "display_name". Deliberately not always the directory's basename: some
+-- compatibility-tools.d layouts name the directory differently from the
+-- tool itself, and only happen to coincide for builds like GE-Proton, which
+-- name their directory the same as the tool.
+compatibilityToolName :: FilePath -> IO T.Text
+compatibilityToolName path = do
+  let vdfPath = path </> "compatibilitytool.vdf"
+  exists <- doesFileExist vdfPath
+  name <- if exists
+            then extractDisplayName . T.pack <$> readFile vdfPath
+            else pure ""
+  pure $ if T.null name then T.pack (takeBaseName path) else name
 
 -- | Every currently available compatibility tool's (name, path), already
 -- deduplicated per Steam's own "last-registered wins" precedence (see
@@ -101,14 +124,13 @@ getAvailableRunners = do
 
   return (wineList ++ protonList)
 
--- | Resolves a compatibility tool's name (its directory's basename, e.g.
+-- | Resolves a compatibility tool's name (see 'compatibilityToolName', e.g.
 -- "GE-Proton10-25") to its current path, if any tool by that name is
 -- currently found. Used to re-resolve a persisted Proton runner's name back
--- to a path on every config load (see "Bottle.Logic".loadBottleConfig) --
--- Decanter persists the tool's name rather than its path precisely so a
+-- to a path on every config load (see "Bottle.Logic.Config".loadBottleConfig)
+-- -- Decanter persists the tool's name rather than its path precisely so a
 -- moved/reinstalled tool with the same name doesn't require touching every
--- bottle's config, mirroring how Steam's own compatibility-tool config
--- identifies tools by name too.
+-- bottle's config.
 findProtonPathByName :: T.Text -> IO (Maybe FilePath)
 findProtonPathByName name = lookup (T.unpack name) <$> findAvailableCompatibilityTools
 
