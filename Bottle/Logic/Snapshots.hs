@@ -8,6 +8,8 @@ module Bottle.Logic.Snapshots
   , deleteSnapshotLogic
   , openSnapshotFileManager
   , deleteAllSnapshots
+  , recoverInterruptedRestores
+  , reservedNameSuffixes
 
     -- * BTRFS Helpers
     -- Only exported because "Bottle.Logic" also needs them to manage a
@@ -26,11 +28,12 @@ import System.Directory
     , listDirectory
     , doesDirectoryExist
     , removePathForcibly
+    , renameDirectory
     )
 import System.FilePath ((</>))
 import Control.Exception (try, IOException, SomeException)
-import Control.Monad (forM_)
-import Data.List (sortOn)
+import Control.Monad (forM_, when)
+import Data.List (sortOn, isSuffixOf)
 import Data.Maybe (mapMaybe)
 import Data.Char (isDigit)
 import qualified Data.Text as T
@@ -123,7 +126,35 @@ createSnapshotLogic bottle sName = do
 
     Btrfs.snapshot (bottlePath bottle) destPath True
 
--- | Restores a bottle from a snapshot
+-- | Suffix for the temporary directory 'restoreSnapshotLogic' builds the
+-- restored copy in, before it's swapped into place.
+restoreTempSuffix :: String
+restoreTempSuffix = ".restoring"
+
+-- | Suffix for the directory 'restoreSnapshotLogic' briefly keeps a
+-- bottle's previous contents under, just long enough to swap the restored
+-- copy into place safely.
+restoreBackupSuffix :: String
+restoreBackupSuffix = ".pre-restore"
+
+-- | Both suffixes above, reserved so a bottle can never be named in a way
+-- that collides with 'restoreSnapshotLogic's own temporary directories --
+-- see "Bottle.Logic".checkNameValidity.
+reservedNameSuffixes :: [String]
+reservedNameSuffixes = [restoreTempSuffix, restoreBackupSuffix]
+
+-- | Restores a bottle from a snapshot.
+--
+-- Builds the restored copy at a temporary path first, then swaps it into
+-- place via two atomic renames, instead of deleting the live bottle
+-- directory and only then recreating it. rename(2) is atomic on the same
+-- filesystem, so the bottle directory is never simply "gone" for longer
+-- than the gap between those two syscalls -- unlike the previous
+-- delete-then-recreate approach, where a crash between the two steps left
+-- the bottle permanently invisible (not listed, snapshots unreachable via
+-- the GUI) even though no data was actually lost. Any crash during the
+-- (much smaller) remaining window is fully recovered by
+-- 'recoverInterruptedRestores' on the next 'Bottle.Logic.listExistingBottles'.
 restoreSnapshotLogic :: Bottle -> BottleSnapshot -> IO ()
 restoreSnapshotLogic bottle snapshot = do
     putStrLn $ "Restoring bottle '" ++ T.unpack (bottleName bottle) ++ "' from snapshot " ++ show (snapshotId snapshot)
@@ -132,9 +163,45 @@ restoreSnapshotLogic bottle snapshot = do
     -- killBottleProcesses is now synchronous and waits for completion.
     _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
 
-    deleteSubvolumeForcible (bottlePath bottle)
-    Btrfs.snapshot (snapshotPath snapshot) (bottlePath bottle) False
+    let restoringPath = bottlePath bottle ++ restoreTempSuffix
+        backupPath     = bottlePath bottle ++ restoreBackupSuffix
+
+    Btrfs.snapshot (snapshotPath snapshot) restoringPath False
+
+    renameDirectory (bottlePath bottle) backupPath
+    renameDirectory restoringPath (bottlePath bottle)
+
+    deleteSubvolumeForcible backupPath
     putStrLn "Restore successful."
+
+-- | Repairs a bottle left in a half-restored state by a crash during
+-- 'restoreSnapshotLogic's atomic-rename swap (see there). Safe and
+-- idempotent to call even when nothing needs repairing, which is the
+-- common case -- meant to be called once before listing bottles, so a
+-- bottle is never permanently invisible just because Decanter happened to
+-- die mid-restore.
+recoverInterruptedRestores :: FilePath -> IO ()
+recoverInterruptedRestores base = do
+  entries <- listDirectory base
+
+  -- A ".restoring" directory means the new, fully-built copy is ready but
+  -- wasn't swapped in yet (the crash happened before or during the first
+  -- rename) -- finish the swap.
+  forM_ [ e | e <- entries, restoreTempSuffix `isSuffixOf` e ] $ \restoringName -> do
+    let name          = take (length restoringName - length restoreTempSuffix) restoringName
+        restoringPath = base </> restoringName
+        finalPath     = base </> name
+        backupPath    = finalPath ++ restoreBackupSuffix
+    finalExists <- doesDirectoryExist finalPath
+    when finalExists $ renameDirectory finalPath backupPath
+    renameDirectory restoringPath finalPath
+
+  -- A ".pre-restore" directory left over -- either already stale, or
+  -- freshly created by the swap just completed above -- always belongs to
+  -- an already-succeeded restore, so it's always safe to discard.
+  entriesAfterSwap <- listDirectory base
+  forM_ [ e | e <- entriesAfterSwap, restoreBackupSuffix `isSuffixOf` e ] $ \backupName ->
+    deleteSubvolumeForcible (base </> backupName)
 
 -- | Deletes a specific snapshot
 deleteSnapshotLogic :: BottleSnapshot -> IO ()

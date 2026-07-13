@@ -55,6 +55,10 @@ spec = do
         let longName = T.pack $ replicate 300 'a'
         checkNameValidity longName `shouldNotBe` Valid
 
+      it "rejects names ending in a reserved restore-marker suffix" $ do
+        checkNameValidity "MyBottle.restoring" `shouldNotBe` Valid
+        checkNameValidity "MyBottle.pre-restore" `shouldNotBe` Valid
+
     describe "findBottleByName" $ do
       let bottleA = Bottle "Alpha" "/tmp/alpha" SystemWine
       let bottleB = Bottle "Beta" "/tmp/beta" SystemWine

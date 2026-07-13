@@ -5,12 +5,21 @@ module Bottle.Logic.SnapshotsSpec (spec) where
 import Test.Hspec
 import Bottle.Logic
 import Bottle.Logic.Snapshots
+import Bottle.Logic.Process (killBottleProcesses)
 import Bottle.Types
-import System.Directory (createDirectoryIfMissing, removePathForcibly, getCurrentDirectory, doesFileExist)
+import System.Directory
+  ( createDirectoryIfMissing
+  , removePathForcibly
+  , getCurrentDirectory
+  , doesFileExist
+  , doesDirectoryExist
+  , renameDirectory
+  )
 import System.Environment (setEnv, unsetEnv)
-import System.FilePath ((</>))
-import Control.Exception (finally)
+import System.FilePath ((</>), takeDirectory)
+import Control.Exception (finally, try, SomeException)
 import Data.List (find)
+import qualified System.Linux.Btrfs as Btrfs
 
 -- | Sets up an isolated test environment
 withTestEnvironment :: IO () -> IO ()
@@ -115,6 +124,90 @@ spec = do
           snapsAfter `shouldBe` []
         else
           putStrLn "Skipping deleteAllSnapshots test (no BTRFS detected)"
+
+      deleteBottleLogic bottle
+
+    it "recoverInterruptedRestores finishes a swap interrupted before the old bottle was moved aside" $ do
+      bottle <- createBottleObject "InterruptedRestoreBeforeSwapTest" SystemWine
+      createBottleLogic bottle
+      supportsSnaps <- isSnapshotableBottle bottle
+
+      if supportsSnaps
+        then do
+          -- As restoreSnapshotLogic itself does: stop processes before
+          -- touching the filesystem, so a still-resident wineserver from
+          -- createBottleLogic's wineboot doesn't race with the rename/
+          -- snapshot calls below.
+          _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
+
+          -- Simulate a crash right after "Btrfs.snapshot ... restoringPath"
+          -- succeeded but before either rename ran: the live bottle is
+          -- still under its own name, with a full ".restoring" copy next
+          -- to it.
+          let restoringPath = bottlePath bottle ++ ".restoring"
+              backupPath    = bottlePath bottle ++ ".pre-restore"
+          Btrfs.snapshot (bottlePath bottle) restoringPath False
+
+          recoverInterruptedRestores (takeDirectory (bottlePath bottle))
+
+          doesDirectoryExist (bottlePath bottle) `shouldReturn` True
+          doesDirectoryExist restoringPath `shouldReturn` False
+          doesDirectoryExist backupPath `shouldReturn` False
+        else
+          putStrLn "Skipping recoverInterruptedRestores test (no BTRFS detected)"
+
+      deleteBottleLogic bottle
+
+    it "recoverInterruptedRestores finishes a swap interrupted after the old bottle was moved aside" $ do
+      bottle <- createBottleObject "InterruptedRestoreAfterSwapTest" SystemWine
+      createBottleLogic bottle
+      supportsSnaps <- isSnapshotableBottle bottle
+
+      if supportsSnaps
+        then do
+          _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
+
+          -- Simulate a crash between the two renames: the old bottle is
+          -- already under ".pre-restore", the new copy is still under
+          -- ".restoring", and nothing exists under the bottle's real name
+          -- -- the exact state that used to make a bottle vanish for good.
+          let restoringPath = bottlePath bottle ++ ".restoring"
+              backupPath    = bottlePath bottle ++ ".pre-restore"
+          Btrfs.snapshot (bottlePath bottle) restoringPath False
+          renameDirectory (bottlePath bottle) backupPath
+          doesDirectoryExist (bottlePath bottle) `shouldReturn` False
+
+          recoverInterruptedRestores (takeDirectory (bottlePath bottle))
+
+          doesDirectoryExist (bottlePath bottle) `shouldReturn` True
+          doesDirectoryExist restoringPath `shouldReturn` False
+          doesDirectoryExist backupPath `shouldReturn` False
+        else
+          putStrLn "Skipping recoverInterruptedRestores test (no BTRFS detected)"
+
+      deleteBottleLogic bottle
+
+    it "recoverInterruptedRestores cleans up an orphaned pre-restore backup left after a completed swap" $ do
+      bottle <- createBottleObject "OrphanedBackupTest" SystemWine
+      createBottleLogic bottle
+      supportsSnaps <- isSnapshotableBottle bottle
+
+      if supportsSnaps
+        then do
+          _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
+
+          -- Simulate a crash after both renames succeeded but before the
+          -- backup's cleanup ran: the bottle is already fully restored
+          -- under its real name, only the stale backup is left over.
+          let backupPath = bottlePath bottle ++ ".pre-restore"
+          Btrfs.snapshot (bottlePath bottle) backupPath False
+
+          recoverInterruptedRestores (takeDirectory (bottlePath bottle))
+
+          doesDirectoryExist (bottlePath bottle) `shouldReturn` True
+          doesDirectoryExist backupPath `shouldReturn` False
+        else
+          putStrLn "Skipping recoverInterruptedRestores test (no BTRFS detected)"
 
       deleteBottleLogic bottle
 

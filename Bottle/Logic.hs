@@ -25,7 +25,13 @@ module Bottle.Logic
 import Bottle.Types
 import Bottle.Logic.Config (saveBottleConfig, loadBottleConfig)
 import Bottle.Logic.Process (getMergedWineEnv, killBottleProcesses)
-import Bottle.Logic.Snapshots (isBtrfsSubvolume, deleteSubvolumeForcible, deleteAllSnapshots)
+import Bottle.Logic.Snapshots
+    ( isBtrfsSubvolume
+    , deleteSubvolumeForcible
+    , deleteAllSnapshots
+    , recoverInterruptedRestores
+    , reservedNameSuffixes
+    )
 import Bottle.Logic.ApplicationMenu (removeApplicationMenuSymlink)
 import Bottle.Logic.Direct3dWrappers (isBottleReadyForWindowsApps)
 import System.Process.Typed
@@ -40,6 +46,7 @@ import System.Directory
 import System.FilePath ((</>), takeBaseName)
 import Control.Exception (try, throw, IOException, SomeException)
 import Control.Monad (filterM, forM)
+import Data.List (isSuffixOf)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 
@@ -108,7 +115,12 @@ findAppLnkByName name lnkPaths = case filter ((== name) . T.pack . takeBaseName)
   (p : _) -> Just p
   []      -> Nothing
 
--- | Scans the directory for existing bottles
+-- | Scans the directory for existing bottles. First repairs any bottle
+-- left half-restored by a crash during 'Bottle.Logic.Snapshots
+-- .restoreSnapshotLogic's atomic-rename swap (see 'recoverInterruptedRestores')
+-- -- otherwise a leftover ".restoring"/".pre-restore" directory (itself a
+-- full copy of the bottle, "drive_c" and all) would be picked up below as
+-- if it were its own, bogus bottle.
 listExistingBottles :: IO [Bottle]
 listExistingBottles = do
   base <- getBottlesBaseDir
@@ -116,6 +128,7 @@ listExistingBottles = do
   if not exists
     then return []
     else do
+      recoverInterruptedRestores base
       entries <- listDirectory base
 
       dirs <- filterM (\e -> doesDirectoryExist (base </> e)) entries
@@ -147,6 +160,7 @@ data NameValid
   | EmptyName
   | NameTooLong
   | ContainsSlash
+  | ReservedSuffix
   deriving (Show, Eq)
 
 checkNameValidity :: T.Text -> NameValid
@@ -154,14 +168,19 @@ checkNameValidity name
   | T.null name = EmptyName
   | T.length name > 256 = NameTooLong
   | T.elem '/' name = ContainsSlash
+  -- Reserved so a bottle name can never collide with the temporary
+  -- directories restoreSnapshotLogic's crash-safe restore uses (see
+  -- Bottle.Logic.Snapshots.reservedNameSuffixes).
+  | any (`isSuffixOf` T.unpack name) reservedNameSuffixes = ReservedSuffix
   | otherwise = Valid
 
 explainNameValid :: NameValid -> T.Text
 explainNameValid status = case status of
-  Valid         -> ""
-  EmptyName     -> tr "The name cannot be empty."
-  NameTooLong   -> tr "The name is too long (max 256 characters)."
-  ContainsSlash -> tr "The name cannot contain a slash ('/')."
+  Valid          -> ""
+  EmptyName      -> tr "The name cannot be empty."
+  NameTooLong    -> tr "The name is too long (max 256 characters)."
+  ContainsSlash  -> tr "The name cannot contain a slash ('/')."
+  ReservedSuffix -> tr "The name cannot end with \".restoring\" or \".pre-restore\" (reserved for snapshot restore)."
 
 createBottleObject :: T.Text -> RunnerType -> IO Bottle
 createBottleObject name rType = do
