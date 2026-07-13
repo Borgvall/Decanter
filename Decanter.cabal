@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               decanter
-version:            0.1.0.0
+version:            0.9.0.0
 synopsis:           A Wine prefix manager written in Haskell
 license:            GPL-3.0-only
 author:             Johannes Röhl
