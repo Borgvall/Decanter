@@ -162,6 +162,43 @@ spec = do
         length loaded `shouldBe` 1
         runner (head loaded) `shouldBe` Proton protonDir
 
+      describe "persisted-Proton-runner-by-name" $ do
+        it "changeBottleRunnerLogic persists a Proton runner by name, not by path" $ do
+          bottle <- createBottleObject "PersistNameOnChangeTest" SystemWine
+          createDirectoryIfMissing True (bottlePath bottle </> "drive_c")
+
+          _ <- changeBottleRunnerLogic bottle (Proton "/some/where/CoolProton")
+
+          content <- readFile (bottlePath bottle </> "decanter.cfg")
+          content `shouldBe` "PersistedProtonName \"CoolProton\""
+
+        it "listExistingBottles resolves a persisted Proton name to wherever that name is currently found, even if the path moved" $ do
+          cwd <- getCurrentDirectory
+          let bottleDir = cwd </> "test-env" </> ".local" </> "share" </> "Decanter" </> "PersistedNameTest"
+          let extraToolsDir = cwd </> "test-env" </> "ExtraCompatTools"
+          let protonDir = extraToolsDir </> "MyFakeProton"
+          createDirectoryIfMissing True (bottleDir </> "drive_c")
+          createDirectoryIfMissing True protonDir
+          writeFile (protonDir </> "compatibilitytool.vdf") ""
+          writeFile (bottleDir </> "decanter.cfg") "PersistedProtonName \"MyFakeProton\""
+
+          setEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS" extraToolsDir
+          bottles <- listExistingBottles `finally` unsetEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS"
+          let loaded = filter (\b -> bottleName b == "PersistedNameTest") bottles
+          length loaded `shouldBe` 1
+          runner (head loaded) `shouldBe` Proton protonDir
+
+        it "listExistingBottles downgrades a persisted Proton name to MissingProton when no tool by that name exists anymore" $ do
+          cwd <- getCurrentDirectory
+          let bottleDir = cwd </> "test-env" </> ".local" </> "share" </> "Decanter" </> "PersistedNameGoneTest"
+          createDirectoryIfMissing True (bottleDir </> "drive_c")
+          writeFile (bottleDir </> "decanter.cfg") "PersistedProtonName \"GhostProton\""
+
+          bottles <- listExistingBottles
+          let loaded = filter (\b -> bottleName b == "PersistedNameGoneTest") bottles
+          length loaded `shouldBe` 1
+          runner (head loaded) `shouldBe` MissingProton "GhostProton"
+
       describe "blockReason / explainBlockReason" $ do
         let dummyBottle r = Bottle "BlockReasonTest" "/nonexistent" r
 

@@ -5,9 +5,30 @@ module Bottle.Logic.RunnerSpec (spec) where
 import Test.Hspec
 import Bottle.Logic.Runner
 import Bottle.Types
-import System.Directory (findExecutable)
+import System.Directory (findExecutable, createDirectoryIfMissing, getCurrentDirectory, removePathForcibly)
+import System.Environment (setEnv, unsetEnv)
+import System.FilePath ((</>))
+import Control.Exception (finally)
 import Data.Maybe (isJust)
 import qualified Data.Text as T
+
+-- | Sets STEAM_EXTRA_COMPAT_TOOLS_PATHS to a throwaway directory containing
+-- a single fake compatibility tool ("MyFakeProton"), so 'findProtonPathByName'
+-- can be tested against a real, controlled filesystem scan instead of
+-- whatever Proton builds happen to be installed on the machine running the
+-- tests (the two system-wide directories 'compatibilityToolSearchDirs'
+-- also searches aren't test-injectable, but the env var already is).
+withExtraCompatToolsDir :: IO () -> IO ()
+withExtraCompatToolsDir action = do
+  cwd <- getCurrentDirectory
+  let testDir = cwd </> "runner-spec-test-env"
+  let toolDir = testDir </> "MyFakeProton"
+  createDirectoryIfMissing True toolDir
+  writeFile (toolDir </> "compatibilitytool.vdf") ""
+  setEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS" testDir
+  action `finally` do
+    removePathForcibly testDir
+    unsetEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS"
 
 spec :: Spec
 spec = do
@@ -64,3 +85,12 @@ spec = do
           [ ("proton-tkg", "/opt/toolsA/proton-tkg")
           , ("GE-Proton10-25", "/home/user/.steam/root/compatibilitytools.d/GE-Proton10-25")
           ]
+
+    describe "findProtonPathByName" $ around_ withExtraCompatToolsDir $ do
+      it "finds a tool placed under STEAM_EXTRA_COMPAT_TOOLS_PATHS by its directory name" $ do
+        cwd <- getCurrentDirectory
+        let toolDir = cwd </> "runner-spec-test-env" </> "MyFakeProton"
+        findProtonPathByName "MyFakeProton" `shouldReturn` Just toolDir
+
+      it "returns Nothing for a name no currently available tool has" $ do
+        findProtonPathByName "NoSuchProtonBuild" `shouldReturn` Nothing

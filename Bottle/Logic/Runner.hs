@@ -5,6 +5,7 @@ module Bottle.Logic.Runner
   , getRunnerTypeDisplayName
   , compatibilityToolSearchDirs
   , dedupToolsByName
+  , findProtonPathByName
   ) where
 
 import Bottle.Types
@@ -79,19 +80,38 @@ findCompatibilityToolsIn dir = do
           ) entries
       return [ (p, dir </> p) | p <- paths ]
 
+-- | Every currently available compatibility tool's (name, path), already
+-- deduplicated per Steam's own "last-registered wins" precedence (see
+-- 'dedupToolsByName'). Shared by 'getAvailableRunners' and
+-- 'findProtonPathByName'.
+findAvailableCompatibilityTools :: IO [(String, FilePath)]
+findAvailableCompatibilityTools = do
+  home <- getHomeDirectory
+  extraPathsEnv <- lookupEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS"
+  let searchDirs = compatibilityToolSearchDirs home extraPathsEnv
+  toolsPerDir <- mapM findCompatibilityToolsIn searchDirs
+  pure $ dedupToolsByName (concat toolsPerDir)
+
 getAvailableRunners :: IO [RunnerType]
 getAvailableRunners = do
   sysWine <- findExecutable "wine"
   let wineList = if isJust sysWine then [SystemWine] else []
 
-  home <- getHomeDirectory
-  extraPathsEnv <- lookupEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS"
-  let searchDirs = compatibilityToolSearchDirs home extraPathsEnv
-
-  toolsPerDir <- mapM findCompatibilityToolsIn searchDirs
-  let protonList = [ Proton path | (_, path) <- dedupToolsByName (concat toolsPerDir) ]
+  tools <- findAvailableCompatibilityTools
+  let protonList = [ Proton path | (_, path) <- tools ]
 
   return (wineList ++ protonList)
+
+-- | Resolves a compatibility tool's name (its directory's basename, e.g.
+-- "GE-Proton10-25") to its current path, if any tool by that name is
+-- currently found. Used to re-resolve a persisted Proton runner's name back
+-- to a path on every config load (see "Bottle.Logic".loadBottleConfig) --
+-- Decanter persists the tool's name rather than its path precisely so a
+-- moved/reinstalled tool with the same name doesn't require touching every
+-- bottle's config, mirroring how Steam's own compatibility-tool config
+-- identifies tools by name too.
+findProtonPathByName :: T.Text -> IO (Maybe FilePath)
+findProtonPathByName name = lookup (T.unpack name) <$> findAvailableCompatibilityTools
 
 -- | Determines the display name for a runner
 getRunnerTypeDisplayName :: RunnerType -> IO T.Text
