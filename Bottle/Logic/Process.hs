@@ -15,6 +15,7 @@ import System.Process.Typed
 import System.Environment (getEnvironment)
 import System.Directory (canonicalizePath, doesFileExist)
 import Data.List (intercalate)
+import Data.Maybe (maybeToList)
 import Control.Exception (try, IOException, throwIO)
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 
@@ -47,7 +48,7 @@ getWineDllOverridesEnv bottle = case runner bottle of
     Proton _   -> pure []
     SystemWine -> do
         maybeDirect3DEntry <- direct3DOverrideEntry bottle
-        let entries = menuBuilderOverrideEntry : maybe [] (: []) maybeDirect3DEntry
+        let entries = menuBuilderOverrideEntry : maybeToList maybeDirect3DEntry
         pure [("WINEDLLOVERRIDES", intercalate ";" entries)]
     -- Should never be reached -- see Bottle.Types.RunnerMissingError.
     MissingSystemWine -> throwIO (RunnerMissingError (runner bottle))
@@ -117,7 +118,7 @@ getIconExtractionWineEnv Bottle{..} = do
              SystemWine        -> pure []
              MissingSystemWine -> throwIO (RunnerMissingError runner)
              MissingProton _   -> throwIO (RunnerMissingError runner)
-    env <- mergeWithHostEnv $ [ ("WINEPREFIX", bottlePath) ] ++ protonEnv
+    env <- mergeWithHostEnv $ ("WINEPREFIX", bottlePath) : protonEnv
     pure $ filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) env
 
 -- | Extracts a start-menu application's (".lnk") icon as a PNG file, via

@@ -165,9 +165,7 @@ reloadBottleView window bottle stack refreshCallback = do
   -- adds another, invisible card to the stack.
   let viewName = "detail_" <> bottleName bottle
   mOldChild <- #getChildByName stack viewName
-  case mOldChild of
-    Just oldChild -> #remove stack oldChild
-    Nothing -> return ()
+  forM_ mOldChild (#remove stack)
 
   newView <- buildBottleView window bottle stack refreshCallback
   void $ #addNamed stack newView (Just viewName)

@@ -83,9 +83,8 @@ commandParser = subcommands <|> pure (Gui Nothing)
 -- | Shell-completion source for BOTTLE arguments: lists the existing
 -- bottles live, filtered by the partial word already typed.
 bottleCompleter :: Completer
-bottleCompleter = listIOCompleter $ do
-  bottles <- listExistingBottles
-  return $ map T.unpack (sortOn id (map bottleName bottles))
+bottleCompleter = listIOCompleter $
+  map T.unpack . sortOn id . map bottleName <$> listExistingBottles
 
 -- | Shell-completion source for the APPLICATION argument of 'start'.
 -- 'Completer' only hands us the partial word being completed, not the

@@ -139,7 +139,7 @@ spec = do
       -- directly rather than through listExistingBottles.
 
       describe "blockReason / explainBlockReason" $ do
-        let dummyBottle r = Bottle "BlockReasonTest" "/nonexistent" r
+        let dummyBottle = Bottle "BlockReasonTest" "/nonexistent"
 
         it "reports RunnerMissing for MissingSystemWine, without touching the filesystem" $ do
           blockReason (dummyBottle MissingSystemWine) `shouldReturn` Just (RunnerMissing MissingSystemWine)

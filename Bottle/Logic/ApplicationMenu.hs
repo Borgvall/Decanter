@@ -21,6 +21,7 @@ import System.Directory
     )
 import System.FilePath ((</>))
 import Control.Exception (try, IOException)
+import Control.Monad (when)
 import qualified Data.Text as T
 
 -- Application Menu Integration
@@ -85,9 +86,7 @@ removeApplicationMenuSymlink bottle = do
   appsDir <- getXdgDirectory XdgData "applications"
   let linkPath = appsDir </> applicationMenuSymlinkName bottle
   exists <- doesPathExist linkPath
-  if exists
-    then removeFile linkPath
-    else return ()
+  when exists $ removeFile linkPath
 
 -- | Creates an application-menu entry for a start-menu application. The
 -- entry calls "decanter start <bottle> <app>", so it runs through
@@ -122,15 +121,11 @@ removeFromApplicationMenu :: Bottle -> T.Text -> IO ()
 removeFromApplicationMenu bottle appName = do
   let path = desktopFilePath bottle appName
   exists <- doesFileExist path
-  if exists
-    then removeFile path
-    else return ()
+  when exists $ removeFile path
 
   let iconPath = iconFilePath bottle appName
   iconExists <- doesFileExist iconPath
-  if iconExists
-    then removeFile iconPath
-    else return ()
+  when iconExists $ removeFile iconPath
 
 -- | Checks whether an application-menu entry already exists for an application.
 isInApplicationMenu :: Bottle -> T.Text -> IO Bool
