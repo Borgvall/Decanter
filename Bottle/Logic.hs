@@ -107,6 +107,12 @@ loadBottleConfig bottleDir = do
                             return Nothing
         else return Nothing
 
+-- | Whether "wine" is currently on PATH. Shared by 'resolvePersistedRunner'
+-- and 'resolveRunnerAvailability' -- both need the exact same check for
+-- SystemWine, just for a runner parsed from a different config format.
+isSystemWineAvailable :: IO Bool
+isSystemWineAvailable = isJust <$> findExecutable "wine"
+
 -- | Resolves a freshly parsed 'PersistedRunner' to a 'RunnerType', looking
 -- up a Proton name's current path fresh on every load (see
 -- 'Bottle.Logic.Runner.findProtonPathByName') -- downgrading to
@@ -114,7 +120,7 @@ loadBottleConfig bottleDir = do
 -- name is currently found anywhere.
 resolvePersistedRunner :: PersistedRunner -> IO RunnerType
 resolvePersistedRunner PersistedSystemWine = do
-    available <- isJust <$> findExecutable "wine"
+    available <- isSystemWineAvailable
     pure $ if available then SystemWine else MissingSystemWine
 resolvePersistedRunner (PersistedProtonName name) = do
     mPath <- findProtonPathByName name
@@ -131,7 +137,7 @@ resolvePersistedRunner (PersistedProtonName name) = do
 -- current format resolves by name instead (see 'resolvePersistedRunner').
 resolveRunnerAvailability :: RunnerType -> IO RunnerType
 resolveRunnerAvailability SystemWine = do
-    available <- isJust <$> findExecutable "wine"
+    available <- isSystemWineAvailable
     pure $ if available then SystemWine else MissingSystemWine
 resolveRunnerAvailability (Proton p) = do
     available <- doesFileExist (p </> "compatibilitytool.vdf")
