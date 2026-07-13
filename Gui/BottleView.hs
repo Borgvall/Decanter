@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, OverloadedLabels, TypeApplications #-}
+{-# LANGUAGE OverloadedStrings, OverloadedLabels, TypeApplications, MonoLocalBinds #-}
 
 module Gui.BottleView where
 
@@ -170,7 +170,7 @@ reloadBottleView window bottle stack refreshCallback = do
     Nothing -> return ()
 
   newView <- buildBottleView window bottle stack refreshCallback
-  #addNamed stack newView (Just viewName)
+  void $ #addNamed stack newView (Just viewName)
   #setVisibleChildName stack viewName
 
   refreshCallback

@@ -126,11 +126,10 @@ spec = do
         bottles <- listExistingBottles -- loads the config
         let loadedBottles = filter (\b -> bottleName b == name) bottles
 
-        length loadedBottles `shouldBe` 1
-        let loaded = head loadedBottles
-
         -- Check that the runner is still Proton
-        runner loaded `shouldBe` runner bottle
+        case loadedBottles of
+          [loaded] -> runner loaded `shouldBe` runner bottle
+          _ -> expectationFailure $ "Expecting exactly one bottle, got: " ++ show loadedBottles
 
         deleteBottleLogic bottle
 

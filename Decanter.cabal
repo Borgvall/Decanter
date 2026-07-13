@@ -87,6 +87,7 @@ test-suite decanter-test
                     , Bottle.Logic.ProgramsSpec
                     , Logic.SystemToolSpec
                     , Data.Vdf
+                    , Data.VdfSpec
     
     build-depends:    base >= 4.16 && < 5
                     , hspec

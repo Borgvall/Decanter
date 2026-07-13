@@ -10,7 +10,6 @@ import Control.Concurrent.Async (async)
 import Control.Exception (try)
 import Control.Monad (void)
 import qualified Data.Text as T
-import System.FilePath (takeBaseName)
 
 import Bottle.Types
 import Bottle.Logic

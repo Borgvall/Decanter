@@ -10,6 +10,7 @@ import System.Directory (createDirectoryIfMissing, removePathForcibly, getCurren
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import Control.Exception (finally)
+import Data.List (find)
 
 -- | Sets up an isolated test environment
 withTestEnvironment :: IO () -> IO ()
@@ -43,8 +44,9 @@ spec = do
         then do
           createSnapshotLogic bottle "Initial"
           snaps1 <- listSnapshots bottle
-          length snaps1 `shouldBe` 1
-          snapshotName (head snaps1) `shouldBe` "Initial"
+          case snaps1 of
+            [snap1] -> snapshotName snap1 `shouldBe` "Initial"
+            _ -> expectationFailure $ "Expected exactly one snapshot, got: " ++ show snaps1
 
           let testFile = bottlePath bottle </> "testfile.txt"
           writeFile testFile "State 2: With File"
@@ -55,32 +57,37 @@ spec = do
           snaps2 <- listSnapshots bottle
           length snaps2 `shouldBe` 2
 
-          let snapInitial = head [ s | s <- snaps2, snapshotName s == "Initial" ]
-          restoreSnapshotLogic bottle snapInitial
+          case find (\s -> snapshotName s == "Initial") snaps2 of
+            Nothing -> expectationFailure $ "Expected to find a snapshot named 'Initial', got: " ++ show snaps2
+            Just snapInitial -> do
+              restoreSnapshotLogic bottle snapInitial
 
-          -- The file must be gone after restoring the snapshot taken before it existed
-          existsAfterRestore1 <- doesFileExist testFile
-          existsAfterRestore1 `shouldBe` False
+              -- The file must be gone after restoring the snapshot taken before it existed
+              existsAfterRestore1 <- doesFileExist testFile
+              existsAfterRestore1 `shouldBe` False
 
-          deleteSnapshotLogic snapInitial
-          snaps3 <- listSnapshots bottle
-          length snaps3 `shouldBe` 1
-          snapshotName (head snaps3) `shouldBe` "WithFile"
+              deleteSnapshotLogic snapInitial
+              snaps3 <- listSnapshots bottle
+              case snaps3 of
+                [snap3] -> snapshotName snap3 `shouldBe` "WithFile"
+                _ -> expectationFailure $ "Expected exactly one snapshot, got: " ++ show snaps3
 
-          let snapWithFile = head [ s | s <- snaps3, snapshotName s == "WithFile" ]
-          restoreSnapshotLogic bottle snapWithFile
+              case find (\s -> snapshotName s == "WithFile") snaps3 of
+                Nothing -> expectationFailure $ "Expected to find a snapshot named 'WithFile', got: " ++ show snaps3
+                Just snapWithFile -> do
+                  restoreSnapshotLogic bottle snapWithFile
 
-          -- The file must be back after restoring the snapshot taken after it was written
-          existsAfterRestore2 <- doesFileExist testFile
-          existsAfterRestore2 `shouldBe` True
-          content <- readFile testFile
-          content `shouldBe` "State 2: With File"
+                  -- The file must be back after restoring the snapshot taken after it was written
+                  existsAfterRestore2 <- doesFileExist testFile
+                  existsAfterRestore2 `shouldBe` True
+                  content <- readFile testFile
+                  content `shouldBe` "State 2: With File"
 
-          deleteBottleLogic bottle
+                  deleteBottleLogic bottle
 
-          remainingBottles <- listExistingBottles
-          let ourBottles = filter (\b -> bottleName b == "SnapshotTestBottle") remainingBottles
-          ourBottles `shouldBe` []
+                  remainingBottles <- listExistingBottles
+                  let ourBottles = filter (\b -> bottleName b == "SnapshotTestBottle") remainingBottles
+                  ourBottles `shouldBe` []
 
         else do
           putStrLn "Skipping snapshot integration tests (no BTRFS detected)"

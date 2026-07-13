@@ -14,7 +14,6 @@ import Bottle.Logic.Direct3dWrappers (getDirect3DWrapperState, direct3DWrapperOv
 import System.Process.Typed
 import System.Environment (getEnvironment)
 import System.Directory (canonicalizePath, doesFileExist)
-import System.Exit (ExitCode(..))
 import Data.List (intercalate)
 import Control.Exception (try, IOException, throwIO)
 import qualified Data.ByteString.Lazy.Char8 as LBS8

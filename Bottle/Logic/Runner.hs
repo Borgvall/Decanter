@@ -21,7 +21,6 @@ import System.Directory
 import System.Environment (lookupEnv)
 import System.FilePath ((</>), takeBaseName)
 import System.Process.Typed
-import System.Exit (ExitCode(..))
 import Control.Monad (filterM)
 import Data.List (nubBy)
 import Data.Maybe (isJust, fromMaybe)
