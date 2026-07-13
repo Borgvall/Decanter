@@ -5,6 +5,13 @@ rules below are **also** enforced technically via hooks (see
 `.claude/settings.json` and `.githooks/pre-commit`) - but please follow
 them proactively instead of relying on the hook as a safety net.
 
+**Before proposing new features or larger changes**, check
+[`Readme.md`](Readme.md)'s Vision and Non-Goals sections. Decanter
+deliberately stays narrower than Bottles, and some things (a built-in
+application launcher, Proton version management, curated per-app install
+recipes) are intentionally out of scope - see Non-Goals there for the
+reasoning.
+
 ## 1. `cabal build` must succeed before every commit
 
 Before running `git commit`, make sure that
