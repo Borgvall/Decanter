@@ -8,6 +8,38 @@ Decanter is a serious, daily-usable alternative to [Bottles](https://usebottles.
 
 See [Comparison.md](Comparison.md) for a feature-by-feature comparison against Bottles and Faugus Launcher (a point-in-time snapshot, not a living document).
 
+## 🚫 Non-Goals
+
+Decanter deliberately avoids reimplementing functionality that the host
+system, or another dedicated tool, already solves well. Building that kind
+of thing would mean maintaining generic infrastructure instead of deepening
+the BTRFS/Nix niche described in the Vision section above - the same
+feature-parity trap that section already warns against.
+
+* **A built-in application launcher.** Once a program is added to the
+  host's application menu (see "Application Menu Integration" below),
+  browsing, searching, and launching it is the desktop's own job - GNOME's
+  Activities overview, KDE's Application Menu, etc. already offer icon
+  display, alphabetical sorting, type-to-filter search, and full keyboard
+  navigation, more polished than a from-scratch reimplementation inside
+  Decanter's own window could realistically match. Decanter's UI only
+  manages the *presence* of these shortcuts (adding/removing them per
+  bottle, from the "Installed Programs" list) - it doesn't duplicate the
+  launching experience itself.
+* **Downloading or managing Proton versions.** Decanter only *detects*
+  Proton builds already present under `~/.steam/root/compatibilitytools.d`
+  (see "Runner Support" below); it doesn't fetch, install, or update them
+  itself. That job belongs to Nix, the system's own package manager, or a
+  dedicated tool like [ProtonUp-Qt](https://github.com/DavidoTek/ProtonUp-Qt).
+* **Curated install recipes for individual applications.** Decanter doesn't
+  want to build or maintain a database of per-application install steps or
+  dependency workarounds, the way Bottles' dependency-installer database
+  does. Keeping such a database accurate across arbitrary Windows software
+  is open-ended, ongoing curation work, orthogonal to the BTRFS/Nix scope
+  Decanter actually wants to own; users looking for that kind of guidance
+  are better served by the [WineHQ AppDB](https://appdb.winehq.org) or
+  [ProtonDB](https://www.protondb.com).
+
 ## 💡 Inspiration
 
 Decanter is heavily inspired by the excellent [Bottles](https://usebottles.com/) project. It aims to replicate the core concept of easy-to-manage "bottles" (isolated Wine environments) using a purely functional programming approach with Haskell.
