@@ -19,6 +19,7 @@ executable decanter
     other-modules:    Cli
                     , Bottle.Types
                     , Bottle.Logic
+                    , Bottle.Logic.Config
                     , Bottle.Logic.Process
                     , Bottle.Logic.Snapshots
                     , Bottle.Logic.Direct3dWrappers
@@ -66,6 +67,7 @@ test-suite decanter-test
     
     -- Module, die getestet werden sollen (aus dem Hauptprogramm)
     other-modules:    Bottle.Logic
+                    , Bottle.Logic.Config
                     , Bottle.Logic.Process
                     , Bottle.Logic.Snapshots
                     , Bottle.Logic.Direct3dWrappers
@@ -76,6 +78,7 @@ test-suite decanter-test
                     , Logic.SystemTool
                     , Logic.Translation
                     , Bottle.LogicSpec
+                    , Bottle.Logic.ConfigSpec
                     , Bottle.Logic.ProcessSpec
                     , Bottle.Logic.SnapshotsSpec
                     , Bottle.Logic.Direct3dWrappersSpec

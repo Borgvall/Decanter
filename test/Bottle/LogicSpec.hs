@@ -134,70 +134,10 @@ spec = do
 
         deleteBottleLogic bottle
 
-      it "listExistingBottles still reads the legacy (RunnerType, Arch) config format, downgrading a no-longer-existing Proton path to MissingProton" $ do
-        cwd <- getCurrentDirectory
-        let bottleDir = cwd </> "test-env" </> ".local" </> "share" </> "Decanter" </> "LegacyConfigTest"
-        createDirectoryIfMissing True (bottleDir </> "drive_c")
-        writeFile (bottleDir </> "decanter.cfg") "(Proton \"/legacy/path\",Win64)"
-
-        bottles <- listExistingBottles
-        let loaded = filter (\b -> bottleName b == "LegacyConfigTest") bottles
-        length loaded `shouldBe` 1
-        -- "/legacy/path" never existed on disk in this test environment --
-        -- correctly downgraded on load rather than trusted as-is (see
-        -- Bottle.Logic.resolveRunnerAvailability).
-        runner (head loaded) `shouldBe` MissingProton "/legacy/path"
-
-      it "listExistingBottles keeps a legacy-format Proton runner intact when its path is still a valid compatibility tool" $ do
-        cwd <- getCurrentDirectory
-        let bottleDir = cwd </> "test-env" </> ".local" </> "share" </> "Decanter" </> "LegacyConfigStillValidTest"
-        let protonDir = cwd </> "test-env" </> "FakeProton"
-        createDirectoryIfMissing True (bottleDir </> "drive_c")
-        createDirectoryIfMissing True protonDir
-        writeFile (protonDir </> "compatibilitytool.vdf") ""
-        writeFile (bottleDir </> "decanter.cfg") ("(Proton " ++ show protonDir ++ ",Win64)")
-
-        bottles <- listExistingBottles
-        let loaded = filter (\b -> bottleName b == "LegacyConfigStillValidTest") bottles
-        length loaded `shouldBe` 1
-        runner (head loaded) `shouldBe` Proton protonDir
-
-      describe "persisted-Proton-runner-by-name" $ do
-        it "changeBottleRunnerLogic persists a Proton runner by name, not by path" $ do
-          bottle <- createBottleObject "PersistNameOnChangeTest" SystemWine
-          createDirectoryIfMissing True (bottlePath bottle </> "drive_c")
-
-          _ <- changeBottleRunnerLogic bottle (Proton "/some/where/CoolProton")
-
-          content <- readFile (bottlePath bottle </> "decanter.cfg")
-          content `shouldBe` "PersistedProtonName \"CoolProton\""
-
-        it "listExistingBottles resolves a persisted Proton name to wherever that name is currently found, even if the path moved" $ do
-          cwd <- getCurrentDirectory
-          let bottleDir = cwd </> "test-env" </> ".local" </> "share" </> "Decanter" </> "PersistedNameTest"
-          let extraToolsDir = cwd </> "test-env" </> "ExtraCompatTools"
-          let protonDir = extraToolsDir </> "MyFakeProton"
-          createDirectoryIfMissing True (bottleDir </> "drive_c")
-          createDirectoryIfMissing True protonDir
-          writeFile (protonDir </> "compatibilitytool.vdf") ""
-          writeFile (bottleDir </> "decanter.cfg") "PersistedProtonName \"MyFakeProton\""
-
-          setEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS" extraToolsDir
-          bottles <- listExistingBottles `finally` unsetEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS"
-          let loaded = filter (\b -> bottleName b == "PersistedNameTest") bottles
-          length loaded `shouldBe` 1
-          runner (head loaded) `shouldBe` Proton protonDir
-
-        it "listExistingBottles downgrades a persisted Proton name to MissingProton when no tool by that name exists anymore" $ do
-          cwd <- getCurrentDirectory
-          let bottleDir = cwd </> "test-env" </> ".local" </> "share" </> "Decanter" </> "PersistedNameGoneTest"
-          createDirectoryIfMissing True (bottleDir </> "drive_c")
-          writeFile (bottleDir </> "decanter.cfg") "PersistedProtonName \"GhostProton\""
-
-          bottles <- listExistingBottles
-          let loaded = filter (\b -> bottleName b == "PersistedNameGoneTest") bottles
-          length loaded `shouldBe` 1
-          runner (head loaded) `shouldBe` MissingProton "GhostProton"
+      -- Config-file-format-specific coverage (legacy formats, persisted-
+      -- Proton-by-name resolution, ...) lives in Bottle.Logic.ConfigSpec
+      -- now, testing Bottle.Logic.Config's saveBottleConfig/loadBottleConfig
+      -- directly rather than through listExistingBottles.
 
       describe "blockReason / explainBlockReason" $ do
         let dummyBottle r = Bottle "BlockReasonTest" "/nonexistent" r
