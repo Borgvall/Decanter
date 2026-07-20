@@ -45,8 +45,8 @@ import Gui.BottleSnapshotsView (buildSnapshotView)
 import Gui.ProgramListView (buildProgramListSection)
 
 -- | Shows the confirmation dialog for deleting a bottle
-showDeleteConfirmationDialog :: Gtk.Window -> Gtk.Stack -> Bottle -> IO () -> IO ()
-showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
+showDeleteConfirmationDialog :: Gtk.Window -> Gtk.Stack -> Bottle -> (T.Text -> IO ()) -> IO () -> IO ()
+showDeleteConfirmationDialog parent windowStack bottle showError refreshCallback = do
   let fullMessage = T.concat 
         [ tr "Are you sure you want to delete the bottle '"
         , bottleName bottle
@@ -67,15 +67,15 @@ showDeleteConfirmationDialog parent windowStack bottle refreshCallback = do
                   GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                     case res of
                       Right _ -> refreshCallback
-                      Left err -> putStrLn $ "Error: " ++ show err
+                      Left err -> showError $ tr "Failed to delete bottle: " <> T.pack (show err)
                     return False
   
   -- Explicit type annotation to disambiguate Nothing
   Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleAlertDialogResult)
 
 -- | Shows the confirmation dialog for stopping all programs
-showKillConfirmationDialog :: Gtk.Window -> Bottle -> IO ()
-showKillConfirmationDialog parent bottle = do
+showKillConfirmationDialog :: Gtk.Window -> Bottle -> (T.Text -> IO ()) -> IO ()
+showKillConfirmationDialog parent bottle showError = do
   let message = tr "Stop all programs in this bottle?"
   let detail  = tr "This will execute 'wineserver -k' and force all running applications to close. Unsaved data may be lost."
   dialog <- new Gtk.AlertDialog [ #message := message, #detail  := detail, #buttons := [ tr "Cancel", tr "Stop All" ] ]
@@ -84,7 +84,7 @@ showKillConfirmationDialog parent bottle = do
           when (buttonIndex == 1) $ do
               res <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
               case res of
-                  Left err -> putStrLn $ "Error: " ++ show err
+                  Left err -> showError $ tr "Failed to stop programs: " <> T.pack (show err)
                   Right _  -> putStrLn "Processes killed."
   
   -- Explicit type annotation to disambiguate Nothing
@@ -96,8 +96,8 @@ showKillConfirmationDialog parent bottle = do
 -- popover again -- a popover also already closes itself on a click outside
 -- it or Escape, so (unlike the previous Adw.MessageDialog) there is no
 -- explicit Cancel button anymore.
-buildRunnerPopover :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> [RunnerType] -> IO Gtk.Popover
-buildRunnerPopover window bottle stack refreshCallback availableRunners = do
+buildRunnerPopover :: Gtk.Window -> Bottle -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> [RunnerType] -> IO Gtk.Popover
+buildRunnerPopover window bottle stack showError refreshCallback availableRunners = do
   popover <- new Gtk.Popover []
   runnerGroup <- new Adw.PreferencesGroup
     [ #marginTop := 6, #marginBottom := 6, #marginStart := 6, #marginEnd := 6 ]
@@ -119,7 +119,7 @@ buildRunnerPopover window bottle stack refreshCallback availableRunners = do
     void $ on row #activated $ do
       #popdown popover
       updatedBottle <- changeBottleRunnerLogic bottle runnerType
-      reloadBottleView window updatedBottle stack refreshCallback
+      reloadBottleView window updatedBottle stack showError refreshCallback
 
     #add runnerGroup row
 
@@ -130,8 +130,8 @@ buildRunnerPopover window bottle stack refreshCallback availableRunners = do
 -- dialog window), see 'buildRunnerPopover'. Without any available runners
 -- the button stays disabled, with an explanatory tooltip, instead of (as
 -- before) only showing an error dialog after a click.
-buildChangeRunnerButton :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.MenuButton
-buildChangeRunnerButton window bottle stack refreshCallback = do
+buildChangeRunnerButton :: Gtk.Window -> Bottle -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> IO Gtk.MenuButton
+buildChangeRunnerButton window bottle stack showError refreshCallback = do
   availableRunners <- getAvailableRunners
   let hasRunners = not (null availableRunners)
 
@@ -151,7 +151,7 @@ buildChangeRunnerButton window bottle stack refreshCallback = do
     ]
 
   when hasRunners $ do
-    popover <- buildRunnerPopover window bottle stack refreshCallback availableRunners
+    popover <- buildRunnerPopover window bottle stack showError refreshCallback availableRunners
     #setPopover btn (Just popover)
 
   pure btn
@@ -173,10 +173,10 @@ replaceStackChild stack name widget = do
   void $ #addNamed stack widget (Just name)
 
 -- | Reloads the bottle view
-reloadBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO ()
-reloadBottleView window bottle stack refreshCallback = do
+reloadBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> IO ()
+reloadBottleView window bottle stack showError refreshCallback = do
   let viewName = "detail_" <> bottleName bottle
-  newView <- buildBottleView window bottle stack refreshCallback
+  newView <- buildBottleView window bottle stack showError refreshCallback
   replaceStackChild stack viewName newView
   #setVisibleChildName stack viewName
 
@@ -214,8 +214,8 @@ direct3DWrapperName = T.pack . show
 -- ToggleGroup is replaced by a single "Update" button that repairs it and
 -- then reloads the whole view (so state and health are freshly determined
 -- again and -- on success -- the ToggleGroup reappears).
-buildDirect3DWrapperSection :: Gtk.Window -> Gtk.Stack -> IO () -> WrapperHealth -> Gtk.Box -> Bottle -> IO ()
-buildDirect3DWrapperSection window stack refreshCallback health contentBox bottle = do
+buildDirect3DWrapperSection :: Gtk.Window -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> WrapperHealth -> Gtk.Box -> Bottle -> IO ()
+buildDirect3DWrapperSection window stack showError refreshCallback health contentBox bottle = do
   currentState <- getDirect3DWrapperState bottle
 
   sectionBox <- new Gtk.Box
@@ -256,7 +256,7 @@ buildDirect3DWrapperSection window stack refreshCallback health contentBox bottl
           Just state -> do
             result <- try (setDirect3DWrapperState bottle state) :: IO (Either SomeException ())
             case result of
-              Left err -> putStrLn $ "Error changing Direct3D wrapper: " ++ show err
+              Left err -> showError $ tr "Failed to change Direct3D wrapper: " <> T.pack (show err)
               Right () -> pure ()
 
     _ -> do
@@ -274,13 +274,13 @@ buildDirect3DWrapperSection window stack refreshCallback health contentBox bottl
       void $ on updateBtn #clicked $ do
         result <- try (repairDirect3DWrapperState bottle) :: IO (Either SomeException ())
         case result of
-          Left err -> putStrLn $ "Error repairing Direct3D wrapper: " ++ show err
-          Right () -> reloadBottleView window bottle stack refreshCallback
+          Left err -> showError $ tr "Failed to repair Direct3D wrapper: " <> T.pack (show err)
+          Right () -> reloadBottleView window bottle stack showError refreshCallback
       #append sectionBox updateBtn
 
 -- | Creates the detail view for a bottle
-buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
-buildBottleView window bottle stack refreshCallback = do
+buildBottleView :: Gtk.Window -> Bottle -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> IO Gtk.Widget
+buildBottleView window bottle stack showError refreshCallback = do
 
   -- Adw.ToolbarView instead of Gtk.Box, for consistency with the other views
   toolbarView <- new Adw.ToolbarView []
@@ -362,14 +362,14 @@ buildBottleView window bottle stack refreshCallback = do
     ]
   #append runnerInfoBox runnerTypeLabel
 
-  changeRunnerBtn <- buildChangeRunnerButton window bottle stack refreshCallback
+  changeRunnerBtn <- buildChangeRunnerButton window bottle stack showError refreshCallback
   #append runnerSectionBox changeRunnerBtn
 
   -- Toggle the Direct3D wrapper (DXVK/vkd3d-proton) -- only if the bottle
   -- actually manages it itself per "direct3DStatus" (Proton already brings
   -- both along on its own).
   case direct3DStatus of
-    WrapperManaged health -> buildDirect3DWrapperSection window stack refreshCallback health contentBox bottle
+    WrapperManaged health -> buildDirect3DWrapperSection window stack showError refreshCallback health contentBox bottle
     WrapperNotManaged     -> pure ()
 
   let addBtn label tooltip cssClasses action = do
@@ -379,7 +379,7 @@ buildBottleView window bottle stack refreshCallback = do
         return btn
 
   runBtn <- new Gtk.Button [ #label := tr "Run Executable / Installer", #cssClasses := ["suggested-action", "pill"], #halign := Gtk.AlignFill ]
-  void $ on runBtn #clicked $ openExecutableFileDialog window $ runExecutable bottle
+  void $ on runBtn #clicked $ openExecutableFileDialog window showError $ runExecutable bottle
   #append contentBox runBtn
   blockIfWineAppsBlocked runBtn
 
@@ -416,7 +416,7 @@ buildBottleView window bottle stack refreshCallback = do
     #append snapBox snapIcon >> #append snapBox snapLabel >> #setChild snapBtn (Just snapBox)
     
     void $ on snapBtn #clicked $ do
-       snapView <- buildSnapshotView window bottle stack (reloadBottleView window bottle stack refreshCallback)
+       snapView <- buildSnapshotView window bottle stack showError (reloadBottleView window bottle stack showError refreshCallback)
        let viewName = "snapshots_" <> bottleName bottle
        replaceStackChild stack viewName snapView
        #setVisibleChildName stack viewName
@@ -441,17 +441,17 @@ buildBottleView window bottle stack refreshCallback = do
   -- on drive_c, so it doesn't start a Wine program.
   void $ addBtn (tr "Browse Files") (tr "Open drive_c") [] (runFileManager bottle)
   
-  void $ addBtn (tr "Stop all Programs") (tr "Forcefully close all running processes") ["destructive-action"] $ showKillConfirmationDialog window bottle
+  void $ addBtn (tr "Stop all Programs") (tr "Forcefully close all running processes") ["destructive-action"] $ showKillConfirmationDialog window bottle showError
   sep3 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 20, #marginBottom := 10 ]
   #append contentBox sep3
-  void $ addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle") ["destructive-action"] $ showDeleteConfirmationDialog window stack bottle refreshCallback
+  void $ addBtn (tr "Delete Bottle") (tr "Permanently delete this bottle") ["destructive-action"] $ showDeleteConfirmationDialog window stack bottle showError refreshCallback
 
   Gtk.toWidget toolbarView
 
 type FileSelectedCallback = FilePath -> IO ()
 
-openExecutableFileDialog :: Gtk.Window -> FileSelectedCallback -> IO ()
-openExecutableFileDialog parentWindow callback = do
+openExecutableFileDialog :: Gtk.Window -> (T.Text -> IO ()) -> FileSelectedCallback -> IO ()
+openExecutableFileDialog parentWindow showError callback = do
     dialog <- Gtk.fileDialogNew
     Gtk.fileDialogSetTitle dialog (tr "Open Executable or Installer")
     let configureFilter name patterns = do
@@ -467,15 +467,18 @@ openExecutableFileDialog parentWindow callback = do
     Gio.listStoreAppend listStore msiFilter
     Gtk.fileDialogSetFilters dialog $ Just listStore
     cancellable <- Gio.cancellableNew
-    Gtk.fileDialogOpen dialog (Just parentWindow) (Just cancellable) (Just $ \_ result -> handleFileDialogResponse callback dialog result)
+    Gtk.fileDialogOpen dialog (Just parentWindow) (Just cancellable) (Just $ \_ result -> handleFileDialogResponse showError callback dialog result)
 
-handleFileDialogResponse :: FileSelectedCallback -> Gtk.FileDialog -> Gio.AsyncResult -> IO ()
-handleFileDialogResponse userCallback dialog result = do
+handleFileDialogResponse :: (T.Text -> IO ()) -> FileSelectedCallback -> Gtk.FileDialog -> Gio.AsyncResult -> IO ()
+handleFileDialogResponse showError userCallback dialog result = do
     fileResult <- try (Gtk.fileDialogOpenFinish dialog result) :: IO (Either SomeException Gio.File)
     case fileResult of
+        -- Cancelling the dialog also lands here (as a GError) -- not
+        -- surfaced as a toast, since it's an expected, deliberate user
+        -- action rather than a failure.
         Left err -> putStrLn $ "File dialog failed: " ++ show err
         Right gfile -> do
             mpath <- Gio.fileGetPath gfile
             case mpath of
                 Just path -> userCallback path
-                Nothing -> putStrLn "Error: Not a local file."
+                Nothing -> showError $ tr "The selected file is not a local file."

@@ -58,16 +58,27 @@ buildUI app mBottle = do
   -- own header instead, so the stack itself is the window's content.
   stack <- new Gtk.Stack [ #transitionType := Gtk.StackTransitionTypeSlideLeftRight ]
 
-  (overviewWidget, refreshList) <- buildOverviewPage windowAsGtk stack
+  -- Wraps the stack so background-thread failures (snapshot restore, bottle
+  -- delete, ...) can surface as a toast instead of only being printed to
+  -- the console.
+  overlay <- new Adw.ToastOverlay []
+  #setChild overlay (Just stack)
+
+  let showError :: Text -> IO ()
+      showError msg = do
+        toast <- new Adw.Toast [ #title := msg ]
+        void $ #addToast overlay toast
+
+  (overviewWidget, refreshList) <- buildOverviewPage windowAsGtk stack showError
   void $ #addNamed stack overviewWidget (Just "overview")
 
-  #setContent window (Just stack)
+  #setContent window (Just overlay)
 
   refreshList
 
   -- With 'decanter gui <bottle name>', switch straight to the detail view
   case mBottle of
     Nothing     -> return ()
-    Just bottle -> navigateToBottle windowAsGtk stack bottle refreshList
+    Just bottle -> navigateToBottle windowAsGtk stack showError bottle refreshList
 
   #present window

@@ -76,8 +76,8 @@ createMenuBtn labelText iconName cssClassesList = do
 -- snapshot restore so the detail view (including the Direct3D wrapper
 -- display) reflects the restored filesystem state, instead of just
 -- switching back to the old, unchanged view.
-buildSnapshotView :: Gtk.Window -> Bottle -> Gtk.Stack -> IO () -> IO Gtk.Widget
-buildSnapshotView _window bottle stack reloadDetailView = do
+buildSnapshotView :: Gtk.Window -> Bottle -> Gtk.Stack -> (Text -> IO ()) -> IO () -> IO Gtk.Widget
+buildSnapshotView _window bottle stack showError reloadDetailView = do
 
   -- Adw.ToolbarView instead of Gtk.Box, for consistency with the other views
   toolbarView <- new Adw.ToolbarView []
@@ -148,7 +148,7 @@ buildSnapshotView _window bottle stack reloadDetailView = do
                        GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                            case res of
                                Right _ -> reloadDetailView
-                               Left err -> putStrLn $ "Error during restore: " ++ show err
+                               Left err -> showError $ tr "Failed to restore snapshot: " <> T.pack (show err)
                            return False
                #append popBox restoreBtn
                
@@ -156,8 +156,12 @@ buildSnapshotView _window bottle stack reloadDetailView = do
                void $ on deleteBtn #clicked $ do
                    #popdown popover
                    void $ async $ do
-                       deleteSnapshotLogic s
-                       GLib.idleAdd GLib.PRIORITY_DEFAULT (refreshList >> return False)
+                       res <- try (deleteSnapshotLogic s) :: IO (Either SomeException ())
+                       GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+                           case res of
+                               Right _ -> refreshList
+                               Left err -> showError $ tr "Failed to delete snapshot: " <> T.pack (show err)
+                           return False
                #append popBox deleteBtn
                
                #setChild popover (Just popBox)

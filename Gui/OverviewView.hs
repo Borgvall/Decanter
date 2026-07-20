@@ -17,17 +17,17 @@ import Gui.NewBottleDialog (showNewBottleDialog)
 -- | Switches the stack to the detail view of the given bottle (building it
 -- if needed). Used both from the overview page (clicking a row) and on CLI
 -- start via 'decanter gui <bottle name>'.
-navigateToBottle :: Gtk.Window -> Gtk.Stack -> Bottle -> IO () -> IO ()
-navigateToBottle window stack bottle refreshAction = do
-  detailView <- buildBottleView window bottle stack refreshAction
+navigateToBottle :: Gtk.Window -> Gtk.Stack -> (T.Text -> IO ()) -> Bottle -> IO () -> IO ()
+navigateToBottle window stack showError bottle refreshAction = do
+  detailView <- buildBottleView window bottle stack showError refreshAction
   let viewName = "detail_" <> bottleName bottle
 
   replaceStackChild stack viewName detailView
   #setVisibleChildName stack viewName
 
 -- | Builds the overview page and returns the widget along with a refresh function
-buildOverviewPage :: Gtk.Window -> Gtk.Stack -> IO (Gtk.Widget, IO ())
-buildOverviewPage window stack = do
+buildOverviewPage :: Gtk.Window -> Gtk.Stack -> (T.Text -> IO ()) -> IO (Gtk.Widget, IO ())
+buildOverviewPage window stack showError = do
 
   -- Adw.ToolbarView is the standard outer container for views with a header
   toolbarView <- new Adw.ToolbarView []
@@ -76,7 +76,7 @@ buildOverviewPage window stack = do
                #addSuffix row icon
                
                #setActivatableWidget row (Just icon)
-               void $ on row #activated $ navigateToBottle window stack b refreshAction
+               void $ on row #activated $ navigateToBottle window stack showError b refreshAction
 
                #append listBox row
 
