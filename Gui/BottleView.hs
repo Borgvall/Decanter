@@ -17,7 +17,13 @@ import System.FilePath (takeBaseName)
 import Text.Read (readMaybe)
 
 import Bottle.Types
-import Bottle.Logic (deleteBottleLogic, changeBottleRunnerLogic, blockReason, explainBlockReason)
+import Bottle.Logic
+  ( deleteBottleLogic
+  , changeBottleRunnerLogic
+  , isEngineFamilyChange
+  , blockReason
+  , explainBlockReason
+  )
 import Bottle.Logic.Process (killBottleProcesses)
 import Bottle.Logic.Runner (getAvailableRunners, getRunnerTypeDisplayName)
 import Bottle.Logic.Programs
@@ -90,12 +96,37 @@ showKillConfirmationDialog parent bottle showError = do
   -- Explicit type annotation to disambiguate Nothing
   Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleResult)
 
+-- | Shows the confirmation dialog before switching between the Wine and
+-- Proton engine families (see 'Bottle.Logic.isEngineFamilyChange') -- not
+-- shown when switching between two builds of the same family, since that
+-- doesn't mix two different engines' setup on the same prefix.
+showRunnerChangeConfirmationDialog :: Gtk.Window -> Bottle -> RunnerType -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> IO ()
+showRunnerChangeConfirmationDialog parent bottle newRunner stack showError refreshCallback = do
+  let message = tr "Switch Windows Compatibility Layer?"
+  let detail = tr "This bottle was set up under its current engine. Switching to a different one runs it through a different Windows compatibility layer on the same, already-initialized prefix -- the result is a mix of both engines' registry entries, DLL overrides, and prefix setup, which is hard to reproduce or diagnose afterwards.\n\nFor a clean result, create a new bottle for the other engine instead."
+  dialog <- new Gtk.AlertDialog
+    [ #message := message
+    , #detail := detail
+    , #buttons := [ tr "Cancel", tr "Switch Anyway" ]
+    ]
+  let handleResult _dialog result = do
+        buttonIndex <- Gtk.alertDialogChooseFinish dialog result
+        when (buttonIndex == 1) $ do
+          updatedBottle <- changeBottleRunnerLogic bottle newRunner
+          reloadBottleView parent updatedBottle stack showError refreshCallback
+
+  -- Explicit type annotation to disambiguate Nothing
+  Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleResult)
+
 -- | Builds the content of the runner-selection popover: one row per
 -- available runner, with a checkmark on the currently active one. Clicking
 -- a row changes the runner, reloads the bottle view, and closes the
 -- popover again -- a popover also already closes itself on a click outside
 -- it or Escape, so (unlike the previous Adw.MessageDialog) there is no
--- explicit Cancel button anymore.
+-- explicit Cancel button anymore. If the click crosses the Wine/Proton
+-- engine boundary ('Bottle.Logic.isEngineFamilyChange'), the runner change
+-- goes through 'showRunnerChangeConfirmationDialog' first instead of
+-- applying immediately.
 buildRunnerPopover :: Gtk.Window -> Bottle -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> [RunnerType] -> IO Gtk.Popover
 buildRunnerPopover window bottle stack showError refreshCallback availableRunners = do
   popover <- new Gtk.Popover []
@@ -118,8 +149,11 @@ buildRunnerPopover window bottle stack showError refreshCallback availableRunner
 
     void $ on row #activated $ do
       #popdown popover
-      updatedBottle <- changeBottleRunnerLogic bottle runnerType
-      reloadBottleView window updatedBottle stack showError refreshCallback
+      if isEngineFamilyChange currentRunner runnerType
+        then showRunnerChangeConfirmationDialog window bottle runnerType stack showError refreshCallback
+        else do
+          updatedBottle <- changeBottleRunnerLogic bottle runnerType
+          reloadBottleView window updatedBottle stack showError refreshCallback
 
     #add runnerGroup row
 

@@ -58,6 +58,24 @@ spec = do
       it "rejects names ending in a reserved restore-marker suffix" $ do
         checkNameValidity "MyBottle.restoring" `shouldNotBe` Valid
 
+    describe "isEngineFamilyChange" $ do
+      it "is True when switching from System Wine to Proton" $ do
+        isEngineFamilyChange SystemWine (Proton "/path/to/proton-a") `shouldBe` True
+
+      it "is True when switching from Proton to System Wine" $ do
+        isEngineFamilyChange (Proton "/path/to/proton-a") SystemWine `shouldBe` True
+
+      it "is True across a missing runner too, as long as the family differs" $ do
+        isEngineFamilyChange MissingSystemWine (Proton "/path/to/proton-a") `shouldBe` True
+        isEngineFamilyChange (MissingProton "/path/to/proton-a") SystemWine `shouldBe` True
+
+      it "is False when switching between two different Proton builds" $ do
+        isEngineFamilyChange (Proton "/path/to/proton-a") (Proton "/path/to/proton-b") `shouldBe` False
+
+      it "is False when the runner doesn't actually change" $ do
+        isEngineFamilyChange SystemWine SystemWine `shouldBe` False
+        isEngineFamilyChange (Proton "/path/to/proton-a") (Proton "/path/to/proton-a") `shouldBe` False
+
     describe "findBottleByName" $ do
       let bottleA = Bottle "Alpha" "/tmp/alpha" SystemWine
       let bottleB = Bottle "Beta" "/tmp/beta" SystemWine

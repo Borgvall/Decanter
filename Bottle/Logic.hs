@@ -9,6 +9,7 @@ module Bottle.Logic
   , createBottleObject
   , createBottleLogic
   , changeBottleRunnerLogic
+  , isEngineFamilyChange
   , deleteBottleLogic
 
     -- * Readiness
@@ -61,6 +62,24 @@ changeBottleRunnerLogic bottle newRunner = do
   let updatedBottle = bottle { runner = newRunner }
   saveBottleConfig updatedBottle
   pure updatedBottle
+
+-- | Whether switching from "oldRunner" to "newRunner" crosses the Wine/Proton
+-- engine boundary, as opposed to e.g. switching between two different Proton
+-- builds. Wine and Proton set up and maintain a prefix differently enough
+-- (Direct3D wrapper DLLs, prefix-creation symlinks into the user's home
+-- directory, registry entries) that mixing both on the same, already-
+-- initialized prefix leaves it in a state that's hard to reproduce or
+-- diagnose -- unlike switching between builds of the same engine, which
+-- doesn't have this problem. Used by "Gui.BottleView" to decide whether a
+-- runner change needs a confirmation warning.
+isEngineFamilyChange :: RunnerType -> RunnerType -> Bool
+isEngineFamilyChange oldRunner newRunner = isWineFamily oldRunner /= isWineFamily newRunner
+  where
+    isWineFamily :: RunnerType -> Bool
+    isWineFamily SystemWine        = True
+    isWineFamily MissingSystemWine = True
+    isWineFamily (Proton _)        = False
+    isWineFamily (MissingProton _) = False
 
 -- | Why a bottle currently can't run Windows programs, if at all --
 -- 'Nothing' means it's ready. This is the single check both the GUI
