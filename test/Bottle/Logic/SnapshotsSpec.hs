@@ -98,12 +98,12 @@ spec = do
                   ourBottles `shouldBe` []
 
         else do
-          putStrLn "Skipping snapshot integration tests (no BTRFS detected)"
           -- Without snapshot support, the list should at least be empty and retrievable
           snaps <- listSnapshots bottle
           snaps `shouldBe` []
 
           deleteBottleLogic bottle
+          pendingWith "No BTRFS detected; snapshot integration test needs a real BTRFS filesystem."
 
     it "deleteAllSnapshots removes every snapshot and the snapshot directory" $ do
       bottle <- createBottleObject "DeleteAllSnapshotsTestBottle" SystemWine
@@ -121,10 +121,11 @@ spec = do
           deleteAllSnapshots bottle
           snapsAfter <- listSnapshots bottle
           snapsAfter `shouldBe` []
-        else
-          putStrLn "Skipping deleteAllSnapshots test (no BTRFS detected)"
 
-      deleteBottleLogic bottle
+          deleteBottleLogic bottle
+        else do
+          deleteBottleLogic bottle
+          pendingWith "No BTRFS detected; deleteAllSnapshots test needs a real BTRFS filesystem."
 
     it "recoverInterruptedRestores finishes a restore interrupted before the old bottle was deleted" $ do
       bottle <- createBottleObject "InterruptedRestoreBeforeDeleteTest" SystemWine
@@ -150,10 +151,11 @@ spec = do
 
           doesDirectoryExist (bottlePath bottle) `shouldReturn` True
           doesDirectoryExist restoringPath `shouldReturn` False
-        else
-          putStrLn "Skipping recoverInterruptedRestores test (no BTRFS detected)"
 
-      deleteBottleLogic bottle
+          deleteBottleLogic bottle
+        else do
+          deleteBottleLogic bottle
+          pendingWith "No BTRFS detected; recoverInterruptedRestores integration test needs a real BTRFS filesystem."
 
     it "recoverInterruptedRestores finishes a restore interrupted after the old bottle was deleted" $ do
       bottle <- createBottleObject "InterruptedRestoreAfterDeleteTest" SystemWine
@@ -177,10 +179,11 @@ spec = do
 
           doesDirectoryExist (bottlePath bottle) `shouldReturn` True
           doesDirectoryExist restoringPath `shouldReturn` False
-        else
-          putStrLn "Skipping recoverInterruptedRestores test (no BTRFS detected)"
 
-      deleteBottleLogic bottle
+          deleteBottleLogic bottle
+        else do
+          deleteBottleLogic bottle
+          pendingWith "No BTRFS detected; recoverInterruptedRestores integration test needs a real BTRFS filesystem."
 
     it "isBtrfsSubvolume returns False for a plain (non-BTRFS) directory" $ do
       cwd <- getCurrentDirectory
