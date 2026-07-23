@@ -1,0 +1,6 @@
+cradle:
+  cabal:
+    - path: "./test"
+      component: "test:decanter-test"
+    - path: "./"
+      component: "exe:decanter"
