@@ -57,7 +57,6 @@ spec = do
 
       it "rejects names ending in a reserved restore-marker suffix" $ do
         checkNameValidity "MyBottle.restoring" `shouldNotBe` Valid
-        checkNameValidity "MyBottle.pre-restore" `shouldNotBe` Valid
 
     describe "findBottleByName" $ do
       let bottleA = Bottle "Alpha" "/tmp/alpha" SystemWine

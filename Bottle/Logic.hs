@@ -117,10 +117,10 @@ findAppLnkByName name lnkPaths = case filter ((== name) . T.pack . takeBaseName)
 
 -- | Scans the directory for existing bottles. First repairs any bottle
 -- left half-restored by a crash during 'Bottle.Logic.Snapshots
--- .restoreSnapshotLogic's atomic-rename swap (see 'recoverInterruptedRestores')
--- -- otherwise a leftover ".restoring"/".pre-restore" directory (itself a
--- full copy of the bottle, "drive_c" and all) would be picked up below as
--- if it were its own, bogus bottle.
+-- .restoreSnapshotLogic' (see 'recoverInterruptedRestores') -- otherwise a
+-- leftover ".restoring" directory (itself a full copy of the bottle,
+-- "drive_c" and all) would be picked up below as if it were its own,
+-- bogus bottle.
 listExistingBottles :: IO [Bottle]
 listExistingBottles = do
   base <- getBottlesBaseDir
@@ -169,7 +169,7 @@ checkNameValidity name
   | T.length name > 256 = NameTooLong
   | T.elem '/' name = ContainsSlash
   -- Reserved so a bottle name can never collide with the temporary
-  -- directories restoreSnapshotLogic's crash-safe restore uses (see
+  -- directory restoreSnapshotLogic's crash-safe restore uses (see
   -- Bottle.Logic.Snapshots.reservedNameSuffixes).
   | any (`isSuffixOf` T.unpack name) reservedNameSuffixes = ReservedSuffix
   | otherwise = Valid
@@ -180,7 +180,7 @@ explainNameValid status = case status of
   EmptyName      -> tr "The name cannot be empty."
   NameTooLong    -> tr "The name is too long (max 256 characters)."
   ContainsSlash  -> tr "The name cannot contain a slash ('/')."
-  ReservedSuffix -> tr "The name cannot end with \".restoring\" or \".pre-restore\" (reserved for snapshot restore)."
+  ReservedSuffix -> tr "The name cannot end with \".restoring\" (reserved for snapshot restore)."
 
 createBottleObject :: T.Text -> RunnerType -> IO Bottle
 createBottleObject name rType = do
