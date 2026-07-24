@@ -135,16 +135,31 @@ A private, non-exported stand-in type/parser for the old shape (see
 the public API, just present so `reads`/parsing can still recognize
 and salvage the old data.
 
-## 7. Look up dependency/library details via agent-lsp, not shell archaeology
+## 7. Use agent-lsp for code intelligence, not manual search or shell archaeology
 
-When you need to know whether a third-party Haskell package used by this
-project (gi-gtk4, gi-adwaita, ...) exposes a particular signal, method,
-or type - e.g. "does `Gtk.Popover` have a `closed` signal?" - use
-agent-lsp's `find_symbol` / `inspect_symbol` / `get_symbol_documentation`
-tools instead of grepping cabal store tarballs or hackage source dumps
-with shell commands. agent-lsp resolves against the full dependency
-closure already built by this project, so these lookups are direct tool
-calls rather than manual archive digging.
+This project's toolset includes agent-lsp, which indexes both this
+repository's own code and its full Haskell dependency closure (gi-gtk4,
+gi-adwaita, ...). Prefer its tools over `Grep`/`Read`-and-scan or shell
+commands for any code-intelligence question:
+
+- Finding a symbol, its definition, or a file's exports: `find_symbol` /
+  `list_symbols` instead of grepping for a name.
+- Finding usages/callers of a symbol, or the blast radius of a change
+  before editing an exported function: `find_references` /
+  `find_callers` / `blast_radius` instead of grepping for the name
+  across files.
+- Third-party package details - e.g. "does `Gtk.Popover` have a `closed`
+  signal?", "what's the exact type of `listBoxAppend`?" - `inspect_symbol`
+  / `get_symbol_documentation` instead of grepping cabal store tarballs
+  or hackage source dumps.
+
+For a single, targeted lookup like any of the above, call the tool
+directly instead of spawning a subagent to do it on your behalf - a
+subagent just makes the identical tool call one round trip later, with
+no benefit. Reserve subagents for genuinely multi-step research
+(correlating several files, walking a large caller graph, or anything
+whose verbose intermediate output is worth keeping out of the main
+conversation).
 
 ## Commit messages
 
