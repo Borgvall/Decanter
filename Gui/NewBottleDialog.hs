@@ -9,7 +9,6 @@ import Data.GI.Base
 import Control.Concurrent.Async (async)
 import Control.Exception (try)
 import Control.Monad (forM_, void)
-import Data.IORef
 import qualified Data.Text as T
 
 import Bottle.Types
@@ -53,10 +52,14 @@ validateName entryRow createBtn errorLabel = do
 -- which fires uniformly whether it was dismissed by an outside click,
 -- Escape, or an explicit 'Gtk.popoverPopdown' after a successful create.
 --
--- The runner picker is a flat list of clickable 'Adw.ActionRow's rather than
--- an 'Adw.ComboRow' -- an 'Adw.ComboRow's internal dropdown fights a
--- surrounding 'Gtk.Popover' for the pointer grab, so only its first entry
--- could ever be selected (see 'Gui.BottleView.buildRunnerPopover').
+-- The runner picker is a 'Gtk.ListBox' in 'Gtk.SelectionModeSingle' holding
+-- one 'Adw.ActionRow' per runner, rather than an 'Adw.ComboRow' -- an
+-- 'Adw.ComboRow's internal dropdown fights a surrounding 'Gtk.Popover' for
+-- the pointer grab, so only its first entry could ever be selected (see
+-- 'Gui.BottleView.buildRunnerPopover'). Using a plain 'Gtk.ListBox' instead
+-- of a flat list of individually clickable rows lets GTK itself track and
+-- render the current selection ('Gtk.listBoxGetSelectedRow'/'#selectRow'),
+-- instead of hand-rolled 'Data.IORef's mirroring that state.
 buildNewBottlePopover :: IO () -> IO Gtk.Popover
 buildNewBottlePopover refreshCallback = do
   popover <- new Gtk.Popover []
@@ -83,38 +86,33 @@ buildNewBottlePopover refreshCallback = do
     ]
   #append contentBox errorLabel
 
-  runnerGroup <- new Adw.PreferencesGroup [ #title := tr "Runner" ]
-  #append contentBox runnerGroup
+  runnerLabel <- new Gtk.Label
+    [ #label := tr "Runner"
+    , #halign := Gtk.AlignStart
+    , #cssClasses := ["heading"]
+    ]
+  #append contentBox runnerLabel
+
+  runnerListBox <- new Gtk.ListBox
+    [ #selectionMode := Gtk.SelectionModeSingle
+    , #cssClasses := ["boxed-list"]
+    ]
+  #append contentBox runnerListBox
 
   availableRunners <- getAvailableRunners
-  let defaultRunner = case availableRunners of
-        (r : _) -> r
-        [] -> SystemWine
-  selectedRunnerRef <- newIORef defaultRunner
-  runnerIconsRef <- newIORef ([] :: [(RunnerType, Gtk.Image)])
 
   forM_ availableRunners $ \runnerType -> do
     displayName <- getRunnerTypeDisplayName runnerType
     row <- new Adw.ActionRow
       [ #title := displayName
       , #subtitle := runnerTypeToString runnerType
-      , #activatable := True
       ]
+    #append runnerListBox row
 
-    icon <- new Gtk.Image
-      [ #iconName := "object-select-symbolic"
-      , #cssClasses := ["dim-label"]
-      , #visible := (runnerType == defaultRunner)
-      ]
-    #addSuffix row icon
-    #add runnerGroup row
-
-    modifyIORef' runnerIconsRef ((runnerType, icon) :)
-
-    void $ on row #activated $ do
-      writeIORef selectedRunnerRef runnerType
-      icons <- readIORef runnerIconsRef
-      forM_ icons $ \(rt, ic) -> #setVisible ic (rt == runnerType)
+  -- Default to the first runner, mirroring the previous ComboRow's default
+  -- (index 0).
+  defaultRow <- #getRowAtIndex runnerListBox 0
+  #selectRow runnerListBox defaultRow
 
   statusLabel <- new Gtk.Label [ #label := "", #visible := False ]
 
@@ -134,7 +132,12 @@ buildNewBottlePopover refreshCallback = do
     #setLabel statusLabel (tr "Creating prefix (this may take a while)...")
     #setVisible statusLabel True
 
-    selectedRunner <- readIORef selectedRunnerRef
+    mSelectedRow <- #getSelectedRow runnerListBox
+    selectedRunner <- case mSelectedRow of
+      Nothing -> pure SystemWine
+      Just row -> do
+        idx <- #getIndex row
+        pure (availableRunners !! fromIntegral idx)
 
     void $ async $ do
       bottleObj <- createBottleObject nameText selectedRunner
@@ -162,9 +165,7 @@ buildNewBottlePopover refreshCallback = do
     #setText nameEntry ""
     #setVisible statusLabel False
     #setLabel statusLabel ""
-    writeIORef selectedRunnerRef defaultRunner
-    icons <- readIORef runnerIconsRef
-    forM_ icons $ \(rt, ic) -> #setVisible ic (rt == defaultRunner)
+    #selectRow runnerListBox defaultRow
     validateName nameEntry createBtn errorLabel
 
   pure popover
