@@ -135,6 +135,17 @@ A private, non-exported stand-in type/parser for the old shape (see
 the public API, just present so `reads`/parsing can still recognize
 and salvage the old data.
 
+## 7. Look up dependency/library details via agent-lsp, not shell archaeology
+
+When you need to know whether a third-party Haskell package used by this
+project (gi-gtk4, gi-adwaita, ...) exposes a particular signal, method,
+or type - e.g. "does `Gtk.Popover` have a `closed` signal?" - use
+agent-lsp's `find_symbol` / `inspect_symbol` / `get_symbol_documentation`
+tools instead of grepping cabal store tarballs or hackage source dumps
+with shell commands. agent-lsp resolves against the full dependency
+closure already built by this project, so these lookups are direct tool
+calls rather than manual archive digging.
+
 ## Commit messages
 
 The author of an AI commit shall be the used LLM name and version e.g. Opus
