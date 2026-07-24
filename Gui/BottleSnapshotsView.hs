@@ -5,6 +5,8 @@ module Gui.BottleSnapshotsView where
 import qualified GI.Gtk as Gtk
 import qualified GI.Adw as Adw
 import qualified GI.GLib as GLib
+import qualified GI.Gio as Gio
+import GI.Gio.Callbacks (AsyncReadyCallback)
 import Data.GI.Base
 import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
@@ -57,6 +59,69 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
   void $ on createBtn #clicked doCreate >> on nameEntry #entryActivated doCreate
   #setChild popover (Just contentBox) >> #popup popover
 
+-- | Confirms before restoring a snapshot, since this overwrites the
+-- bottle's current filesystem state and cannot be undone (short of
+-- restoring yet another snapshot) -- the same destructive-action
+-- confirmation pattern as 'Gui.BottleView.showDeleteConfirmationDialog'.
+showRestoreSnapshotConfirmationDialog :: Gtk.Window -> Bottle -> BottleSnapshot -> (Text -> IO ()) -> IO () -> IO ()
+showRestoreSnapshotConfirmationDialog parent bottle snap showError onSuccess = do
+  let fullMessage = T.concat
+        [ tr "Are you sure you want to restore the snapshot '"
+        , snapshotName snap
+        , tr "'?"
+        ]
+  let detail = tr "This overwrites the bottle's current state with this snapshot -- any changes made since it was taken will be lost. This cannot be undone."
+  dialog <- new Gtk.AlertDialog
+    [ #message := fullMessage
+    , #detail := detail
+    , #buttons := [ tr "Cancel", tr "Restore" ]
+    ]
+  let handleResult :: AsyncReadyCallback
+      handleResult _dialog result = do
+        buttonIndex <- Gtk.alertDialogChooseFinish dialog result
+        when (buttonIndex == 1) $ do
+          void $ async $ do
+            res <- try (restoreSnapshotLogic bottle snap) :: IO (Either SomeException ())
+            GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+              case res of
+                Right _ -> onSuccess
+                Left err -> showError $ tr "Failed to restore snapshot: " <> T.pack (show err)
+              return False
+
+  -- Explicit type annotation to disambiguate Nothing
+  Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleResult)
+
+-- | Confirms before deleting a snapshot, since a deleted snapshot cannot
+-- be recovered afterwards -- same pattern as
+-- 'showRestoreSnapshotConfirmationDialog'.
+showDeleteSnapshotConfirmationDialog :: Gtk.Window -> BottleSnapshot -> (Text -> IO ()) -> IO () -> IO ()
+showDeleteSnapshotConfirmationDialog parent snap showError onSuccess = do
+  let fullMessage = T.concat
+        [ tr "Are you sure you want to delete the snapshot '"
+        , snapshotName snap
+        , tr "'?"
+        ]
+  let detail = tr "This snapshot cannot be recovered afterwards."
+  dialog <- new Gtk.AlertDialog
+    [ #message := fullMessage
+    , #detail := detail
+    , #buttons := [ tr "Cancel", tr "Delete" ]
+    ]
+  let handleResult :: AsyncReadyCallback
+      handleResult _dialog result = do
+        buttonIndex <- Gtk.alertDialogChooseFinish dialog result
+        when (buttonIndex == 1) $ do
+          void $ async $ do
+            res <- try (deleteSnapshotLogic snap) :: IO (Either SomeException ())
+            GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+              case res of
+                Right _ -> onSuccess
+                Left err -> showError $ tr "Failed to delete snapshot: " <> T.pack (show err)
+              return False
+
+  -- Explicit type annotation to disambiguate Nothing
+  Gtk.alertDialogChoose dialog (Just parent) (Nothing :: Maybe Gio.Cancellable) (Just handleResult)
+
 createMenuBtn :: Text -> Text -> [Text] -> IO Gtk.Button
 createMenuBtn labelText iconName cssClassesList = do
     btn <- new Gtk.Button [ #cssClasses := cssClassesList, #halign := Gtk.AlignFill ]
@@ -77,7 +142,7 @@ createMenuBtn labelText iconName cssClassesList = do
 -- display) reflects the restored filesystem state, instead of just
 -- switching back to the old, unchanged view.
 buildSnapshotView :: Gtk.Window -> Bottle -> Gtk.Stack -> (Text -> IO ()) -> IO () -> IO Gtk.Widget
-buildSnapshotView _window bottle stack showError reloadDetailView = do
+buildSnapshotView window bottle stack showError reloadDetailView = do
 
   -- Adw.ToolbarView instead of Gtk.Box, for consistency with the other views
   toolbarView <- new Adw.ToolbarView []
@@ -143,25 +208,13 @@ buildSnapshotView _window bottle stack showError reloadDetailView = do
                restoreBtn <- createMenuBtn (tr "Restore Bottle") "document-revert-symbolic" ["destructive-action"]
                void $ on restoreBtn #clicked $ do
                    #popdown popover
-                   void $ async $ do
-                       res <- try (restoreSnapshotLogic bottle s) :: IO (Either SomeException ())
-                       GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
-                           case res of
-                               Right _ -> reloadDetailView
-                               Left err -> showError $ tr "Failed to restore snapshot: " <> T.pack (show err)
-                           return False
+                   showRestoreSnapshotConfirmationDialog window bottle s showError reloadDetailView
                #append popBox restoreBtn
-               
+
                deleteBtn <- createMenuBtn (tr "Delete Snapshot") "user-trash-symbolic" ["destructive-action"]
                void $ on deleteBtn #clicked $ do
                    #popdown popover
-                   void $ async $ do
-                       res <- try (deleteSnapshotLogic s) :: IO (Either SomeException ())
-                       GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
-                           case res of
-                               Right _ -> refreshList
-                               Left err -> showError $ tr "Failed to delete snapshot: " <> T.pack (show err)
-                           return False
+                   showDeleteSnapshotConfirmationDialog window s showError refreshList
                #append popBox deleteBtn
                
                #setChild popover (Just popBox)
