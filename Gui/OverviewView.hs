@@ -12,7 +12,7 @@ import Bottle.Types
 import Bottle.Logic (listExistingBottles)
 import Logic.Translation (tr)
 import Gui.BottleView (buildBottleView, replaceStackChild)
-import Gui.NewBottleDialog (showNewBottleDialog)
+import Gui.NewBottleDialog (buildNewBottlePopover)
 
 -- | Switches the stack to the detail view of the given bottle (building it
 -- if needed). Used both from the overview page (clicking a row) and on CLI
@@ -37,7 +37,7 @@ buildOverviewPage window stack showError = do
   titleWidget <- new Adw.WindowTitle [ #title := "Decanter", #subtitle := tr "Library" ]
   #setTitleWidget header (Just titleWidget)
 
-  addBtn <- new Gtk.Button [ #iconName := "list-add-symbolic", #tooltipText := tr "Create new Bottle" ]
+  addBtn <- new Gtk.MenuButton [ #iconName := "list-add-symbolic", #tooltipText := tr "Create new Bottle" ]
   #packEnd header addBtn
 
   #addTopBar toolbarView header
@@ -80,7 +80,8 @@ buildOverviewPage window stack showError = do
 
                #append listBox row
 
-  void $ on addBtn #clicked $ showNewBottleDialog window refreshAction
+  newBottlePopover <- buildNewBottlePopover refreshAction
+  #setPopover addBtn (Just newBottlePopover)
 
   -- Cast needed since ToolbarView is a Widget, not returned as one directly
   widget <- Gtk.toWidget toolbarView

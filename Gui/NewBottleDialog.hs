@@ -8,7 +8,8 @@ import qualified GI.GLib as GLib
 import Data.GI.Base
 import Control.Concurrent.Async (async)
 import Control.Exception (try)
-import Control.Monad (void)
+import Control.Monad (forM_, void)
+import Data.IORef
 import qualified Data.Text as T
 
 import Bottle.Types
@@ -43,35 +44,34 @@ validateName entryRow createBtn errorLabel = do
       #setLabel errorLabel errorMsg
       #setVisible errorLabel True
 
--- | Dialog for creating a new bottle.
--- Kept in Main for now, since it's triggered by the HeaderBar.
-showNewBottleDialog :: Gtk.Window -> IO () -> IO ()
-showNewBottleDialog parent refreshCallback = do
-  dialog <- new Gtk.Window
-    [ #transientFor := parent
-    , #modal := True
-    , #title := tr "New Bottle"
-    , #defaultWidth := 400
-    , #resizable := False
+-- | Builds the "New Bottle" popover, meant to be attached to a
+-- 'Gtk.MenuButton' via 'Gtk.setMenuButtonPopover' (see
+-- 'Gui.OverviewView.buildOverviewPage'). Built once per view, like
+-- 'Gui.BottleView.buildRunnerPopover' -- its form state (name entry, runner
+-- selection, error/status labels) is reset on the popover's "closed" signal,
+-- which fires uniformly whether it was dismissed by an outside click,
+-- Escape, or an explicit 'Gtk.popoverPopdown' after a successful create.
+--
+-- The runner picker is a flat list of clickable 'Adw.ActionRow's rather than
+-- an 'Adw.ComboRow' -- an 'Adw.ComboRow's internal dropdown fights a
+-- surrounding 'Gtk.Popover' for the pointer grab, so only its first entry
+-- could ever be selected (see 'Gui.BottleView.buildRunnerPopover').
+buildNewBottlePopover :: IO () -> IO Gtk.Popover
+buildNewBottlePopover refreshCallback = do
+  popover <- new Gtk.Popover []
+
+  contentBox <- new Gtk.Box
+    [ #orientation := Gtk.OrientationVertical
+    , #spacing := 12
+    , #marginTop := 12, #marginBottom := 12, #marginStart := 12, #marginEnd := 12
+    , #widthRequest := 320
     ]
-  
-  contentBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 20, #marginTop := 20, #marginBottom := 20, #marginStart := 20, #marginEnd := 20 ]
-  
-  group <- new Adw.PreferencesGroup []
-  
+  #setChild popover (Just contentBox)
+
+  nameGroup <- new Adw.PreferencesGroup []
   nameEntry <- new Adw.EntryRow [ #title := tr "Name" ]
-  #add group nameEntry
-
-  runnerRow <- new Adw.ComboRow [ #title := tr "Runner" ]
-  availableRunners <- getAvailableRunners
-
-  runnerStrings <- mapM getRunnerTypeDisplayName availableRunners
-  runnerModel <- Gtk.stringListNew (Just runnerStrings)
-
-  #setModel runnerRow (Just runnerModel)
-  #add group runnerRow
-
-  #append contentBox group
+  #add nameGroup nameEntry
+  #append contentBox nameGroup
 
   errorLabel <- new Gtk.Label
     [ #label := ""
@@ -79,20 +79,43 @@ showNewBottleDialog parent refreshCallback = do
     , #vexpand := False
     , #visible := False
     , #cssClasses := [T.pack "error"]
-    , #marginStart := 20 
-    , #marginEnd := 20
-    , #marginBottom := 10
     ]
   #append contentBox errorLabel
-  
-  btnBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10, #halign := Gtk.AlignEnd ]
-  
-  cancelBtn <- new Gtk.Button [ #label := tr "Cancel" ]
-  void $ on cancelBtn #clicked $ #close dialog
-  
-  createBtn <- new Gtk.Button [ #label := tr "Create", #cssClasses := ["suggested-action"] ]
-  
+
+  runnerGroup <- new Adw.PreferencesGroup [ #title := tr "Runner" ]
+  #append contentBox runnerGroup
+
+  availableRunners <- getAvailableRunners
+  let defaultRunner = case availableRunners of
+        (r : _) -> r
+        [] -> SystemWine
+  selectedRunnerRef <- newIORef defaultRunner
+  runnerIconsRef <- newIORef ([] :: [(RunnerType, Gtk.Image)])
+
+  forM_ availableRunners $ \runnerType -> do
+    displayName <- getRunnerTypeDisplayName runnerType
+    row <- new Adw.ActionRow [ #title := displayName, #activatable := True ]
+
+    icon <- new Gtk.Image
+      [ #iconName := "object-select-symbolic"
+      , #cssClasses := ["dim-label"]
+      , #visible := (runnerType == defaultRunner)
+      ]
+    #addSuffix row icon
+    #add runnerGroup row
+
+    modifyIORef' runnerIconsRef ((runnerType, icon) :)
+
+    void $ on row #activated $ do
+      writeIORef selectedRunnerRef runnerType
+      icons <- readIORef runnerIconsRef
+      forM_ icons $ \(rt, ic) -> #setVisible ic (rt == runnerType)
+
   statusLabel <- new Gtk.Label [ #label := "", #visible := False ]
+
+  btnBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10, #halign := Gtk.AlignEnd ]
+
+  createBtn <- new Gtk.Button [ #label := tr "Create", #cssClasses := ["suggested-action"] ]
 
   validateName nameEntry createBtn errorLabel
 
@@ -101,35 +124,42 @@ showNewBottleDialog parent refreshCallback = do
 
   void $ on createBtn #clicked $ do
     nameText <- #getText nameEntry
-    
+
     #setSensitive createBtn False
     #setLabel statusLabel (tr "Creating prefix (this may take a while)...")
     #setVisible statusLabel True
-    
-    selectedRunnerIdx <- #getSelected runnerRow
-    let selectedRunner = if fromIntegral selectedRunnerIdx < length availableRunners
-                         then availableRunners !! fromIntegral selectedRunnerIdx
-                         else SystemWine
+
+    selectedRunner <- readIORef selectedRunnerRef
 
     void $ async $ do
       bottleObj <- createBottleObject nameText selectedRunner
       res <- try (createBottleLogic bottleObj) :: IO (Either IOError ())
-      
+
       GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
          case res of
            Right _ -> do
-             #close dialog
-             refreshCallback 
+             #popdown popover
+             refreshCallback
            Left err -> do
              #setLabel statusLabel (T.pack $ "Error: " ++ show err)
              #setSensitive createBtn True
          return False
 
-  #append btnBox cancelBtn
   #append btnBox createBtn
-  
+
   #append contentBox statusLabel
   #append contentBox btnBox
-  
-  #setChild dialog (Just contentBox)
-  #present dialog
+
+  -- Reset the form whenever the popover is dismissed, so the next time it
+  -- opens it starts from a clean slate instead of showing the previous
+  -- attempt's leftover name, error, or status text.
+  void $ on popover #closed $ do
+    #setText nameEntry ""
+    #setVisible statusLabel False
+    #setLabel statusLabel ""
+    writeIORef selectedRunnerRef defaultRunner
+    icons <- readIORef runnerIconsRef
+    forM_ icons $ \(rt, ic) -> #setVisible ic (rt == defaultRunner)
+    validateName nameEntry createBtn errorLabel
+
+  pure popover
