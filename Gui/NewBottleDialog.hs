@@ -21,6 +21,7 @@ import Bottle.Logic
   , createBottleLogic
   )
 import Bottle.Logic.Runner (getAvailableRunners, getRunnerTypeDisplayName)
+import Gui.BottleView (runnerTypeToString)
 import Logic.Translation (tr)
 
 -- | Validates the name and updates the UI status accordingly.
@@ -94,7 +95,11 @@ buildNewBottlePopover refreshCallback = do
 
   forM_ availableRunners $ \runnerType -> do
     displayName <- getRunnerTypeDisplayName runnerType
-    row <- new Adw.ActionRow [ #title := displayName, #activatable := True ]
+    row <- new Adw.ActionRow
+      [ #title := displayName
+      , #subtitle := runnerTypeToString runnerType
+      , #activatable := True
+      ]
 
     icon <- new Gtk.Image
       [ #iconName := "object-select-symbolic"
