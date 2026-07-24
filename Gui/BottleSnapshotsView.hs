@@ -7,6 +7,7 @@ import qualified GI.Adw as Adw
 import qualified GI.GLib as GLib
 import qualified GI.Gio as Gio
 import GI.Gio.Callbacks (AsyncReadyCallback)
+import qualified GI.Gdk as Gdk
 import Data.GI.Base
 import Control.Concurrent.Async (async)
 import Control.Exception (try, SomeException)
@@ -150,16 +151,25 @@ buildSnapshotView window bottle stack showError reloadDetailView = do
   header <- new Adw.HeaderBar []
   
   backBtn <- new Gtk.Button [ #iconName := "go-previous-symbolic" ]
-  void $ on backBtn #clicked $ do
-      let detailViewName = "detail_" <> bottleName bottle
-      #setVisibleChildName stack detailViewName
+  let goBack = #setVisibleChildName stack ("detail_" <> bottleName bottle)
+  void $ on backBtn #clicked goBack
   #packStart header backBtn
-  
+
   title <- new Adw.WindowTitle [ #title := tr "Snapshots", #subtitle := bottleName bottle ]
   #setTitleWidget header (Just title)
-  
+
   addBtn <- new Gtk.Button [ #iconName := "list-add-symbolic", #cssClasses := ["suggested-action"] ]
   #packEnd header addBtn
+
+  -- Escape or Alt+Left also navigates back, matching the GNOME/browser
+  -- convention for "go back" -- see Gui.BottleView.buildBottleView, which
+  -- adds the same shortcut for the bottle detail view.
+  keyController <- new Gtk.EventControllerKey []
+  void $ on keyController #keyPressed $ \keyval _keycode modifiers ->
+    if keyval == Gdk.KEY_Escape || (keyval == Gdk.KEY_Left && Gdk.ModifierTypeAltMask `elem` modifiers)
+      then goBack >> pure True
+      else pure False
+  #addController toolbarView keyController
   
   #addTopBar toolbarView header
 

@@ -322,13 +322,24 @@ buildBottleView window bottle stack showError refreshCallback = do
   header <- new Adw.HeaderBar []
 
   backBtn <- new Gtk.Button [ #iconName := "go-previous-symbolic", #tooltipText := tr "Back to Library" ]
-  void $ on backBtn #clicked $ #setVisibleChildName stack "overview"
+  let goBack = #setVisibleChildName stack "overview"
+  void $ on backBtn #clicked goBack
   #packStart header backBtn
-  
+
   winTitle <- new Adw.WindowTitle [ #title := bottleName bottle, #subtitle := tr "Bottle Details" ]
   #setTitleWidget header (Just winTitle)
-  
+
   #addTopBar toolbarView header
+
+  -- Escape or Alt+Left also navigates back, matching the GNOME/browser
+  -- convention for "go back" -- attached to the view's own root widget so it
+  -- only fires while this stack page actually holds keyboard focus.
+  keyController <- new Gtk.EventControllerKey []
+  void $ on keyController #keyPressed $ \keyval _keycode modifiers ->
+    if keyval == Gdk.KEY_Escape || (keyval == Gdk.KEY_Left && Gdk.ModifierTypeAltMask `elem` modifiers)
+      then goBack >> pure True
+      else pure False
+  #addController toolbarView keyController
 
   scrolledWindow <- new Gtk.ScrolledWindow
     [ #hscrollbarPolicy := Gtk.PolicyTypeNever
