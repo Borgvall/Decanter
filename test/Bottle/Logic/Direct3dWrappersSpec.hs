@@ -4,7 +4,8 @@ module Bottle.Logic.Direct3dWrappersSpec (spec) where
 
 import Test.Hspec
 import Bottle.Logic.Direct3dWrappers
-import Bottle.Logic (createBottleObject, createBottleLogic, deleteBottleLogic)
+import Bottle.Logic (createBottleObject)
+import Bottle.Logic.TestSupport (withTestBottle)
 import Bottle.Logic.Runner (getAvailableRunners)
 import Bottle.Types
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, pathIsSymbolicLink, removeFile, createFileLink)
@@ -91,9 +92,7 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
           bottle <- createBottleObject "Direct3dWrapperTestBottle" SystemWine
-          createBottleLogic bottle
-
-          (do
+          withTestBottle bottle $ \_ -> do
             originalDxgi <- BS.readFile (system32Dll bottle "dxgi.dll")
             originalD3d12 <- BS.readFile (system32Dll bottle "d3d12.dll")
 
@@ -119,7 +118,6 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
             restoredD3d12 <- BS.readFile (system32Dll bottle "d3d12.dll")
             restoredDxgi `shouldBe` originalDxgi
             restoredD3d12 `shouldBe` originalD3d12
-            ) `finally` deleteBottleLogic bottle
 
   describe "getDirect3DWrapperHealth / repairDirect3DWrapperState" $
     it "detects an outdated/dangling symlink and repairs it back to valid" $ withTestEnvironment $ do
@@ -132,9 +130,7 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
           bottle <- createBottleObject "Direct3dWrapperHealthTestBottle" SystemWine
-          createBottleLogic bottle
-
-          (do
+          withTestBottle bottle $ \_ -> do
             setDirect3DWrapperState bottle DxvkAndVkd3dProton
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperValid
             getDirect3DWrapperStatus bottle `shouldReturn` WrapperManaged WrapperValid
@@ -165,7 +161,6 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperValid
             isBottleReadyForWindowsApps bottle `shouldReturn` True
             assertDirect3DWrapperState bottle DxvkAndVkd3dProton
-            ) `finally` deleteBottleLogic bottle
 
   describe "getDirect3DWrapperStatus / isBottleReadyForWindowsApps" $
     it "reports a Proton bottle as unmanaged and always ready" $ withTestEnvironment $ do

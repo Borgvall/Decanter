@@ -4,7 +4,8 @@ module Bottle.Logic.ProcessSpec (spec) where
 
 import Test.Hspec
 import Bottle.Logic.Process
-import Bottle.Logic (createBottleObject, createBottleLogic, deleteBottleLogic)
+import Bottle.Logic (createBottleObject)
+import Bottle.Logic.TestSupport (withTestBottle)
 import Bottle.Logic.Runner (getAvailableRunners)
 import Bottle.Logic.Programs (runCmd)
 import Bottle.Logic.Direct3dWrappers (Direct3DWrapperState(..), setDirect3DWrapperState)
@@ -14,7 +15,7 @@ import System.FilePath ((</>))
 import System.Environment (setEnv, unsetEnv, lookupEnv)
 import qualified System.Process.Typed as PT
 import System.Exit (ExitCode(..))
-import Control.Exception (finally, try, SomeException)
+import Control.Exception (finally)
 import Control.Concurrent (threadDelay)
 import Data.List (isInfixOf, partition)
 
@@ -74,16 +75,6 @@ pingMarker = "ping -n 240 127.0.0.1"
 startLongRunningPing :: Bottle -> IO ()
 startLongRunningPing bottle = runCmd bottle "wine" ["cmd.exe", "/c", pingMarker]
 
--- | Runs "assertions", then always kills any leftover processes and deletes
--- "bottle" -- even if an assertion above failed -- so a failing test doesn't
--- leave a Windows process running in the background for the rest of the
--- suite, or a stale bottle blocking the next run.
-withBottleCleanup :: Bottle -> IO () -> IO ()
-withBottleCleanup bottle assertions =
-  assertions `finally` do
-    _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
-    deleteBottleLogic bottle
-
 spec :: Spec
 spec = describe "Bottle.Logic.Process" $ do
 
@@ -127,9 +118,7 @@ spec = describe "Bottle.Logic.Process" $ do
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
           bottle <- createBottleObject "WineDllOverridesTestBottle" SystemWine
-          createBottleLogic bottle
-
-          (do
+          withTestBottle bottle $ \_ -> do
             freshEnv <- getMergedWineEnv bottle
             lookup "WINEDLLOVERRIDES" freshEnv `shouldBe` Just "winemenubuilder.exe="
 
@@ -144,7 +133,6 @@ spec = describe "Bottle.Logic.Process" $ do
             setDirect3DWrapperState bottle WineD3D
             resetEnv <- getMergedWineEnv bottle
             lookup "WINEDLLOVERRIDES" resetEnv `shouldBe` Just "winemenubuilder.exe="
-            ) `finally` deleteBottleLogic bottle
 
   describe "extractAppIcon" $ do
     it "returns False and creates no file for a non-existent .lnk path" $ withTestEnvironment $ do
@@ -183,10 +171,9 @@ spec = describe "Bottle.Logic.Process" $ do
         False -> pendingWith "No system Wine installation found in this environment; not testable here."
         True -> do
           let bottle = Bottle "SystemWineKillTestBottle" "/tmp/decanter-test-systemwine-kill-prefix" SystemWine
-          createBottleLogic bottle
-          startLongRunningPing bottle
+          withTestBottle bottle $ \_ -> do
+            startLongRunningPing bottle
 
-          withBottleCleanup bottle $ do
             started <- waitUntil 30 (isProcessRunning pingMarker)
             started `shouldBe` True
 
@@ -205,10 +192,9 @@ spec = describe "Bottle.Logic.Process" $ do
       case (maybeUmuRun, dwprotonPaths ++ otherProtonPaths) of
         (Just _, protonPath : _) -> do
           bottle <- createBottleObject "ProtonKillTestBottle" (Proton protonPath)
-          createBottleLogic bottle
-          startLongRunningPing bottle
+          withTestBottle bottle $ \_ -> do
+            startLongRunningPing bottle
 
-          withBottleCleanup bottle $ do
             -- A fresh pressure-vessel container takes a while to boot,
             -- so poll generously before giving up.
             started <- waitUntil 120 (not . null <$> findBottleScopes bottle)

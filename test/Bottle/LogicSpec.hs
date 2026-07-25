@@ -14,6 +14,7 @@ import System.Directory
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import Control.Exception (finally)
+import Bottle.Logic.TestSupport (withTestBottle)
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 
 -- | Sets up an isolated test environment
@@ -142,17 +143,14 @@ spec = do
         let name = "ProtonConfigTest"
         bottle <- createBottleObject name (Proton "/Test/Path")
 
-        createBottleLogic bottle -- writes the config
+        withTestBottle bottle $ \_ -> do -- createBottleLogic writes the config
+          bottles <- listExistingBottles -- loads the config
+          let loadedBottles = filter (\b -> bottleName b == name) bottles
 
-        bottles <- listExistingBottles -- loads the config
-        let loadedBottles = filter (\b -> bottleName b == name) bottles
-
-        -- Check that the runner is still Proton
-        case loadedBottles of
-          [loaded] -> runner loaded `shouldBe` runner bottle
-          _ -> expectationFailure $ "Expecting exactly one bottle, got: " ++ show loadedBottles
-
-        deleteBottleLogic bottle
+          -- Check that the runner is still Proton
+          case loadedBottles of
+            [loaded] -> runner loaded `shouldBe` runner bottle
+            _ -> expectationFailure $ "Expecting exactly one bottle, got: " ++ show loadedBottles
 
       -- Config-file-format-specific coverage (legacy formats, persisted-
       -- Proton-by-name resolution, ...) lives in Bottle.Logic.ConfigSpec
