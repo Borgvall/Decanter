@@ -229,15 +229,9 @@ createBottleLogic bottle@Bottle{..} = do
       -- was just freshly chosen from 'createBottleObject' (fed by currently
       -- available runners), never loaded from a config file. Handled only
       -- for exhaustiveness, per Bottle.Types.RunnerMissingError.
-      let bootCmd = case runner of
-            SystemWine        -> "wineboot"
-            Proton _          -> "umu-run"
-            MissingSystemWine -> throw (RunnerMissingError runner)
-            MissingProton _   -> throw (RunnerMissingError runner)
-
-      let bootArgs = case runner of
-            SystemWine        -> ["-u"]
-            Proton _          -> ["wineboot", "-u"]
+      let (bootCmd, bootArgs) = case runner of
+            SystemWine        -> ("wineboot", ["-u"])
+            Proton _          -> ("umu-run", ["wineboot", "-u"])
             MissingSystemWine -> throw (RunnerMissingError runner)
             MissingProton _   -> throw (RunnerMissingError runner)
 

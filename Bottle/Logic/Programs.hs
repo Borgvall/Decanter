@@ -84,8 +84,11 @@ runExecutable bottle filePath = do
 runFileWithStart :: Bottle -> FilePath -> IO ()
 runFileWithStart bottle path = runCmd bottle "wine" ["start", "/unix", path]
 
+-- | Runs a Windows start-menu shortcut (".lnk"). Same as 'runFileWithStart'
+-- -- kept as its own name for readability at call sites that specifically
+-- launch a start-menu entry, rather than an arbitrary file.
 runWindowsLnk :: Bottle -> FilePath -> IO ()
-runWindowsLnk bottle lnkPath = runCmd bottle "wine" ["start", "/unix", lnkPath]
+runWindowsLnk = runFileWithStart
 
 findWineStartMenuLnks :: Bottle -> IO [FilePath]
 findWineStartMenuLnks Bottle{..} = do

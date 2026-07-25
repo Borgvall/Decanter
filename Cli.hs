@@ -122,19 +122,26 @@ bottleNotFound name = do
   hPutStrLn stderr $ "Bottle not found: " ++ T.unpack name
   exitFailure
 
+-- | Looks up "name" among the existing bottles and runs "action" on it,
+-- or bails with 'bottleNotFound'. Shared by 'runListApps', 'runStart' and
+-- 'runOpen' so the lookup-or-fail scaffolding isn't repeated at each call
+-- site.
+withBottle :: Text -> (Bottle -> IO ()) -> IO ()
+withBottle name withFoundBottle = do
+  bottles <- listExistingBottles
+  case findBottleByName name bottles of
+    Nothing     -> bottleNotFound name
+    Just bottle -> withFoundBottle bottle
+
 runListBottles :: IO ()
 runListBottles = do
   bottles <- listExistingBottles
   mapM_ (TIO.putStrLn . bottleName) (sortOn bottleName bottles)
 
 runListApps :: Text -> IO ()
-runListApps name = do
-  bottles <- listExistingBottles
-  case findBottleByName name bottles of
-    Nothing -> bottleNotFound name
-    Just bottle -> do
-      lnkPaths <- findWineStartMenuLnks bottle
-      mapM_ TIO.putStrLn (sortOn id (map (T.pack . takeBaseName) lnkPaths))
+runListApps name = withBottle name $ \bottle -> do
+  lnkPaths <- findWineStartMenuLnks bottle
+  mapM_ TIO.putStrLn (sortOn id (map (T.pack . takeBaseName) lnkPaths))
 
 -- | Aborts with 'explainBlockReason' if "bottle" currently can't run
 -- Windows programs (see 'Bottle.Logic.blockReason') -- shared by 'runStart'
@@ -151,29 +158,21 @@ abortIfBlocked bottle = do
       exitFailure
 
 runStart :: Text -> Text -> IO ()
-runStart bottleNm appNm = do
-  bottles <- listExistingBottles
-  case findBottleByName bottleNm bottles of
-    Nothing -> bottleNotFound bottleNm
-    Just bottle -> do
-      abortIfBlocked bottle
-      lnkPaths <- findWineStartMenuLnks bottle
-      case findAppLnkByName appNm lnkPaths of
-        Nothing -> do
-          hPutStrLn stderr $ "Application not found in bottle '" ++ T.unpack bottleNm ++ "': " ++ T.unpack appNm
-          exitFailure
-        Just lnkPath -> runWindowsLnk bottle lnkPath
+runStart bottleNm appNm = withBottle bottleNm $ \bottle -> do
+  abortIfBlocked bottle
+  lnkPaths <- findWineStartMenuLnks bottle
+  case findAppLnkByName appNm lnkPaths of
+    Nothing -> do
+      hPutStrLn stderr $ "Application not found in bottle '" ++ T.unpack bottleNm ++ "': " ++ T.unpack appNm
+      exitFailure
+    Just lnkPath -> runWindowsLnk bottle lnkPath
 
 runOpen :: Text -> FilePath -> IO ()
-runOpen bottleNm filePath = do
-  bottles <- listExistingBottles
-  case findBottleByName bottleNm bottles of
-    Nothing -> bottleNotFound bottleNm
-    Just bottle -> do
-      abortIfBlocked bottle
-      exists <- doesFileExist filePath
-      if exists
-        then runFileWithStart bottle filePath
-        else do
-          hPutStrLn stderr $ "File not found: " ++ filePath
-          exitFailure
+runOpen bottleNm filePath = withBottle bottleNm $ \bottle -> do
+  abortIfBlocked bottle
+  exists <- doesFileExist filePath
+  if exists
+    then runFileWithStart bottle filePath
+    else do
+      hPutStrLn stderr $ "File not found: " ++ filePath
+      exitFailure

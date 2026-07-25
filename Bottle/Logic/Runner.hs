@@ -85,6 +85,18 @@ findCompatibilityToolsIn dir = do
           pure (T.unpack name, fullPath)
           ) toolDirs
 
+-- | The "display_name" from a compatibility tool's "compatibilitytool.vdf"
+-- at "path", or "" if the file is missing or has no "display_name". Shared
+-- by 'compatibilityToolName' and 'getRunnerTypeDisplayName', which each
+-- apply their own fallback for the empty case.
+readVdfDisplayName :: FilePath -> IO T.Text
+readVdfDisplayName path = do
+  let vdfPath = path </> "compatibilitytool.vdf"
+  exists <- doesFileExist vdfPath
+  if exists
+    then extractDisplayName . T.pack <$> readFile vdfPath
+    else pure ""
+
 -- | The name identifying a compatibility tool at the given path: the
 -- "display_name" from its "compatibilitytool.vdf" (the same string already
 -- shown in the runner-selection UI, see 'getRunnerTypeDisplayName'), falling
@@ -95,11 +107,7 @@ findCompatibilityToolsIn dir = do
 -- name their directory the same as the tool.
 compatibilityToolName :: FilePath -> IO T.Text
 compatibilityToolName path = do
-  let vdfPath = path </> "compatibilitytool.vdf"
-  exists <- doesFileExist vdfPath
-  name <- if exists
-            then extractDisplayName . T.pack <$> readFile vdfPath
-            else pure ""
+  name <- readVdfDisplayName path
   pure $ if T.null name then T.pack (takeBaseName path) else name
 
 -- | Every currently available compatibility tool's (name, path), already
@@ -143,18 +151,16 @@ getRunnerTypeDisplayName SystemWine = do
         _           -> return "System Wine (Unknown Version)"
 
 getRunnerTypeDisplayName (Proton path) = do
-    let vdfPath = path </> "compatibilitytool.vdf"
-    exists <- doesFileExist vdfPath
-    if exists
-        then do
-            content <- readFile vdfPath
-            let name = extractDisplayName (T.pack content)
-            if T.null name
-                then return $ "Proton (" <> T.pack (takeBaseName path) <> ")" -- Fallback
-                else return name
-        else return $ "Proton (" <> T.pack (takeBaseName path) <> ")"
+    name <- readVdfDisplayName path
+    pure $ if T.null name then protonFallbackName path else name
 
 getRunnerTypeDisplayName MissingSystemWine = pure $ tr "System Wine" <> " - " <> tr "not found"
 
 getRunnerTypeDisplayName (MissingProton path) =
-    pure $ "Proton (" <> T.pack (takeBaseName path) <> ")" <> " - " <> tr "not found"
+    pure $ protonFallbackName path <> " - " <> tr "not found"
+
+-- | Display name for a Proton build whose "compatibilitytool.vdf" has no
+-- (usable) "display_name" -- its directory's basename instead, e.g.
+-- "Proton (GE-Proton10-25)".
+protonFallbackName :: FilePath -> T.Text
+protonFallbackName path = "Proton (" <> T.pack (takeBaseName path) <> ")"

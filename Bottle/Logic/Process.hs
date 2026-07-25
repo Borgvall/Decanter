@@ -54,22 +54,29 @@ getWineDllOverridesEnv bottle = case runner bottle of
     MissingSystemWine -> throwIO (RunnerMissingError (runner bottle))
     MissingProton _   -> throwIO (RunnerMissingError (runner bottle))
 
+-- | PROTONPATH/PRESSURE_VESSEL_SYSTEMD_SCOPE env entries for a Proton
+-- runner, empty for System Wine. Shared by 'getWineOverrides' and
+-- 'getIconExtractionWineEnv'.
+--
+-- Deliberately not a wildcard catch-all here (unlike before): that would
+-- silently swallow MissingSystemWine/MissingProton into the "no
+-- PROTONPATH" branch instead of throwing, and -Wall's incomplete-pattern
+-- check can't catch a wildcard doing the wrong thing.
+getProtonEnv :: RunnerType -> IO [(String, String)]
+getProtonEnv r = case r of
+    -- PRESSURE_VESSEL_SYSTEMD_SCOPE places the game into a systemd --user
+    -- scope (see killProtonProcesses); without it, reliably killing Proton
+    -- processes isn't possible.
+    Proton p          -> pure [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
+    SystemWine        -> pure []
+    MissingSystemWine -> throwIO (RunnerMissingError r)
+    MissingProton _   -> throwIO (RunnerMissingError r)
+
 -- | Wine-specific environment variables that need to be set/overridden.
 getWineOverrides :: Bottle -> IO [(String, String)]
 getWineOverrides bottle@Bottle{..} = do
     wineDllOverridesEnv <- getWineDllOverridesEnv bottle
-    -- Deliberately not a wildcard catch-all here (unlike before): that
-    -- would silently swallow MissingSystemWine/MissingProton into the "no
-    -- PROTONPATH" branch instead of throwing, and -Wall's incomplete-
-    -- pattern check can't catch a wildcard doing the wrong thing.
-    protonEnv <- case runner of
-               -- PRESSURE_VESSEL_SYSTEMD_SCOPE places the game into a
-               -- systemd --user scope (see killProtonProcesses); without
-               -- it, reliably killing Proton processes isn't possible.
-               Proton p          -> pure [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
-               SystemWine        -> pure []
-               MissingSystemWine -> throwIO (RunnerMissingError runner)
-               MissingProton _   -> throwIO (RunnerMissingError runner)
+    protonEnv <- getProtonEnv runner
     pure $
       [ ("WINEPREFIX", bottlePath)
       ] ++ protonEnv
@@ -112,12 +119,7 @@ getMergedWineEnv bottle = getWineOverrides bottle >>= mergeWithHostEnv
 -- in Bottle.Logic.createBottleLogic).
 getIconExtractionWineEnv :: Bottle -> IO [(String, String)]
 getIconExtractionWineEnv Bottle{..} = do
-    -- Deliberately not a wildcard catch-all -- see getWineOverrides.
-    protonEnv <- case runner of
-             Proton p          -> pure [("PROTONPATH", p), ("PRESSURE_VESSEL_SYSTEMD_SCOPE", "1")]
-             SystemWine        -> pure []
-             MissingSystemWine -> throwIO (RunnerMissingError runner)
-             MissingProton _   -> throwIO (RunnerMissingError runner)
+    protonEnv <- getProtonEnv runner
     env <- mergeWithHostEnv $ ("WINEPREFIX", bottlePath) : protonEnv
     pure $ filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) env
 
