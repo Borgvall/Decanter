@@ -161,6 +161,45 @@ no benefit. Reserve subagents for genuinely multi-step research
 whose verbose intermediate output is worth keeping out of the main
 conversation).
 
+## 8. Give a function a pure signature unless it actually needs IO
+
+When writing or reviewing a function - especially one just extracted out
+of an existing `do` block - check whether it actually performs I/O
+(filesystem, process, environment, network, mutable state) rather than
+defaulting to whatever monad the surrounding code happens to run in. A
+function that only computes a result from its arguments (a pattern
+match, a lookup, a formatting step, ...) should have a pure type
+signature, not an `IO` one it never needed.
+
+This is easy to get wrong precisely because it doesn't show up as a
+build failure - an unnecessarily-`IO` function still type-checks and
+its tests still pass either way, so nothing forces a second look. One
+recurring case: a helper that needs to abort on an "unreachable" branch
+doesn't need `IO` just for that - `Control.Exception.throw` throws
+lazily (once its result is forced) and works fine from a pure function,
+so `throwIO` alone shouldn't be the reason to keep something in `IO`
+(see `Bottle.Logic.createBottleLogic`'s `bootCmd`/`bootArgs` tuple and
+`Bottle.Logic.Process.getProtonEnv`, two functions that only
+pattern-match on `RunnerType` and stayed/became pure this way).
+
+## 9. New integration tests that create a real bottle: use `withTestBottle`
+
+Any test that calls `createBottleLogic` on a real bottle must guarantee
+`deleteBottleLogic` still runs even if an assertion in between fails.
+This matters more than it looks: some spec modules
+(`Bottle.Logic.ProcessSpec`, `Bottle.Logic.Direct3dWrappersSpec`)
+deliberately reuse a `dist-newstyle/decanter-test-xdg-data-home`
+directory across test runs (kept around only to avoid re-downloading
+umu-run's runtime every time), so a skipped cleanup call there leaks a
+stale bottle across `cabal test` invocations, not just within a single
+run.
+
+Use `test/Bottle/Logic/TestSupport.hs`'s `withTestBottle :: Bottle ->
+(Bottle -> IO ()) -> IO ()` instead of a manual
+`createBottleLogic`/`...`/`deleteBottleLogic` pairing - it runs the test
+body under `finally`, so the bottle is always deleted, even on a
+failing expectation or a thrown exception.
+
 ## Commit messages
 
 The author of an AI commit shall be the used LLM name and version e.g. Opus
