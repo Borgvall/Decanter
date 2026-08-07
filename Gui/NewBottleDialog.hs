@@ -16,7 +16,6 @@ import Bottle.Logic
   ( checkNameValidity
   , NameValid(Valid)
   , explainNameValid
-  , createBottleObject
   , createBottleLogic
   )
 import Bottle.Logic.Runner (getAvailableRunners, getRunnerTypeDisplayName)
@@ -140,8 +139,7 @@ buildNewBottlePopover refreshCallback = do
         pure (availableRunners !! fromIntegral idx)
 
     void $ async $ do
-      bottleObj <- createBottleObject nameText selectedRunner
-      res <- try (createBottleLogic bottleObj) :: IO (Either IOError ())
+      res <- try (createBottleLogic nameText selectedRunner) :: IO (Either IOError ())
 
       GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
          case res of

@@ -127,8 +127,9 @@ spec = do
         bottles <- listExistingBottles
         bottles `shouldBe` []
 
-      let createAndDeleteBottle bottle = do
-            createBottleLogic bottle
+      let createAndDeleteBottle name existingRunner = do
+            bottle <- createBottleObject name existingRunner
+            createBottleLogic name existingRunner
             bottles <- listExistingBottles
             case bottles of
               [listedBottle] -> listedBottle `shouldBe` bottle
@@ -137,17 +138,15 @@ spec = do
             noBottles <- listExistingBottles
             noBottles `shouldBe` []
 
-      it "create and delete a bottle" $ do
-        bottle <- createBottleObject "CreateDeleteTest" SystemWine
-        createAndDeleteBottle bottle
+      it "create and delete a bottle" $
+        createAndDeleteBottle "CreateDeleteTest" SystemWine
 
       it "persists runner configuration (Proton)" $ do
         pendingWith "UMU-Launcher and Proton currently not available in test environment."
 
         let name = "ProtonConfigTest"
-        bottle <- createBottleObject name (Proton "/Test/Path")
 
-        withTestBottle bottle $ \_ -> do -- createBottleLogic writes the config
+        withTestBottle name (Proton "/Test/Path") $ \bottle -> do -- createBottleLogic writes the config
           bottles <- listExistingBottles -- loads the config
           let loadedBottles = filter (\b -> bottleName b == name) bottles
 

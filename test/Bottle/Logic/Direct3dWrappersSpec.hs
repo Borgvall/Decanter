@@ -91,8 +91,7 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
         (_, Nothing, _) -> pendingWith "DECANTER_DXVK_PATH is not set; enter the Nix dev shell to run this test."
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
-          bottle <- createBottleObject "Direct3dWrapperTestBottle" SystemWine
-          withTestBottle bottle $ \_ -> do
+          withTestBottle "Direct3dWrapperTestBottle" SystemWine $ \bottle -> do
             originalDxgi <- BS.readFile (system32Dll bottle "dxgi.dll")
             originalD3d12 <- BS.readFile (system32Dll bottle "d3d12.dll")
 
@@ -129,8 +128,7 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
         (_, Nothing, _) -> pendingWith "DECANTER_DXVK_PATH is not set; enter the Nix dev shell to run this test."
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
-          bottle <- createBottleObject "Direct3dWrapperHealthTestBottle" SystemWine
-          withTestBottle bottle $ \_ -> do
+          withTestBottle "Direct3dWrapperHealthTestBottle" SystemWine $ \bottle -> do
             setDirect3DWrapperState bottle DxvkAndVkd3dProton
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperValid
             getDirect3DWrapperStatus bottle `shouldReturn` WrapperManaged WrapperValid

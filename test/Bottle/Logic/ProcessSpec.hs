@@ -4,7 +4,6 @@ module Bottle.Logic.ProcessSpec (spec) where
 
 import Test.Hspec
 import Bottle.Logic.Process
-import Bottle.Logic (createBottleObject)
 import Bottle.Logic.TestSupport (withTestBottle)
 import Bottle.Logic.Runner (getAvailableRunners)
 import Bottle.Logic.Programs (runCmd)
@@ -132,8 +131,7 @@ spec = describe "Bottle.Logic.Process" $ do
         (_, Nothing, _) -> pendingWith "DECANTER_DXVK_PATH is not set; enter the Nix dev shell to run this test."
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
-          bottle <- createBottleObject "WineDllOverridesTestBottle" SystemWine
-          withTestBottle bottle $ \_ -> do
+          withTestBottle "WineDllOverridesTestBottle" SystemWine $ \bottle -> do
             freshEnv <- getMergedWineEnv bottle SystemWine
             lookup "WINEDLLOVERRIDES" freshEnv `shouldBe` Just "winemenubuilder.exe="
 
@@ -185,8 +183,7 @@ spec = describe "Bottle.Logic.Process" $ do
       case SystemWine `elem` runners of
         False -> pendingWith "No system Wine installation found in this environment; not testable here."
         True -> do
-          let bottle = Bottle "SystemWineKillTestBottle" "/tmp/decanter-test-systemwine-kill-prefix" (Existing SystemWine)
-          withTestBottle bottle $ \_ -> do
+          withTestBottle "SystemWineKillTestBottle" SystemWine $ \bottle -> do
             startLongRunningPing bottle SystemWine
 
             started <- waitUntil 30 (isProcessRunning pingMarker)
@@ -206,8 +203,7 @@ spec = describe "Bottle.Logic.Process" $ do
       let (dwprotonPaths, otherProtonPaths) = partition ("dwproton" `isInfixOf`) [ p | Proton p <- runners ]
       case (maybeUmuRun, dwprotonPaths ++ otherProtonPaths) of
         (Just _, protonPath : _) -> do
-          bottle <- createBottleObject "ProtonKillTestBottle" (Proton protonPath)
-          withTestBottle bottle $ \_ -> do
+          withTestBottle "ProtonKillTestBottle" (Proton protonPath) $ \bottle -> do
             startLongRunningPing bottle (Proton protonPath)
 
             -- A fresh pressure-vessel container takes a while to boot,

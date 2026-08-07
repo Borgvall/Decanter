@@ -105,8 +105,6 @@ explainBlockReason Direct3DWrapperDangling =
 -- check is exactly what entitles a caller to start something, so handing
 -- back what to start it with means no call site has to ask a second time,
 -- and none of them needs a branch for a case the check already ruled out.
--- Compare "Bottle.Types".runnableRunner, which answers the narrower, pure
--- question of whether the configured runner is installed at all.
 launchableRunner :: Bottle -> IO (Either BlockReason ExistingRunner)
 launchableRunner bottle = case runner bottle of
   Missing m  -> pure (Left (RunnerMissing m))
@@ -209,11 +207,22 @@ createBottleObject name rType = do
   let path = base </> T.unpack name
   return $ Bottle name path (Existing rType)
 
-createBottleLogic :: Bottle -> IO ()
-createBottleLogic bottle@Bottle{..} = do
-  case (checkNameValidity bottleName, runnableRunner runner) of
-    (Valid, Just existingRunner) -> do
-      createVolume bottlePath
+-- | Creates a bottle: its volume, its config file, and an initialized Wine
+-- prefix.
+--
+-- Takes the name and an 'ExistingRunner' rather than a finished 'Bottle',
+-- so a bottle configured for a runner that isn't installed cannot reach
+-- this at all -- initializing a prefix is exactly what needs a runner to
+-- actually be there. It builds its own 'Bottle' via 'createBottleObject',
+-- which is deterministic in these same two arguments, so callers that also
+-- want the object (see 'Bottle.Logic.TestSupport.withTestBottle') can ask
+-- for it separately without the two disagreeing.
+createBottleLogic :: T.Text -> ExistingRunner -> IO ()
+createBottleLogic name existingRunner = do
+  case checkNameValidity name of
+    Valid -> do
+      bottle <- createBottleObject name existingRunner
+      createVolume (bottlePath bottle)
 
       saveBottleConfig bottle
 
@@ -233,17 +242,8 @@ createBottleLogic bottle@Bottle{..} = do
       let procConfig = setEnv headlessEnv $ proc bootCmd bootArgs
       runProcess_ procConfig
 
-    -- A bottle can't be initialized with a runner that isn't installed. In
-    -- practice unreachable (the runner comes straight from the picker, fed
-    -- by 'getAvailableRunners'), but refusing beats the exception this used
-    -- to throw -- and unlike an exception it's the same shape as the
-    -- invalid-name case right below.
-    (Valid, Nothing) ->
-      putStrLn $ "Ignoring creation of bottle '" ++ T.unpack bottleName
-                 ++ "': its runner " ++ show runner ++ " is not installed."
-
-    (invalidName, _) ->
-      putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
+    invalidName ->
+      putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack name ++ "': " ++ T.unpack (explainNameValid invalidName)
 
 -- | Deletes a bottle and all its snapshots
 deleteBottleLogic :: Bottle -> IO ()

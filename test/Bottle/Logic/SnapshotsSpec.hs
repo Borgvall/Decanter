@@ -42,8 +42,7 @@ spec = do
   describe "Bottle.Logic.Snapshots" $ around_ withTestEnvironment $ do
 
     it "handles snapshots if supported" $ do
-      bottle <- createBottleObject "SnapshotTestBottle" SystemWine
-      withTestBottle bottle $ \_ -> do
+      withTestBottle "SnapshotTestBottle" SystemWine $ \bottle -> do
         supportsSnaps <- isSnapshotableBottle bottle
 
         if supportsSnaps
@@ -104,8 +103,7 @@ spec = do
             pendingWith "No BTRFS detected; snapshot integration test needs a real BTRFS filesystem."
 
     it "deleteAllSnapshots removes every snapshot and the snapshot directory" $ do
-      bottle <- createBottleObject "DeleteAllSnapshotsTestBottle" SystemWine
-      withTestBottle bottle $ \_ -> do
+      withTestBottle "DeleteAllSnapshotsTestBottle" SystemWine $ \bottle -> do
         supportsSnaps <- isSnapshotableBottle bottle
 
         if supportsSnaps
@@ -122,8 +120,7 @@ spec = do
             pendingWith "No BTRFS detected; deleteAllSnapshots test needs a real BTRFS filesystem."
 
     it "recoverInterruptedRestores finishes a restore interrupted before the old bottle was deleted" $ do
-      bottle <- createBottleObject "InterruptedRestoreBeforeDeleteTest" SystemWine
-      withTestBottle bottle $ \_ -> do
+      withTestBottle "InterruptedRestoreBeforeDeleteTest" SystemWine $ \bottle -> do
         supportsSnaps <- isSnapshotableBottle bottle
 
         if supportsSnaps
@@ -149,8 +146,7 @@ spec = do
             pendingWith "No BTRFS detected; recoverInterruptedRestores integration test needs a real BTRFS filesystem."
 
     it "recoverInterruptedRestores finishes a restore interrupted after the old bottle was deleted" $ do
-      bottle <- createBottleObject "InterruptedRestoreAfterDeleteTest" SystemWine
-      withTestBottle bottle $ \_ -> do
+      withTestBottle "InterruptedRestoreAfterDeleteTest" SystemWine $ \bottle -> do
         supportsSnaps <- isSnapshotableBottle bottle
 
         if supportsSnaps

@@ -58,7 +58,7 @@ getWineDllOverridesEnv bottle r = case r of
 --
 -- Takes an 'ExistingRunner': there is no environment to build for a runner
 -- that isn't installed, and callers have to establish that beforehand
--- anyway (see "Bottle.Types".runnableRunner).
+-- anyway (see "Bottle.Logic".launchableRunner).
 getProtonEnv :: ExistingRunner -> [(String, String)]
 getProtonEnv r = case r of
     -- PRESSURE_VESSEL_SYSTEMD_SCOPE places the game into a systemd --user

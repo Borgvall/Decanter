@@ -29,17 +29,13 @@ data MissingRunner
   deriving (Show, Eq)
 
 -- | A bottle's configured runner, together with whether it is currently
--- available. Use 'runnableRunner' to get at the 'ExistingRunner' inside, or
--- "Bottle.Logic".launchableRunner when the reason for a missing one is needed.
+-- available. Match on it directly to get at the 'ExistingRunner' inside, or
+-- ask "Bottle.Logic".launchableRunner, which additionally reports *why* a
+-- bottle can't run anything.
 data RunnerType
   = Existing ExistingRunner
   | Missing MissingRunner
   deriving (Show, Eq)
-
--- | The runner to actually launch with, if the bottle has one.
-runnableRunner :: RunnerType -> Maybe ExistingRunner
-runnableRunner (Existing r) = Just r
-runnableRunner (Missing _)  = Nothing
 
 data Bottle = Bottle
   { bottleName :: Text
