@@ -7,6 +7,8 @@ module Bottle.Logic.Runner
   , dedupToolsByName
   , findProtonPathByName
   , compatibilityToolName
+  , EngineFamily(..)
+  , engineFamily
   ) where
 
 import Bottle.Types
@@ -27,6 +29,30 @@ import Data.List (nubBy)
 import Data.Maybe (isJust, fromMaybe)
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy.Char8 as LBS8
+
+-- | Which of the two engines behind a 'RunnerType' actually sets up and
+-- maintains a prefix. Several decisions depend on this rather than on the
+-- concrete runner: whether Decanter manages the Direct3D wrapper itself
+-- (Proton brings its own), whether winetricks may be offered (it drives the
+-- host's Wine), and whether a runner change crosses the engine boundary.
+data EngineFamily
+  = WineEngine
+  | ProtonEngine
+  deriving (Show, Eq)
+
+-- | A missing runner keeps its family: 'MissingSystemWine' is still a
+-- System Wine bottle, just one whose Wine is currently gone. Callers that
+-- care about availability ask "Bottle.Logic".blockReason instead.
+--
+-- Deliberately a data type rather than an @isProton@/@isSystemWine@ pair of
+-- predicates: this way a new 'RunnerType' constructor fails to compile here
+-- (in exactly one place), and a third engine fails to compile at every
+-- 'case' on 'EngineFamily'. A 'Bool' would silently absorb both.
+engineFamily :: RunnerType -> EngineFamily
+engineFamily SystemWine        = WineEngine
+engineFamily MissingSystemWine = WineEngine
+engineFamily (Proton _)        = ProtonEngine
+engineFamily (MissingProton _) = ProtonEngine
 
 -- | Directories to scan for compatibility tools (Proton builds), in the
 -- same low-to-high precedence order Steam itself uses -- a tool discovered

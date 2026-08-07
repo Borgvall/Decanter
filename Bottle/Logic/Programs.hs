@@ -16,6 +16,7 @@ module Bottle.Logic.Programs
 
 import Bottle.Types
 import Bottle.Logic.Process (getMergedWineEnv)
+import Bottle.Logic.Runner (EngineFamily(..), engineFamily)
 import Logic.SystemTool (runSystemTool)
 import System.Process.Typed
 import System.Directory (doesDirectoryExist, listDirectory, findExecutable)
@@ -38,17 +39,14 @@ import Data.Maybe (isJust)
 -- with per-game workarounds already handled by umu's protonfixes. See the
 -- Non-Goals section in Readme.md on staying out of install recipes.
 --
--- 'MissingSystemWine' still counts as a System Wine bottle whose runner
--- happens to be gone: the entry stays visible but the GUI disables it, the
--- same way it treats the winecfg/regedit/uninstaller buttons.
+-- A bottle whose System Wine is currently missing stays in 'WineEngine' and
+-- keeps the entry: the GUI disables it there, the same way it treats the
+-- winecfg/regedit/uninstaller buttons, instead of hiding it and having it
+-- reappear after a Wine update.
 isWinetricksAvailable :: Bottle -> IO Bool
-isWinetricksAvailable Bottle{..} = case runner of
-    SystemWine        -> isWinetricksInstalled
-    MissingSystemWine -> isWinetricksInstalled
-    Proton _          -> pure False
-    MissingProton _   -> pure False
-  where
-    isWinetricksInstalled = isJust <$> findExecutable "winetricks"
+isWinetricksAvailable Bottle{..} = case engineFamily runner of
+    WineEngine   -> isJust <$> findExecutable "winetricks"
+    ProtonEngine -> pure False
 
 -- | Starts winetricks for a bottle. Callers are expected to check
 -- 'isWinetricksAvailable' first -- this doesn't re-check the runner, and

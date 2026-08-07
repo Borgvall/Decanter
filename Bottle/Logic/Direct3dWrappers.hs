@@ -14,6 +14,7 @@ module Bottle.Logic.Direct3dWrappers
   ) where
 
 import Bottle.Types
+import Bottle.Logic.Runner (EngineFamily(..), engineFamily)
 import System.Directory
     ( pathIsSymbolicLink
     , doesFileExist
@@ -251,11 +252,9 @@ data Direct3DWrapperStatus
 -- health itself is a pure filesystem check (symlinks under "system32"),
 -- never actually needing Wine/Proton to run.
 getDirect3DWrapperStatus :: Bottle -> IO Direct3DWrapperStatus
-getDirect3DWrapperStatus bottle = case runner bottle of
-  SystemWine        -> WrapperManaged <$> getDirect3DWrapperHealth bottle
-  MissingSystemWine -> WrapperManaged <$> getDirect3DWrapperHealth bottle
-  Proton _          -> pure WrapperNotManaged
-  MissingProton _   -> pure WrapperNotManaged
+getDirect3DWrapperStatus bottle = case engineFamily (runner bottle) of
+  WineEngine   -> WrapperManaged <$> getDirect3DWrapperHealth bottle
+  ProtonEngine -> pure WrapperNotManaged
 
 -- | Whether "bottle" is currently in a state where Windows programs may be
 -- started. A dangling Direct3D wrapper symlink (e.g. after Nix garbage

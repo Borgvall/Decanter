@@ -35,6 +35,7 @@ import Bottle.Logic.Snapshots
     )
 import Bottle.Logic.ApplicationMenu (removeApplicationMenuSymlink)
 import Bottle.Logic.Direct3dWrappers (isBottleReadyForWindowsApps)
+import Bottle.Logic.Runner (engineFamily)
 import System.Process.Typed
 import System.Directory
     ( createDirectoryIfMissing
@@ -73,13 +74,8 @@ changeBottleRunnerLogic bottle newRunner = do
 -- doesn't have this problem. Used by "Gui.BottleView" to decide whether a
 -- runner change needs a confirmation warning.
 isEngineFamilyChange :: RunnerType -> RunnerType -> Bool
-isEngineFamilyChange oldRunner newRunner = isWineFamily oldRunner /= isWineFamily newRunner
-  where
-    isWineFamily :: RunnerType -> Bool
-    isWineFamily SystemWine        = True
-    isWineFamily MissingSystemWine = True
-    isWineFamily (Proton _)        = False
-    isWineFamily (MissingProton _) = False
+isEngineFamilyChange oldRunner newRunner =
+  engineFamily oldRunner /= engineFamily newRunner
 
 -- | Why a bottle currently can't run Windows programs, if at all --
 -- 'Nothing' means it's ready. This is the single check both the GUI
@@ -104,13 +100,19 @@ explainBlockReason (RunnerMissing _) =
 explainBlockReason Direct3DWrapperDangling =
   tr "The Direct3D wrapper's files are missing (e.g. removed by Nix garbage collection). Windows programs are blocked until this is repaired."
 
+-- Matches every constructor explicitly instead of catching the runnable
+-- ones with a wildcard: a future runner added to 'RunnerType' should force
+-- a decision here rather than silently counting as "ready to run".
 blockReason :: Bottle -> IO (Maybe BlockReason)
 blockReason bottle = case runner bottle of
   r@MissingSystemWine -> pure (Just (RunnerMissing r))
   r@(MissingProton _) -> pure (Just (RunnerMissing r))
-  _ -> do
-    ready <- isBottleReadyForWindowsApps bottle
-    pure $ if ready then Nothing else Just Direct3DWrapperDangling
+  SystemWine          -> direct3DBlockReason
+  Proton _            -> direct3DBlockReason
+  where
+    direct3DBlockReason = do
+      ready <- isBottleReadyForWindowsApps bottle
+      pure $ if ready then Nothing else Just Direct3DWrapperDangling
 
 -- | Determines the base directory for all bottles
 getBottlesBaseDir :: IO FilePath
