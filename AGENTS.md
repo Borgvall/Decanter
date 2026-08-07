@@ -200,6 +200,69 @@ Use `test/Bottle/Logic/TestSupport.hs`'s `withTestBottle :: Bottle ->
 body under `finally`, so the bottle is always deleted, even on a
 failing expectation or a thrown exception.
 
+## 10. A "can't happen" comment means the type is too wide
+
+If you find yourself writing - or reading - a comment like "should never
+be reached", "unreachable", or "kept only so this function is total",
+treat it as a signal that the function's argument type admits states it
+has no answer for. Prefer narrowing the type over documenting the gap:
+
+- `Bottle.Types` splits `RunnerType` into `ExistingRunner`/`MissingRunner`
+  precisely so `getProtonEnv`, `runCmd` and friends can take the former
+  and be total. The `RunnerMissingError` exception they used to throw for
+  the impossible case is gone, not merely unused. Likewise, the legacy
+  `decanter.cfg` format parses straight into `ExistingRunner` (it only
+  ever held one), which made `resolveRunnerAvailability`'s "already
+  missing, pass through" branch unrepresentable rather than dead.
+- A gate should hand back what it established, not just "yes".
+  `Bottle.Logic.launchableRunner` returns
+  `Either BlockReason ExistingRunner` instead of `Maybe BlockReason`, so
+  callers get the runner as a *result* of passing the check - which is
+  what removed the last two "the check above already ruled this out"
+  branches in `Cli` and `Gui.BottleView`.
+
+Widening a type back out to avoid a call-site change is the wrong
+direction; thread the narrower value through instead, even into the GUI
+(see `Gui.BottleView`'s `withRunner` and `Gui.ProgramListView`'s
+`Either T.Text ExistingRunner` parameter).
+
+## 11. Model a classification as a data type, not a `Bool`
+
+When a function answers "which kind is this?", give it a small data type
+rather than one or more `Bool` predicates.
+`Bottle.Logic.Runner.engineFamily :: RunnerType -> EngineFamily` is the
+example; an `isProton`/`isSystemWine` pair was considered and rejected.
+
+A `Bool` erases exhaustiveness in both directions. With `EngineFamily`, a
+new `RunnerType` constructor fails to compile in exactly one place (the
+classifier), and a third engine fails to compile at every `case` over
+`EngineFamily`. With predicates, a fifth runner silently takes the `else`
+branch at every call site - the same failure mode as the wildcard trap in
+rule 5, reached by a different route - and a third engine can't be
+expressed at all. Two complementary predicates additionally invite
+`isProton` and `not . isSystemWine` to drift apart once some runner is
+neither.
+
+A related smell: if every caller of a predicate needs the value behind it
+anyway, the predicate is the wrong shape. An `isMissing :: RunnerType ->
+Bool` was dropped for exactly that reason - every "is it missing?" site
+needs the constructor itself, to pass on to `RunnerMissing` so
+`explainBlockReason` can name the Proton build that wasn't found.
+
+## 12. Plan a commit sequence *before* doing the work, not after
+
+Rule 1's hook means every commit has to build on its own. A finished
+working tree therefore cannot be split into a reviewable sequence for
+free: each intermediate commit needs a state that compiles, which for a
+cross-cutting change means reconstructing it by hand.
+
+If a change is going to want more than one commit (a type change plus a
+behaviour change on top of it, a refactor plus a bug fix found along the
+way), do it in that order and commit as you go. Deciding on the split
+afterwards costs a round of un-editing and re-editing per commit, and
+each reconstruction is a chance to commit something that was never
+actually tested in that shape.
+
 ## Commit messages
 
 The author of an AI commit shall be the used LLM name and version e.g. Opus
