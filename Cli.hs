@@ -25,7 +25,7 @@ import Bottle.Logic
   ( findAppLnkByName
   , findBottleByName
   , listExistingBottles
-  , blockReason
+  , launchableRunner
   , explainBlockReason
   )
 import Bottle.Logic.Programs
@@ -33,7 +33,7 @@ import Bottle.Logic.Programs
   , runFileWithStart
   , runWindowsLnk
   )
-import Bottle.Types (Bottle, bottleName)
+import Bottle.Types (Bottle, bottleName, ExistingRunner)
 
 -- | The commands supported by the CLI.
 data Command
@@ -143,36 +143,36 @@ runListApps name = withBottle name $ \bottle -> do
   lnkPaths <- findWineStartMenuLnks bottle
   mapM_ TIO.putStrLn (sortOn id (map (T.pack . takeBaseName) lnkPaths))
 
--- | Aborts with 'explainBlockReason' if "bottle" currently can't run
--- Windows programs (see 'Bottle.Logic.blockReason') -- shared by 'runStart'
--- and 'runOpen' so a stale/removed runner fails with a clear message up
--- front instead of silently doing nothing inside 'runWindowsLnk'/
--- 'runFileWithStart'.
-abortIfBlocked :: Bottle -> IO ()
-abortIfBlocked bottle = do
-  mReason <- blockReason bottle
-  case mReason of
-    Nothing -> pure ()
-    Just reason -> do
+-- | The runner to launch "bottle" with, or an abort with
+-- 'explainBlockReason' if it currently can't run Windows programs (see
+-- 'Bottle.Logic.launchableRunner') -- shared by 'runStart' and 'runOpen' so
+-- a stale/removed runner fails with a clear message up front instead of
+-- silently doing nothing inside 'runWindowsLnk'/'runFileWithStart'.
+requireRunner :: Bottle -> IO ExistingRunner
+requireRunner bottle = do
+  launchable <- launchableRunner bottle
+  case launchable of
+    Right r     -> pure r
+    Left reason -> do
       hPutStrLn stderr $ T.unpack (explainBlockReason reason)
       exitFailure
 
 runStart :: Text -> Text -> IO ()
 runStart bottleNm appNm = withBottle bottleNm $ \bottle -> do
-  abortIfBlocked bottle
+  existingRunner <- requireRunner bottle
   lnkPaths <- findWineStartMenuLnks bottle
   case findAppLnkByName appNm lnkPaths of
     Nothing -> do
       hPutStrLn stderr $ "Application not found in bottle '" ++ T.unpack bottleNm ++ "': " ++ T.unpack appNm
       exitFailure
-    Just lnkPath -> runWindowsLnk bottle lnkPath
+    Just lnkPath -> runWindowsLnk bottle existingRunner lnkPath
 
 runOpen :: Text -> FilePath -> IO ()
 runOpen bottleNm filePath = withBottle bottleNm $ \bottle -> do
-  abortIfBlocked bottle
+  existingRunner <- requireRunner bottle
   exists <- doesFileExist filePath
   if exists
-    then runFileWithStart bottle filePath
+    then runFileWithStart bottle existingRunner filePath
     else do
       hPutStrLn stderr $ "File not found: " ++ filePath
       exitFailure

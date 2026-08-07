@@ -42,17 +42,17 @@ data EngineFamily
 
 -- | A missing runner keeps its family: 'MissingSystemWine' is still a
 -- System Wine bottle, just one whose Wine is currently gone. Callers that
--- care about availability ask "Bottle.Logic".blockReason instead.
+-- care about availability ask "Bottle.Logic".launchableRunner instead.
 --
 -- Deliberately a data type rather than an @isProton@/@isSystemWine@ pair of
 -- predicates: this way a new 'RunnerType' constructor fails to compile here
 -- (in exactly one place), and a third engine fails to compile at every
 -- 'case' on 'EngineFamily'. A 'Bool' would silently absorb both.
 engineFamily :: RunnerType -> EngineFamily
-engineFamily SystemWine        = WineEngine
-engineFamily MissingSystemWine = WineEngine
-engineFamily (Proton _)        = ProtonEngine
-engineFamily (MissingProton _) = ProtonEngine
+engineFamily (Existing SystemWine)       = WineEngine
+engineFamily (Missing MissingSystemWine) = WineEngine
+engineFamily (Existing (Proton _))       = ProtonEngine
+engineFamily (Missing (MissingProton _)) = ProtonEngine
 
 -- | Directories to scan for compatibility tools (Proton builds), in the
 -- same low-to-high precedence order Steam itself uses -- a tool discovered
@@ -148,7 +148,10 @@ findAvailableCompatibilityTools = do
   toolsPerDir <- mapM findCompatibilityToolsIn searchDirs
   pure $ dedupToolsByName (concat toolsPerDir)
 
-getAvailableRunners :: IO [RunnerType]
+-- | Every runner currently installed on the system. 'ExistingRunner' rather
+-- than 'RunnerType' by construction: a runner found by scanning the disk is
+-- available, and these are what the runner picker offers.
+getAvailableRunners :: IO [ExistingRunner]
 getAvailableRunners = do
   sysWine <- findExecutable "wine"
   let wineList = if isJust sysWine then [SystemWine] else []
@@ -170,19 +173,20 @@ findProtonPathByName name = lookup (T.unpack name) <$> findAvailableCompatibilit
 
 -- | Determines the display name for a runner
 getRunnerTypeDisplayName :: RunnerType -> IO T.Text
-getRunnerTypeDisplayName SystemWine = do
+getRunnerTypeDisplayName (Existing SystemWine) = do
     (exitCode, out) <- readProcessStdout (proc "wine" ["--version"])
     case exitCode of
         ExitSuccess -> return $ T.strip $ T.pack $ LBS8.unpack out
         _           -> return "System Wine (Unknown Version)"
 
-getRunnerTypeDisplayName (Proton path) = do
+getRunnerTypeDisplayName (Existing (Proton path)) = do
     name <- readVdfDisplayName path
     pure $ if T.null name then protonFallbackName path else name
 
-getRunnerTypeDisplayName MissingSystemWine = pure $ tr "System Wine" <> " - " <> tr "not found"
+getRunnerTypeDisplayName (Missing MissingSystemWine) =
+    pure $ tr "System Wine" <> " - " <> tr "not found"
 
-getRunnerTypeDisplayName (MissingProton path) =
+getRunnerTypeDisplayName (Missing (MissingProton path)) =
     pure $ protonFallbackName path <> " - " <> tr "not found"
 
 -- | Display name for a Proton build whose "compatibilitytool.vdf" has no

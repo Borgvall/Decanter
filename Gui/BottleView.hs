@@ -21,7 +21,7 @@ import Bottle.Logic
   ( deleteBottleLogic
   , changeBottleRunnerLogic
   , isEngineFamilyChange
-  , blockReason
+  , launchableRunner
   , explainBlockReason
   )
 import Bottle.Logic.Process (killBottleProcesses)
@@ -100,7 +100,7 @@ showKillConfirmationDialog parent bottle showError = do
 -- Proton engine families (see 'Bottle.Logic.isEngineFamilyChange') -- not
 -- shown when switching between two builds of the same family, since that
 -- doesn't mix two different engines' setup on the same prefix.
-showRunnerChangeConfirmationDialog :: Gtk.Window -> Bottle -> RunnerType -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> IO ()
+showRunnerChangeConfirmationDialog :: Gtk.Window -> Bottle -> ExistingRunner -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> IO ()
 showRunnerChangeConfirmationDialog parent bottle newRunner stack showError refreshCallback = do
   let message = tr "Switch Windows Compatibility Layer?"
   let detail = tr "This bottle was set up under its current engine. Switching to a different one runs it through a different Windows compatibility layer on the same, already-initialized prefix -- the result is a mix of both engines' registry entries, DLL overrides, and prefix setup, which is hard to reproduce or diagnose afterwards.\n\nFor a clean result, create a new bottle for the other engine instead."
@@ -127,7 +127,7 @@ showRunnerChangeConfirmationDialog parent bottle newRunner stack showError refre
 -- engine boundary ('Bottle.Logic.isEngineFamilyChange'), the runner change
 -- goes through 'showRunnerChangeConfirmationDialog' first instead of
 -- applying immediately.
-buildRunnerPopover :: Gtk.Window -> Bottle -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> [RunnerType] -> IO Gtk.Popover
+buildRunnerPopover :: Gtk.Window -> Bottle -> Gtk.Stack -> (T.Text -> IO ()) -> IO () -> [ExistingRunner] -> IO Gtk.Popover
 buildRunnerPopover window bottle stack showError refreshCallback availableRunners = do
   popover <- new Gtk.Popover []
   runnerGroup <- new Adw.PreferencesGroup
@@ -136,20 +136,20 @@ buildRunnerPopover window bottle stack showError refreshCallback availableRunner
 
   let currentRunner = runner bottle
   forM_ availableRunners $ \runnerType -> do
-    displayName <- getRunnerTypeDisplayName runnerType
+    displayName <- getRunnerTypeDisplayName (Existing runnerType)
     row <- new Adw.ActionRow
       [ #title := displayName
-      , #subtitle := runnerTypeToString runnerType
+      , #subtitle := runnerTypeToString (Existing runnerType)
       , #activatable := True
       ]
 
-    when (runnerType == currentRunner) $ do
+    when (Existing runnerType == currentRunner) $ do
       icon <- new Gtk.Image [ #iconName := "object-select-symbolic", #cssClasses := ["dim-label"] ]
       #addSuffix row icon
 
     void $ on row #activated $ do
       #popdown popover
-      if isEngineFamilyChange currentRunner runnerType
+      if isEngineFamilyChange currentRunner (Existing runnerType)
         then showRunnerChangeConfirmationDialog window bottle runnerType stack showError refreshCallback
         else do
           updatedBottle <- changeBottleRunnerLogic bottle runnerType
@@ -218,10 +218,10 @@ reloadBottleView window bottle stack showError refreshCallback = do
 
 -- | Helper function to convert RunnerType to String
 runnerTypeToString :: RunnerType -> T.Text
-runnerTypeToString SystemWine = tr "System Wine"
-runnerTypeToString (Proton path) = T.pack ("Proton (" ++ takeBaseName path ++ ")")
-runnerTypeToString MissingSystemWine = tr "System Wine" <> " - " <> tr "not found"
-runnerTypeToString (MissingProton path) = T.pack ("Proton (" ++ takeBaseName path ++ ")") <> " - " <> tr "not found"
+runnerTypeToString (Existing SystemWine) = tr "System Wine"
+runnerTypeToString (Existing (Proton path)) = T.pack ("Proton (" ++ takeBaseName path ++ ")")
+runnerTypeToString (Missing MissingSystemWine) = tr "System Wine" <> " - " <> tr "not found"
+runnerTypeToString (Missing (MissingProton path)) = T.pack ("Proton (" ++ takeBaseName path ++ ")") <> " - " <> tr "not found"
 
 -- | Display name and description for a Direct3D wrapper state.
 direct3DWrapperLabel :: Direct3DWrapperState -> T.Text
@@ -365,15 +365,20 @@ buildBottleView window bottle stack showError refreshCallback = do
 
   -- Status of the Direct3D wrapper -- controls whether/how the Direct3D
   -- section below is built. Whether Windows programs may be started at all
-  -- is asked separately from the bottle (via 'blockReason', which also
+  -- is asked separately from the bottle (via 'launchableRunner', which also
   -- covers a missing runner, not just Direct3D-wrapper health), instead of
   -- deciding that here based on wrapper internals.
   direct3DStatus <- getDirect3DWrapperStatus bottle
-  mBlockReason <- blockReason bottle
+
+  -- Either why this bottle can't launch anything, or the runner to launch
+  -- with. Every widget below that starts a Windows program is driven by
+  -- this one value: 'blockIfWineAppsBlocked' disables it on 'Left',
+  -- 'withRunner' supplies the runner on 'Right'.
+  launchable <- launchableRunner bottle
   let blockIfWineAppsBlocked :: Gtk.IsWidget w => w -> IO ()
-      blockIfWineAppsBlocked widget = case mBlockReason of
-        Nothing -> pure ()
-        Just reason -> do
+      blockIfWineAppsBlocked widget = case launchable of
+        Right _ -> pure ()
+        Left reason -> do
           w <- Gtk.toWidget widget
           set w [ #sensitive := False, #tooltipText := explainBlockReason reason ]
 
@@ -417,6 +422,12 @@ buildBottleView window bottle stack showError refreshCallback = do
     WrapperManaged health -> buildDirect3DWrapperSection window stack showError refreshCallback health contentBox bottle
     WrapperNotManaged     -> pure ()
 
+  -- Runs "action" with the bottle's runner, or does nothing when there
+  -- isn't one -- in which case 'blockIfWineAppsBlocked' has already
+  -- disabled the widget this is attached to, so it can't fire anyway.
+  let withRunner :: (ExistingRunner -> IO ()) -> IO ()
+      withRunner action = either (const (pure ())) action launchable
+
   let addBtn label tooltip cssClasses action = do
         btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip, #cssClasses := cssClasses, #halign := Gtk.AlignFill ]
         void $ on btn #clicked action
@@ -424,7 +435,8 @@ buildBottleView window bottle stack showError refreshCallback = do
         return btn
 
   runBtn <- new Gtk.Button [ #label := tr "Run Executable / Installer", #cssClasses := ["suggested-action", "pill"], #halign := Gtk.AlignFill ]
-  void $ on runBtn #clicked $ openExecutableFileDialog window showError $ runExecutable bottle
+  void $ on runBtn #clicked $ withRunner $ \r ->
+    openExecutableFileDialog window showError (runExecutable bottle r)
   #append contentBox runBtn
   blockIfWineAppsBlocked runBtn
 
@@ -442,7 +454,7 @@ buildBottleView window bottle stack showError refreshCallback = do
           Just gFile -> do
               mpath <- Gio.fileGetPath gFile
               case mpath of
-                  Just path -> runFileWithStart bottle path >> return True
+                  Just path -> withRunner (\r -> runFileWithStart bottle r path) >> return True
                   Nothing -> return False
           Nothing -> return False
   #addController dropZone dropTarget
@@ -469,19 +481,19 @@ buildBottleView window bottle stack showError refreshCallback = do
     sepSnap <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginBottom := 10 ]
     #append contentBox sepSnap
 
-  buildProgramListSection bottle (explainBlockReason <$> mBlockReason) contentBox
+  buildProgramListSection bottle (either (Left . explainBlockReason) Right launchable) contentBox
 
   sep2 <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal, #marginTop := 10, #marginBottom := 10 ]
   #append contentBox sep2
 
   toolsLabel <- new Gtk.Label [ #label := tr "System Tools", #halign := Gtk.AlignStart, #cssClasses := ["heading"] ]
   #append contentBox toolsLabel
-  addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle) >>= blockIfWineAppsBlocked
-  addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle) >>= blockIfWineAppsBlocked
-  addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (runUninstaller bottle) >>= blockIfWineAppsBlocked
+  addBtn (tr "Wine Config") (tr "Opens winecfg") [] (withRunner (runWineCfg bottle)) >>= blockIfWineAppsBlocked
+  addBtn (tr "Registry Editor") (tr "Opens regedit") [] (withRunner (runRegedit bottle)) >>= blockIfWineAppsBlocked
+  addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (withRunner (runUninstaller bottle)) >>= blockIfWineAppsBlocked
   hasWinetricks <- isWinetricksAvailable bottle
   when hasWinetricks $
-    addBtn (tr "Winetricks") (tr "Manage packages") [] (runWinetricks bottle) >>= blockIfWineAppsBlocked
+    addBtn (tr "Winetricks") (tr "Manage packages") [] (withRunner (runWinetricks bottle)) >>= blockIfWineAppsBlocked
   -- Deliberately left unlocked: only opens the Linux file manager (xdg-open)
   -- on drive_c, so it doesn't start a Wine program.
   void $ addBtn (tr "Browse Files") (tr "Open drive_c") [] (runFileManager bottle)

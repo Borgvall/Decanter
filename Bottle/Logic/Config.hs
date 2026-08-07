@@ -27,10 +27,12 @@ data PersistedRunner = PersistedSystemWine | PersistedProtonName T.Text
   deriving (Show, Read)
 
 toPersistedRunner :: RunnerType -> IO PersistedRunner
-toPersistedRunner SystemWine        = pure PersistedSystemWine
-toPersistedRunner (Proton p)        = PersistedProtonName <$> compatibilityToolName p
-toPersistedRunner MissingSystemWine = pure PersistedSystemWine
-toPersistedRunner (MissingProton p) = PersistedProtonName <$> compatibilityToolName p
+toPersistedRunner (Existing SystemWine)             = pure PersistedSystemWine
+toPersistedRunner (Existing (Proton p))             = PersistedProtonName <$> compatibilityToolName p
+toPersistedRunner (Missing MissingSystemWine)       = pure PersistedSystemWine
+-- A missing Proton's path is really just the tool name it was persisted
+-- under (see 'resolvePersistedRunner'), so it round-trips unchanged.
+toPersistedRunner (Missing (MissingProton p))       = PersistedProtonName <$> compatibilityToolName p
 
 -- | Saves the bottle's configuration (runner)
 saveBottleConfig :: Bottle -> IO ()
@@ -61,9 +63,9 @@ loadBottleConfig bottleDir = do
             -- Plain 'reads' for safe parsing
             case reads content :: [(PersistedRunner, String)] of
                 [(pr, _)] -> Just <$> resolvePersistedRunner pr
-                _ -> case reads content of
+                _ -> case reads content :: [(ExistingRunner, String)] of
                     [(r, _)] -> Just <$> resolveRunnerAvailability r
-                    _ -> case reads content :: [((RunnerType, LegacyArch), String)] of
+                    _ -> case reads content :: [((ExistingRunner, LegacyArch), String)] of
                         [((r, _), _)] -> Just <$> resolveRunnerAvailability r
                         _ -> do
                             putStrLn $ "Could not parse: " ++ path
@@ -84,12 +86,12 @@ isSystemWineAvailable = isJust <$> findExecutable "wine"
 resolvePersistedRunner :: PersistedRunner -> IO RunnerType
 resolvePersistedRunner PersistedSystemWine = do
     available <- isSystemWineAvailable
-    pure $ if available then SystemWine else MissingSystemWine
+    pure $ if available then Existing SystemWine else Missing MissingSystemWine
 resolvePersistedRunner (PersistedProtonName name) = do
     mPath <- findProtonPathByName name
     pure $ case mPath of
-        Just path -> Proton path
-        Nothing   -> MissingProton (T.unpack name)
+        Just path -> Existing (Proton path)
+        Nothing   -> Missing (MissingProton (T.unpack name))
 
 -- | Re-checks a freshly parsed (previous-format) runner's availability by
 -- its literal persisted path, downgrading it to
@@ -98,13 +100,15 @@ resolvePersistedRunner (PersistedProtonName name) = do
 -- availability can change between runs independently of the bottle's own
 -- configuration. Only used for the previous, path-based format; the
 -- current format resolves by name instead (see 'resolvePersistedRunner').
-resolveRunnerAvailability :: RunnerType -> IO RunnerType
+--
+-- Takes an 'ExistingRunner' because that is exactly what the older format
+-- could contain: a missing runner was never written to disk, so the
+-- "already missing, pass through unchanged" case this used to need to stay
+-- total is now unrepresentable.
+resolveRunnerAvailability :: ExistingRunner -> IO RunnerType
 resolveRunnerAvailability SystemWine = do
     available <- isSystemWineAvailable
-    pure $ if available then SystemWine else MissingSystemWine
+    pure $ if available then Existing SystemWine else Missing MissingSystemWine
 resolveRunnerAvailability (Proton p) = do
     available <- doesFileExist (p </> "compatibilitytool.vdf")
-    pure $ if available then Proton p else MissingProton p
--- Never actually persisted (see 'saveBottleConfig'), kept only so this
--- function is total.
-resolveRunnerAvailability alreadyMissing = pure alreadyMissing
+    pure $ if available then Existing (Proton p) else Missing (MissingProton p)

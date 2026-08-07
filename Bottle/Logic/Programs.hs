@@ -21,7 +21,6 @@ import Logic.SystemTool (runSystemTool)
 import System.Process.Typed
 import System.Directory (doesDirectoryExist, listDirectory, findExecutable)
 import System.FilePath ((</>), takeExtension)
-import Control.Exception (throwIO)
 import Control.Monad (void, filterM, forM)
 import Data.List (isSuffixOf)
 import Data.Maybe (isJust)
@@ -48,20 +47,19 @@ isWinetricksAvailable Bottle{..} = case engineFamily runner of
     WineEngine   -> isJust <$> findExecutable "winetricks"
     ProtonEngine -> pure False
 
--- | Starts winetricks for a bottle. Callers are expected to check
--- 'isWinetricksAvailable' first -- this doesn't re-check the runner, and
--- would drive the host's System Wine against a Proton prefix if called for
--- a Proton bottle.
-runWinetricks :: Bottle -> IO ()
-runWinetricks bottle = runCmd bottle "winetricks" []
+-- | Starts winetricks for a bottle. Only ever called with 'SystemWine' --
+-- 'isWinetricksAvailable' gates the entry on that, and the parameter makes
+-- the caller show its work rather than this function trusting a comment.
+runWinetricks :: Bottle -> ExistingRunner -> IO ()
+runWinetricks bottle r = runCmd bottle r "winetricks" []
 
 -- | Helper to start processes (asynchronously).
 -- Adjusts the command if Proton is used.
-runCmd :: Bottle -> String -> [String] -> IO ()
-runCmd bottle cmd args = do
-  mergedEnv <- getMergedWineEnv bottle
+runCmd :: Bottle -> ExistingRunner -> String -> [String] -> IO ()
+runCmd bottle r cmd args = do
+  mergedEnv <- getMergedWineEnv bottle r
 
-  case runner bottle of
+  case r of
     SystemWine ->
         void $ startProcess $ setEnv mergedEnv $ proc cmd args
 
@@ -76,40 +74,34 @@ runCmd bottle cmd args = do
         -- TODO: check whether umu-run is on PATH or needs to be configured explicitly
         void $ startProcess $ setEnv mergedEnv $ proc realCmd realArgs
 
-    -- Should never be reached -- callers are expected to check
-    -- Bottle.Logic.blockReason first (both the GUI and 'decanter start'/
-    -- 'decanter open' do). See Bottle.Types.RunnerMissingError.
-    MissingSystemWine -> throwIO (RunnerMissingError (runner bottle))
-    MissingProton _   -> throwIO (RunnerMissingError (runner bottle))
+runWineCfg :: Bottle -> ExistingRunner -> IO ()
+runWineCfg bottle r = runCmd bottle r "wine" ["winecfg"]
 
-runWineCfg :: Bottle -> IO ()
-runWineCfg bottle = runCmd bottle "wine" ["winecfg"]
+runRegedit :: Bottle -> ExistingRunner -> IO ()
+runRegedit bottle r = runCmd bottle r "wine" ["regedit"]
 
-runRegedit :: Bottle -> IO ()
-runRegedit bottle = runCmd bottle "wine" ["regedit"]
-
-runUninstaller :: Bottle -> IO ()
-runUninstaller bottle = runCmd bottle "wine" ["uninstaller"]
+runUninstaller :: Bottle -> ExistingRunner -> IO ()
+runUninstaller bottle r = runCmd bottle r "wine" ["uninstaller"]
 
 runFileManager :: Bottle -> IO ()
 runFileManager Bottle{..} = do
   let driveC = bottlePath </> "drive_c"
   runSystemTool "xdg-open" [driveC]
 
-runExecutable :: Bottle -> FilePath -> IO ()
-runExecutable bottle filePath = do
+runExecutable :: Bottle -> ExistingRunner -> FilePath -> IO ()
+runExecutable bottle r filePath = do
   let ext = takeExtension filePath
   if ext == ".msi" || ext == ".MSI"
-    then runCmd bottle "wine" ["msiexec", "/i", filePath]
-    else runCmd bottle "wine" [filePath]
+    then runCmd bottle r "wine" ["msiexec", "/i", filePath]
+    else runCmd bottle r "wine" [filePath]
 
-runFileWithStart :: Bottle -> FilePath -> IO ()
-runFileWithStart bottle path = runCmd bottle "wine" ["start", "/unix", path]
+runFileWithStart :: Bottle -> ExistingRunner -> FilePath -> IO ()
+runFileWithStart bottle r path = runCmd bottle r "wine" ["start", "/unix", path]
 
 -- | Runs a Windows start-menu shortcut (".lnk"). Same as 'runFileWithStart'
 -- -- kept as its own name for readability at call sites that specifically
 -- launch a start-menu entry, rather than an arbitrary file.
-runWindowsLnk :: Bottle -> FilePath -> IO ()
+runWindowsLnk :: Bottle -> ExistingRunner -> FilePath -> IO ()
 runWindowsLnk = runFileWithStart
 
 findWineStartMenuLnks :: Bottle -> IO [FilePath]

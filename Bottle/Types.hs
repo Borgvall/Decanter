@@ -2,38 +2,44 @@
 
 module Bottle.Types where
 
-import Control.Exception (Exception)
 import Data.Text (Text)
 
--- | 'MissingSystemWine'/'MissingProton' are never persisted themselves --
--- 'SystemWine'/'Proton' keep their original shape precisely so that
--- existing "decanter.cfg" files (which store a derived-'Read'/'Show' of
--- this type) keep parsing unchanged. They are reconstructed fresh on every
--- config load instead, once the persisted 'SystemWine'/'Proton' is found to
--- no longer actually be available (see "Bottle.Logic".loadBottleConfig) --
--- availability can change between runs (Proton build removed, Wine
--- uninstalled), so it can never be a trustworthy on-disk value.
-data RunnerType
+-- | A runner that is actually present and can therefore be used to build a
+-- process invocation. Functions that start something (see
+-- "Bottle.Logic.Process".getProtonEnv, "Bottle.Logic.Programs".runCmd) take
+-- this rather than 'RunnerType', so "what if it's missing?" is a question
+-- the type system answers instead of a runtime check.
+--
+-- Also the exact shape of the *previous* on-disk config format, which
+-- stored a derived-'Show' of the bare runner and never contained a missing
+-- one (see "Bottle.Logic.Config".loadBottleConfig) -- hence the 'Read'
+-- instance, which is load-bearing for those older files.
+data ExistingRunner
   = SystemWine
   | Proton FilePath
-  | MissingSystemWine
-  | MissingProton FilePath
   deriving (Show, Eq, Read)
 
--- | Thrown if code that builds an actual process invocation for a bottle's
--- runner (Wine/Proton environment or command construction) is somehow
--- reached with a 'MissingSystemWine'/'MissingProton' runner. This should
--- never happen: both the GUI ("Gui.BottleView", via "Bottle.Logic
--- .blockReason") and 'decanter start'/'decanter open' (via the same
--- function) check availability first and refuse to proceed. Hitting this
--- indicates a gating bug rather than an expected runtime condition, so it's
--- modeled as an exception instead of an 'Either'/'Maybe' return value.
-newtype RunnerMissingError = RunnerMissingError RunnerType
+-- | A runner a bottle is configured for, but that isn't currently installed
+-- (Proton build removed, Wine uninstalled). Never persisted: availability
+-- can change between runs, so it can never be a trustworthy on-disk value
+-- and is recomputed on every config load.
+data MissingRunner
+  = MissingSystemWine
+  | MissingProton FilePath
+  deriving (Show, Eq)
 
-instance Show RunnerMissingError where
-  show (RunnerMissingError r) = "Attempted to build a process invocation for a missing runner: " ++ show r
+-- | A bottle's configured runner, together with whether it is currently
+-- available. Use 'runnableRunner' to get at the 'ExistingRunner' inside, or
+-- "Bottle.Logic".launchableRunner when the reason for a missing one is needed.
+data RunnerType
+  = Existing ExistingRunner
+  | Missing MissingRunner
+  deriving (Show, Eq)
 
-instance Exception RunnerMissingError
+-- | The runner to actually launch with, if the bottle has one.
+runnableRunner :: RunnerType -> Maybe ExistingRunner
+runnableRunner (Existing r) = Just r
+runnableRunner (Missing _)  = Nothing
 
 data Bottle = Bottle
   { bottleName :: Text

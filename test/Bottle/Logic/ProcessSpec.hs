@@ -72,40 +72,40 @@ pingMarker = "ping -n 240 127.0.0.1"
 -- | Starts a Windows "ping" inside the bottle that runs long enough (240
 -- iterations, one per second) for the kill tests below to reliably catch it
 -- still running before they try to kill it.
-startLongRunningPing :: Bottle -> IO ()
-startLongRunningPing bottle = runCmd bottle "wine" ["cmd.exe", "/c", pingMarker]
+startLongRunningPing :: Bottle -> ExistingRunner -> IO ()
+startLongRunningPing bottle r = runCmd bottle r "wine" ["cmd.exe", "/c", pingMarker]
 
 spec :: Spec
 spec = describe "Bottle.Logic.Process" $ do
 
   describe "getMergedWineEnv" $ do
     it "sets WINEPREFIX according to the bottle" $ do
-      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
-      env <- getMergedWineEnv bottle
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing SystemWine)
+      env <- getMergedWineEnv bottle SystemWine
       lookup "WINEPREFIX" env `shouldBe` Just "/tmp/decanter-test-prefix"
       lookup "PROTONPATH" env `shouldBe` Nothing
 
     it "sets PROTONPATH when using a Proton runner" $ do
-      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
-      env <- getMergedWineEnv bottle
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing (Proton "/opt/GE-Proton"))
+      env <- getMergedWineEnv bottle (Proton "/opt/GE-Proton")
       lookup "PROTONPATH" env `shouldBe` Just "/opt/GE-Proton"
 
     it "sets PRESSURE_VESSEL_SYSTEMD_SCOPE for a Proton runner, but not for System Wine" $ do
-      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
-      protonEnv <- getMergedWineEnv protonBottle
+      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing (Proton "/opt/GE-Proton"))
+      protonEnv <- getMergedWineEnv protonBottle (Proton "/opt/GE-Proton")
       lookup "PRESSURE_VESSEL_SYSTEMD_SCOPE" protonEnv `shouldBe` Just "1"
 
-      let systemWineBottle = protonBottle { runner = SystemWine }
-      systemWineEnv <- getMergedWineEnv systemWineBottle
+      let systemWineBottle = protonBottle { runner = Existing SystemWine }
+      systemWineEnv <- getMergedWineEnv systemWineBottle SystemWine
       lookup "PRESSURE_VESSEL_SYSTEMD_SCOPE" systemWineEnv `shouldBe` Nothing
 
     it "always disables winemenubuilder.exe for System Wine, but not for Proton" $ do
-      let systemWineBottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
-      systemWineEnv <- getMergedWineEnv systemWineBottle
+      let systemWineBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing SystemWine)
+      systemWineEnv <- getMergedWineEnv systemWineBottle SystemWine
       lookup "WINEDLLOVERRIDES" systemWineEnv `shouldBe` Just "winemenubuilder.exe="
 
-      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
-      protonEnv <- getMergedWineEnv protonBottle
+      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing (Proton "/opt/GE-Proton"))
+      protonEnv <- getMergedWineEnv protonBottle (Proton "/opt/GE-Proton")
       lookup "WINEDLLOVERRIDES" protonEnv `shouldBe` Nothing
 
     it "sets WINEDLLOVERRIDES for a System Wine bottle with DXVK/vkd3d-proton installed, but always disables winemenubuilder.exe" $ withTestEnvironment $ do
@@ -119,19 +119,19 @@ spec = describe "Bottle.Logic.Process" $ do
         (True, Just _, Just _) -> do
           bottle <- createBottleObject "WineDllOverridesTestBottle" SystemWine
           withTestBottle bottle $ \_ -> do
-            freshEnv <- getMergedWineEnv bottle
+            freshEnv <- getMergedWineEnv bottle SystemWine
             lookup "WINEDLLOVERRIDES" freshEnv `shouldBe` Just "winemenubuilder.exe="
 
             setDirect3DWrapperState bottle Dxvk
-            dxvkEnv <- getMergedWineEnv bottle
+            dxvkEnv <- getMergedWineEnv bottle SystemWine
             lookup "WINEDLLOVERRIDES" dxvkEnv `shouldBe` Just "winemenubuilder.exe=;d3d8,d3d9,d3d10core,d3d11,dxgi=native"
 
             setDirect3DWrapperState bottle DxvkAndVkd3dProton
-            bothEnv <- getMergedWineEnv bottle
+            bothEnv <- getMergedWineEnv bottle SystemWine
             lookup "WINEDLLOVERRIDES" bothEnv `shouldBe` Just "winemenubuilder.exe=;d3d8,d3d9,d3d10core,d3d11,dxgi,d3d12,d3d12core=native"
 
             setDirect3DWrapperState bottle WineD3D
-            resetEnv <- getMergedWineEnv bottle
+            resetEnv <- getMergedWineEnv bottle SystemWine
             lookup "WINEDLLOVERRIDES" resetEnv `shouldBe` Just "winemenubuilder.exe="
 
   describe "extractAppIcon" $ do
@@ -140,11 +140,11 @@ spec = describe "Bottle.Logic.Process" $ do
       case SystemWine `elem` runners of
         False -> pendingWith "No system Wine installation found in this environment; not testable here."
         True -> do
-          let bottle = Bottle "Test" "/tmp/decanter-test-icon-extraction-prefix" SystemWine
+          let bottle = Bottle "Test" "/tmp/decanter-test-icon-extraction-prefix" (Existing SystemWine)
           let outputPath = "/tmp/decanter-test-icon-extraction-output.png"
 
           removePathForcibly outputPath
-          succeeded <- extractAppIcon bottle "/nonexistent/Some App.lnk" outputPath
+          succeeded <- extractAppIcon bottle SystemWine "/nonexistent/Some App.lnk" outputPath
             `finally` removePathForcibly outputPath
 
           succeeded `shouldBe` False
@@ -170,9 +170,9 @@ spec = describe "Bottle.Logic.Process" $ do
       case SystemWine `elem` runners of
         False -> pendingWith "No system Wine installation found in this environment; not testable here."
         True -> do
-          let bottle = Bottle "SystemWineKillTestBottle" "/tmp/decanter-test-systemwine-kill-prefix" SystemWine
+          let bottle = Bottle "SystemWineKillTestBottle" "/tmp/decanter-test-systemwine-kill-prefix" (Existing SystemWine)
           withTestBottle bottle $ \_ -> do
-            startLongRunningPing bottle
+            startLongRunningPing bottle SystemWine
 
             started <- waitUntil 30 (isProcessRunning pingMarker)
             started `shouldBe` True
@@ -193,7 +193,7 @@ spec = describe "Bottle.Logic.Process" $ do
         (Just _, protonPath : _) -> do
           bottle <- createBottleObject "ProtonKillTestBottle" (Proton protonPath)
           withTestBottle bottle $ \_ -> do
-            startLongRunningPing bottle
+            startLongRunningPing bottle (Proton protonPath)
 
             -- A fresh pressure-vessel container takes a while to boot,
             -- so poll generously before giving up.

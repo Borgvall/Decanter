@@ -100,20 +100,24 @@ buildAppMenuButton bottle appName lnkPath onChanged = do
       #setPopover menuBtn (Just popover)
       Gtk.toWidget menuBtn
 
+
 -- | Builds the "Installed Programs" section: an expander listing every
 -- Wine start-menu shortcut found in the bottle, each with a button to run
 -- it and a button to add/remove it from the host's application menu (see
 -- 'buildAppMenuButton'). Appends itself directly into "contentBox", like
 -- 'Gui.BottleView.buildDirect3DWrapperSection' does.
 --
--- "mBlockTooltip" mirrors the check 'Gui.BottleView.buildBottleView' does
--- for its own buttons (via 'Bottle.Logic.blockReason'): 'Nothing' means
--- ready, 'Just tooltip' disables every program's run button (but not its
--- application-menu button, see 'buildAppMenuButton') with that explanation.
--- Passed down as already-rendered text rather than a 'BlockReason' so this
--- module doesn't need to know about Direct3D/runner internals itself.
-buildProgramListSection :: Bottle -> Maybe T.Text -> Gtk.Box -> IO ()
-buildProgramListSection bottle mBlockTooltip contentBox = do
+-- "launchable" is what 'Gui.BottleView.buildBottleView' got from
+-- 'Bottle.Logic.launchableRunner' and also drives its own buttons with:
+-- 'Right' carries the runner to launch programs with, 'Left' a tooltip
+-- explaining why nothing can be launched. The blocked side is passed down
+-- as already-rendered text rather than a 'BlockReason' so this module
+-- doesn't need to know about Direct3D/runner internals itself.
+--
+-- The application-menu button is deliberately not blocked by it, see
+-- 'buildAppMenuButton'.
+buildProgramListSection :: Bottle -> Either T.Text ExistingRunner -> Gtk.Box -> IO ()
+buildProgramListSection bottle launchable contentBox = do
   progSectionBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10 ]
   #append contentBox progSectionBox
   progExpander <- new Gtk.Expander [ #label := tr "Installed Programs", #hexpand := True ]
@@ -122,9 +126,9 @@ buildProgramListSection bottle mBlockTooltip contentBox = do
   #setChild progExpander (Just progBox)
 
   let blockIfBlocked :: Gtk.Button -> IO ()
-      blockIfBlocked btn = case mBlockTooltip of
-        Nothing      -> pure ()
-        Just tooltip -> set btn [ #sensitive := False, #tooltipText := tooltip ]
+      blockIfBlocked btn = case launchable of
+        Right _      -> pure ()
+        Left tooltip -> set btn [ #sensitive := False, #tooltipText := tooltip ]
 
   let clearBox box = do
         mChild <- Gtk.widgetGetFirstChild box
@@ -145,7 +149,11 @@ buildProgramListSection bottle mBlockTooltip contentBox = do
                 rowBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 4 ]
 
                 progBtn <- new Gtk.Button [ #label := name, #hexpand := True, #halign := Gtk.AlignFill, #tooltipText := T.pack path ]
-                void $ on progBtn #clicked $ runWindowsLnk bottle path
+                -- With nothing to launch with, the button gets no handler at
+                -- all; 'blockIfBlocked' disables it in that case anyway.
+                case launchable of
+                  Right r -> void $ on progBtn #clicked $ runWindowsLnk bottle r path
+                  Left _  -> pure ()
                 #append rowBox progBtn
                 blockIfBlocked progBtn
 

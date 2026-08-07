@@ -60,26 +60,30 @@ spec = do
         checkNameValidity "MyBottle.restoring" `shouldNotBe` Valid
 
     describe "isEngineFamilyChange" $ do
+      let wine     = Existing SystemWine
+      let protonA  = Existing (Proton "/path/to/proton-a")
+      let protonB  = Existing (Proton "/path/to/proton-b")
+
       it "is True when switching from System Wine to Proton" $ do
-        isEngineFamilyChange SystemWine (Proton "/path/to/proton-a") `shouldBe` True
+        isEngineFamilyChange wine protonA `shouldBe` True
 
       it "is True when switching from Proton to System Wine" $ do
-        isEngineFamilyChange (Proton "/path/to/proton-a") SystemWine `shouldBe` True
+        isEngineFamilyChange protonA wine `shouldBe` True
 
       it "is True across a missing runner too, as long as the family differs" $ do
-        isEngineFamilyChange MissingSystemWine (Proton "/path/to/proton-a") `shouldBe` True
-        isEngineFamilyChange (MissingProton "/path/to/proton-a") SystemWine `shouldBe` True
+        isEngineFamilyChange (Missing MissingSystemWine) protonA `shouldBe` True
+        isEngineFamilyChange (Missing (MissingProton "/path/to/proton-a")) wine `shouldBe` True
 
       it "is False when switching between two different Proton builds" $ do
-        isEngineFamilyChange (Proton "/path/to/proton-a") (Proton "/path/to/proton-b") `shouldBe` False
+        isEngineFamilyChange protonA protonB `shouldBe` False
 
       it "is False when the runner doesn't actually change" $ do
-        isEngineFamilyChange SystemWine SystemWine `shouldBe` False
-        isEngineFamilyChange (Proton "/path/to/proton-a") (Proton "/path/to/proton-a") `shouldBe` False
+        isEngineFamilyChange wine wine `shouldBe` False
+        isEngineFamilyChange protonA protonA `shouldBe` False
 
     describe "findBottleByName" $ do
-      let bottleA = Bottle "Alpha" "/tmp/alpha" SystemWine
-      let bottleB = Bottle "Beta" "/tmp/beta" SystemWine
+      let bottleA = Bottle "Alpha" "/tmp/alpha" (Existing SystemWine)
+      let bottleB = Bottle "Beta" "/tmp/beta" (Existing SystemWine)
       let bottles = [bottleA, bottleB]
 
       it "finds a bottle by its exact name" $ do
@@ -157,14 +161,22 @@ spec = do
       -- now, testing Bottle.Logic.Config's saveBottleConfig/loadBottleConfig
       -- directly rather than through listExistingBottles.
 
-      describe "blockReason / explainBlockReason" $ do
+      describe "launchableRunner / explainBlockReason" $ do
         let dummyBottle = Bottle "BlockReasonTest" "/nonexistent"
 
         it "reports RunnerMissing for MissingSystemWine, without touching the filesystem" $ do
-          blockReason (dummyBottle MissingSystemWine) `shouldReturn` Just (RunnerMissing MissingSystemWine)
+          launchableRunner (dummyBottle (Missing MissingSystemWine))
+            `shouldReturn` Left (RunnerMissing MissingSystemWine)
 
         it "reports RunnerMissing for MissingProton, without touching the filesystem" $ do
-          blockReason (dummyBottle (MissingProton "/legacy/path")) `shouldReturn` Just (RunnerMissing (MissingProton "/legacy/path"))
+          launchableRunner (dummyBottle (Missing (MissingProton "/legacy/path")))
+            `shouldReturn` Left (RunnerMissing (MissingProton "/legacy/path"))
+
+        -- The point of the Either: passing the check hands back what to
+        -- launch with, so callers never have to ask for the runner again.
+        it "returns the runner to launch with when nothing blocks the bottle" $ do
+          launchableRunner (dummyBottle (Existing SystemWine))
+            `shouldReturn` Right SystemWine
 
         it "explains a missing System Wine runner" $ do
           explainBlockReason (RunnerMissing MissingSystemWine) `shouldNotBe` ""

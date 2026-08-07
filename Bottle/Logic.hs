@@ -14,7 +14,7 @@ module Bottle.Logic
 
     -- * Readiness
   , BlockReason(..)
-  , blockReason
+  , launchableRunner
   , explainBlockReason
 
     -- * Validation
@@ -46,7 +46,7 @@ import System.Directory
     , removePathForcibly
     )
 import System.FilePath ((</>), takeBaseName)
-import Control.Exception (try, throw, IOException, SomeException)
+import Control.Exception (try, IOException, SomeException)
 import Control.Monad (filterM, forM)
 import Data.List (isSuffixOf)
 import qualified Data.Text as T
@@ -54,13 +54,15 @@ import qualified System.Linux.Btrfs as Btrfs
 
 import Logic.Translation (tr)
 
--- | Changes a bottle's runner, persisting the change via 'saveBottleConfig'
-changeBottleRunnerLogic :: Bottle -> RunnerType -> IO Bottle
+-- | Changes a bottle's runner, persisting the change via 'saveBottleConfig'.
+-- Takes an 'ExistingRunner': a runner is only ever switched to one the
+-- picker offered, and those come from 'getAvailableRunners'.
+changeBottleRunnerLogic :: Bottle -> ExistingRunner -> IO Bottle
 changeBottleRunnerLogic bottle newRunner = do
   putStrLn $ "Changing runner for bottle '" ++ T.unpack (bottleName bottle)
              ++ "' from " ++ show (runner bottle)
              ++ " to " ++ show newRunner
-  let updatedBottle = bottle { runner = newRunner }
+  let updatedBottle = bottle { runner = Existing newRunner }
   saveBottleConfig updatedBottle
   pure updatedBottle
 
@@ -77,14 +79,10 @@ isEngineFamilyChange :: RunnerType -> RunnerType -> Bool
 isEngineFamilyChange oldRunner newRunner =
   engineFamily oldRunner /= engineFamily newRunner
 
--- | Why a bottle currently can't run Windows programs, if at all --
--- 'Nothing' means it's ready. This is the single check both the GUI
--- (to grey out/explain the relevant buttons) and 'decanter start'/
--- 'decanter open' (to fail up front with a clear message, instead of
--- silently doing nothing deep inside "Bottle.Logic.Programs".runCmd)
--- should use, rather than separately querying runner/Direct3D internals.
+-- | Why a bottle currently can't run Windows programs. See
+-- 'launchableRunner', which is where one of these comes from.
 data BlockReason
-  = RunnerMissing RunnerType
+  = RunnerMissing MissingRunner
   | Direct3DWrapperDangling
   deriving (Eq, Show)
 
@@ -93,26 +91,28 @@ explainBlockReason (RunnerMissing MissingSystemWine) =
   tr "System Wine was not found. Install it, or change the runner."
 explainBlockReason (RunnerMissing (MissingProton path)) = T.concat
   [ tr "Proton build '", T.pack (takeBaseName path), tr "' was not found. Change the runner, or reinstall it." ]
--- Unreachable (RunnerMissing is only ever constructed with a Missing*
--- runner, see 'blockReason'), kept only so this function is total.
-explainBlockReason (RunnerMissing _) =
-  tr "The configured runner was not found."
 explainBlockReason Direct3DWrapperDangling =
   tr "The Direct3D wrapper's files are missing (e.g. removed by Nix garbage collection). Windows programs are blocked until this is repaired."
 
--- Matches every constructor explicitly instead of catching the runnable
--- ones with a wildcard: a future runner added to 'RunnerType' should force
--- a decision here rather than silently counting as "ready to run".
-blockReason :: Bottle -> IO (Maybe BlockReason)
-blockReason bottle = case runner bottle of
-  r@MissingSystemWine -> pure (Just (RunnerMissing r))
-  r@(MissingProton _) -> pure (Just (RunnerMissing r))
-  SystemWine          -> direct3DBlockReason
-  Proton _            -> direct3DBlockReason
-  where
-    direct3DBlockReason = do
-      ready <- isBottleReadyForWindowsApps bottle
-      pure $ if ready then Nothing else Just Direct3DWrapperDangling
+-- | The runner a bottle may currently launch Windows programs with, or why
+-- it can't. This is the single check both the GUI (to grey out/explain the
+-- relevant widgets) and 'decanter start'/'decanter open' (to fail up front
+-- with a clear message, instead of silently doing nothing deep inside
+-- "Bottle.Logic.Programs".runCmd) should use, rather than separately
+-- querying runner/Direct3D internals.
+--
+-- Returns the 'ExistingRunner' rather than just "yes, ready": passing this
+-- check is exactly what entitles a caller to start something, so handing
+-- back what to start it with means no call site has to ask a second time,
+-- and none of them needs a branch for a case the check already ruled out.
+-- Compare "Bottle.Types".runnableRunner, which answers the narrower, pure
+-- question of whether the configured runner is installed at all.
+launchableRunner :: Bottle -> IO (Either BlockReason ExistingRunner)
+launchableRunner bottle = case runner bottle of
+  Missing m  -> pure (Left (RunnerMissing m))
+  Existing r -> do
+    ready <- isBottleReadyForWindowsApps bottle
+    pure $ if ready then Right r else Left Direct3DWrapperDangling
 
 -- | Determines the base directory for all bottles
 getBottlesBaseDir :: IO FilePath
@@ -165,7 +165,7 @@ listExistingBottles = do
           case maybeConfig of
             Just r  -> return $ Bottle (T.pack name) path r
             -- Fallback for old bottles without a config
-            Nothing -> return $ Bottle (T.pack name) path SystemWine
+            Nothing -> return $ Bottle (T.pack name) path (Existing SystemWine)
 
 createVolume :: FilePath -> IO ()
 createVolume path = do
@@ -203,21 +203,21 @@ explainNameValid status = case status of
   ContainsSlash  -> tr "The name cannot contain a slash ('/')."
   ReservedSuffix -> tr "The name cannot end with \".restoring\" (reserved for snapshot restore)."
 
-createBottleObject :: T.Text -> RunnerType -> IO Bottle
+createBottleObject :: T.Text -> ExistingRunner -> IO Bottle
 createBottleObject name rType = do
   base <- getBottlesBaseDir
   let path = base </> T.unpack name
-  return $ Bottle name path rType
+  return $ Bottle name path (Existing rType)
 
 createBottleLogic :: Bottle -> IO ()
 createBottleLogic bottle@Bottle{..} = do
-  case checkNameValidity bottleName of
-    Valid -> do
+  case (checkNameValidity bottleName, runnableRunner runner) of
+    (Valid, Just existingRunner) -> do
       createVolume bottlePath
 
       saveBottleConfig bottle
 
-      mergedEnv <- getMergedWineEnv bottle
+      mergedEnv <- getMergedWineEnv bottle existingRunner
 
       -- Remove DISPLAY and WAYLAND_DISPLAY from the environment so wineboot
       -- doesn't open a window (like the Gecko/Mono installer dialog).
@@ -226,20 +226,23 @@ createBottleLogic bottle@Bottle{..} = do
       -- For Proton we also use wineboot (via umu-run wineboot), even though
       -- umu-run often initializes the prefix itself on first start. We call
       -- wineboot regardless for consistency, just adjusting the command.
-      --
-      -- MissingSystemWine/MissingProton can't actually occur here: "runner"
-      -- was just freshly chosen from 'createBottleObject' (fed by currently
-      -- available runners), never loaded from a config file. Handled only
-      -- for exhaustiveness, per Bottle.Types.RunnerMissingError.
-      let (bootCmd, bootArgs) = case runner of
-            SystemWine        -> ("wineboot", ["-u"])
-            Proton _          -> ("umu-run", ["wineboot", "-u"])
-            MissingSystemWine -> throw (RunnerMissingError runner)
-            MissingProton _   -> throw (RunnerMissingError runner)
+      let (bootCmd, bootArgs) = case existingRunner of
+            SystemWine -> ("wineboot", ["-u"])
+            Proton _   -> ("umu-run", ["wineboot", "-u"])
 
       let procConfig = setEnv headlessEnv $ proc bootCmd bootArgs
       runProcess_ procConfig
-    invalidName -> do
+
+    -- A bottle can't be initialized with a runner that isn't installed. In
+    -- practice unreachable (the runner comes straight from the picker, fed
+    -- by 'getAvailableRunners'), but refusing beats the exception this used
+    -- to throw -- and unlike an exception it's the same shape as the
+    -- invalid-name case right below.
+    (Valid, Nothing) ->
+      putStrLn $ "Ignoring creation of bottle '" ++ T.unpack bottleName
+                 ++ "': its runner " ++ show runner ++ " is not installed."
+
+    (invalidName, _) ->
       putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack bottleName ++ "': " ++ T.unpack (explainNameValid invalidName)
 
 -- | Deletes a bottle and all its snapshots

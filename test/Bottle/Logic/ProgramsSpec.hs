@@ -24,10 +24,10 @@ spec = do
     describe "runCmd" $ do
       it "starts the given command asynchronously with the bottle's merged Wine environment" $ do
         let markerPath = "/tmp/decanter-test-runcmd-marker"
-        let bottle = Bottle "Test" "/tmp/decanter-test-runcmd-prefix" SystemWine
+        let bottle = Bottle "Test" "/tmp/decanter-test-runcmd-prefix" (Existing SystemWine)
 
         removePathForcibly markerPath
-        runCmd bottle "sh" ["-c", "echo -n \"$WINEPREFIX\" > " ++ markerPath]
+        runCmd bottle SystemWine "sh" ["-c", "echo -n \"$WINEPREFIX\" > " ++ markerPath]
 
         -- runCmd starts the process asynchronously (startProcess, not
         -- runProcess), so poll for the marker file instead of reading it
@@ -53,18 +53,18 @@ spec = do
 
       it "matches whether 'winetricks' is on PATH for a System Wine bottle" $ do
         expected <- isJust <$> findExecutable "winetricks"
-        isWinetricksAvailable (bottleWith SystemWine) `shouldReturn` expected
+        isWinetricksAvailable (bottleWith (Existing SystemWine)) `shouldReturn` expected
 
       -- A System Wine bottle whose runner is currently missing keeps the
       -- entry; the GUI disables it along with the other Wine tools rather
       -- than hiding it.
       it "matches whether 'winetricks' is on PATH for a bottle with a missing System Wine" $ do
         expected <- isJust <$> findExecutable "winetricks"
-        isWinetricksAvailable (bottleWith MissingSystemWine) `shouldReturn` expected
+        isWinetricksAvailable (bottleWith (Missing MissingSystemWine)) `shouldReturn` expected
 
       it "is never available for Proton bottles, even with winetricks on PATH" $ do
-        isWinetricksAvailable (bottleWith (Proton "/opt/proton")) `shouldReturn` False
-        isWinetricksAvailable (bottleWith (MissingProton "/opt/proton")) `shouldReturn` False
+        isWinetricksAvailable (bottleWith (Existing (Proton "/opt/proton"))) `shouldReturn` False
+        isWinetricksAvailable (bottleWith (Missing (MissingProton "/opt/proton"))) `shouldReturn` False
 
     describe "findWineStartMenuLnks" $ do
       it "finds .lnk files in the common and per-user Start Menu, including nested folders, ignoring non-.lnk files" $ do
@@ -83,7 +83,7 @@ spec = do
         writeFile (nestedDir </> "Solitaire.lnk") ""
         writeFile (userStartMenu </> "AliceApp.lnk") ""
 
-        let bottle = Bottle "ProgramsSpecBottle" bottleDir SystemWine
+        let bottle = Bottle "ProgramsSpecBottle" bottleDir (Existing SystemWine)
 
         found <- findWineStartMenuLnks bottle `finally` removePathForcibly bottleDir
 
@@ -97,7 +97,7 @@ spec = do
         cwd <- getCurrentDirectory
         let bottleDir = cwd </> "test-env" </> "EmptyProgramsSpecBottle"
         createDirectoryIfMissing True bottleDir
-        let bottle = Bottle "EmptyProgramsSpecBottle" bottleDir SystemWine
+        let bottle = Bottle "EmptyProgramsSpecBottle" bottleDir (Existing SystemWine)
 
         found <- findWineStartMenuLnks bottle `finally` removePathForcibly bottleDir
         found `shouldBe` []

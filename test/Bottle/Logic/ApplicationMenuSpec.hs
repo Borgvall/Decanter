@@ -41,7 +41,7 @@ spec = do
           cwd <- getCurrentDirectory
           let path = cwd </> "test-env" </> "MenuTestBottle"
           createDirectoryIfMissing True path
-          return $ Bottle "MenuTestBottle" path SystemWine
+          return $ Bottle "MenuTestBottle" path (Existing SystemWine)
 
     -- A deliberately non-existent .lnk path is enough for most of these
     -- tests: icon extraction (see Bottle.Logic.Process.extractAppIcon) is

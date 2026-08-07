@@ -103,7 +103,12 @@ addToApplicationMenu bottle appName lnkPath category = do
   ensureApplicationMenuSymlink bottle
 
   let iconPath = iconFilePath bottle appName
-  iconExtracted <- extractAppIcon bottle lnkPath iconPath
+  -- Extraction runs Wine/Proton, so it needs an installed runner. Without
+  -- one the entry is still created, just without an "Icon=" field -- the
+  -- same best-effort degradation as a failed extraction.
+  iconExtracted <- case runnableRunner (runner bottle) of
+    Just r  -> extractAppIcon bottle r lnkPath iconPath
+    Nothing -> pure False
   let iconLine = if iconExtracted then ["Icon=" <> T.pack iconPath] else []
 
   writeFile (desktopFilePath bottle appName) $ T.unpack $ T.unlines $

@@ -36,29 +36,29 @@ spec = do
 
     describe "engineFamily" $ do
       it "puts System Wine and Proton runners in their respective family" $ do
-        engineFamily SystemWine          `shouldBe` WineEngine
-        engineFamily (Proton "/opt/ge")  `shouldBe` ProtonEngine
+        engineFamily (Existing SystemWine)         `shouldBe` WineEngine
+        engineFamily (Existing (Proton "/opt/ge")) `shouldBe` ProtonEngine
 
       -- A missing runner keeps its family: it's still a bottle of that
       -- engine, just one whose runner is currently unavailable. Callers that
-      -- care about availability use 'Bottle.Logic.blockReason' instead.
+      -- care about availability use 'Bottle.Logic.launchableRunner' instead.
       it "keeps the family of a runner that is currently missing" $ do
-        engineFamily MissingSystemWine        `shouldBe` WineEngine
-        engineFamily (MissingProton "/opt/ge") `shouldBe` ProtonEngine
+        engineFamily (Missing MissingSystemWine)         `shouldBe` WineEngine
+        engineFamily (Missing (MissingProton "/opt/ge")) `shouldBe` ProtonEngine
 
       it "reports a change between the two families, but not between Proton builds" $ do
         let differs a b = engineFamily a /= engineFamily b
-        differs SystemWine (Proton "/opt/ge") `shouldBe` True
-        differs (Proton "/opt/ge") (Proton "/opt/umu") `shouldBe` False
-        differs SystemWine MissingSystemWine `shouldBe` False
+        differs (Existing SystemWine) (Existing (Proton "/opt/ge")) `shouldBe` True
+        differs (Existing (Proton "/opt/ge")) (Existing (Proton "/opt/umu")) `shouldBe` False
+        differs (Existing SystemWine) (Missing MissingSystemWine) `shouldBe` False
 
     describe "getRunnerTypeDisplayName" $ do
       it "falls back to \"Proton (<dirname>)\" when compatibilitytool.vdf is missing" $ do
-        getRunnerTypeDisplayName (Proton "/nonexistent/GE-Proton10-25")
+        getRunnerTypeDisplayName (Existing (Proton "/nonexistent/GE-Proton10-25"))
           `shouldReturn` "Proton (GE-Proton10-25)"
 
       it "returns a non-empty name for System Wine" $ do
-        name <- getRunnerTypeDisplayName SystemWine
+        name <- getRunnerTypeDisplayName (Existing SystemWine)
         T.null name `shouldBe` False
 
     describe "getAvailableRunners" $ do

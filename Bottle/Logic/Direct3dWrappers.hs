@@ -248,7 +248,7 @@ data Direct3DWrapperStatus
 -- as their healthy counterpart here: this is queried unconditionally while
 -- building the bottle view (to decide whether/how to render the Direct3D
 -- section at all), not gated behind runner availability the way actually
--- launching something is (see "Bottle.Logic".blockReason) -- and wrapper
+-- launching something is (see "Bottle.Logic".launchableRunner) -- and wrapper
 -- health itself is a pure filesystem check (symlinks under "system32"),
 -- never actually needing Wine/Proton to run.
 getDirect3DWrapperStatus :: Bottle -> IO Direct3DWrapperStatus

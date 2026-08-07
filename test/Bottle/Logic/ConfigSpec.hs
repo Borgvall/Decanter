@@ -42,13 +42,13 @@ spec = do
     it "round-trips a SystemWine runner via saveBottleConfig/loadBottleConfig" $ do
       dir <- testBottleDir "SaveLoadSystemWineTest"
       createDirectoryIfMissing True dir
-      saveBottleConfig (Bottle "SaveLoadSystemWineTest" dir SystemWine)
-      loadBottleConfig dir `shouldReturn` Just SystemWine
+      saveBottleConfig (Bottle "SaveLoadSystemWineTest" dir (Existing SystemWine))
+      loadBottleConfig dir `shouldReturn` Just (Existing SystemWine)
 
     it "saveBottleConfig persists a Proton runner by name, not by path" $ do
       dir <- testBottleDir "PersistNameTest"
       createDirectoryIfMissing True dir
-      saveBottleConfig (Bottle "PersistNameTest" dir (Proton "/some/where/CoolProton"))
+      saveBottleConfig (Bottle "PersistNameTest" dir (Existing (Proton "/some/where/CoolProton")))
       content <- readFile (dir </> "decanter.cfg")
       content `shouldBe` "PersistedProtonName \"CoolProton\""
 
@@ -72,12 +72,12 @@ spec = do
         , "}"
         ]
 
-      saveBottleConfig (Bottle "PersistVdfNameTest" dir (Proton protonDir))
+      saveBottleConfig (Bottle "PersistVdfNameTest" dir (Existing (Proton protonDir)))
       content <- readFile (dir </> "decanter.cfg")
       content `shouldBe` "PersistedProtonName \"MyFakeProtonDisplayName\""
 
       setEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS" extraToolsDir
-      (loadBottleConfig dir `shouldReturn` Just (Proton protonDir))
+      (loadBottleConfig dir `shouldReturn` Just (Existing (Proton protonDir)))
         `finally` unsetEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS"
 
     it "resolves a persisted Proton name to wherever that name is currently found, even if the path moved" $ do
@@ -91,26 +91,26 @@ spec = do
       writeFile (dir </> "decanter.cfg") "PersistedProtonName \"MyFakeProton\""
 
       setEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS" extraToolsDir
-      (loadBottleConfig dir `shouldReturn` Just (Proton protonDir))
+      (loadBottleConfig dir `shouldReturn` Just (Existing (Proton protonDir)))
         `finally` unsetEnv "STEAM_EXTRA_COMPAT_TOOLS_PATHS"
 
     it "downgrades a persisted Proton name to MissingProton when no tool by that name exists anymore" $ do
       dir <- testBottleDir "PersistedNameGoneTest"
       createDirectoryIfMissing True dir
       writeFile (dir </> "decanter.cfg") "PersistedProtonName \"GhostProton\""
-      loadBottleConfig dir `shouldReturn` Just (MissingProton "GhostProton")
+      loadBottleConfig dir `shouldReturn` Just (Missing (MissingProton "GhostProton"))
 
     it "still reads the previous, path-based config format, downgrading a no-longer-existing Proton path to MissingProton" $ do
       dir <- testBottleDir "PathFormatMissingTest"
       createDirectoryIfMissing True dir
       writeFile (dir </> "decanter.cfg") "Proton \"/no/longer/here\""
-      loadBottleConfig dir `shouldReturn` Just (MissingProton "/no/longer/here")
+      loadBottleConfig dir `shouldReturn` Just (Missing (MissingProton "/no/longer/here"))
 
     it "still reads the legacy (RunnerType, Arch) tuple config format, downgrading a no-longer-existing Proton path to MissingProton" $ do
       dir <- testBottleDir "LegacyConfigTest"
       createDirectoryIfMissing True dir
       writeFile (dir </> "decanter.cfg") "(Proton \"/legacy/path\",Win64)"
-      loadBottleConfig dir `shouldReturn` Just (MissingProton "/legacy/path")
+      loadBottleConfig dir `shouldReturn` Just (Missing (MissingProton "/legacy/path"))
 
     it "keeps a legacy-format Proton runner intact when its path is still a valid compatibility tool" $ do
       dir <- testBottleDir "LegacyConfigStillValidTest"
@@ -120,4 +120,4 @@ spec = do
       createDirectoryIfMissing True protonDir
       writeFile (protonDir </> "compatibilitytool.vdf") ""
       writeFile (dir </> "decanter.cfg") ("(Proton " ++ show protonDir ++ ",Win64)")
-      loadBottleConfig dir `shouldReturn` Just (Proton protonDir)
+      loadBottleConfig dir `shouldReturn` Just (Existing (Proton protonDir))

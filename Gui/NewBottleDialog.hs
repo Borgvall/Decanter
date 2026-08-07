@@ -102,10 +102,10 @@ buildNewBottlePopover refreshCallback = do
   availableRunners <- getAvailableRunners
 
   forM_ availableRunners $ \runnerType -> do
-    displayName <- getRunnerTypeDisplayName runnerType
+    displayName <- getRunnerTypeDisplayName (Existing runnerType)
     row <- new Adw.ActionRow
       [ #title := displayName
-      , #subtitle := runnerTypeToString runnerType
+      , #subtitle := runnerTypeToString (Existing runnerType)
       ]
     #append runnerListBox row
 
