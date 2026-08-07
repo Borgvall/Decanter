@@ -17,7 +17,7 @@ import qualified System.Process.Typed as PT
 import System.Exit (ExitCode(..))
 import Control.Exception (finally)
 import Control.Concurrent (threadDelay)
-import Data.List (isInfixOf, partition)
+import Data.List (isInfixOf, partition, intercalate)
 
 -- | Whether any host process' command line contains "needle" (via pgrep -f).
 -- Used to check for a running/stopped Windows process started via 'runCmd':
@@ -84,6 +84,21 @@ spec = describe "Bottle.Logic.Process" $ do
       env <- getMergedWineEnv bottle SystemWine
       lookup "WINEPREFIX" env `shouldBe` Just "/tmp/decanter-test-prefix"
       lookup "PROTONPATH" env `shouldBe` Nothing
+
+    -- Regression test: the environment is trimmed of over-long variables
+    -- for the EA app's sake, which used to take PATH with it on NixOS
+    -- (>4000 characters) and left winetricks unable to find "wineserver".
+    it "keeps PATH even when it is longer than the EA-app length limit" $ do
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing SystemWine)
+      let longPath = intercalate ":" (replicate 200 "/some/reasonably/long/directory")
+      length longPath `shouldSatisfy` (> 1000)
+
+      -- Restore the real PATH afterwards no matter what: every later test
+      -- that looks for wine/umu-run on it would otherwise fail.
+      originalPath <- lookupEnv "PATH"
+      env <- (setEnv "PATH" longPath >> getMergedWineEnv bottle SystemWine)
+        `finally` mapM_ (setEnv "PATH") originalPath
+      lookup "PATH" env `shouldBe` Just longPath
 
     it "sets PROTONPATH when using a Proton runner" $ do
       let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing (Proton "/opt/GE-Proton"))

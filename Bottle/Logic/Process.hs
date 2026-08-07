@@ -88,7 +88,23 @@ mergeWithHostEnv wineSpecificEnv = do
     -- The EA app, does not handle environments variables of a certain length.
     -- The result is, it can not start any game. See
     -- https://discourse.nixos.org/t/failing-to-launch-ea-games-on-nixos/61944.
-    let eaHack = filter ((<1000) . length . snd) currentEnv
+    --
+    -- What upsets it is the mere *presence* of a variable of that length,
+    -- not one specific variable -- so this has to stay a length filter; a
+    -- targeted blocklist of known-bad names would not be equivalent.
+    --
+    -- PATH is nevertheless exempt, for two reasons. Dropping it leaves the
+    -- child unable to find anything it invokes by name: winetricks looks up
+    -- "wineserver" and "taskset" that way and aborts with "wineserver not
+    -- found!" without them (Wine itself never notices, because nixpkgs'
+    -- wrapper resolves its helpers by absolute path -- which is exactly why
+    -- that stayed hidden for so long). And keeping it doesn't reintroduce
+    -- the EA problem: Wine/Proton replace the Windows-side PATH with
+    -- "C:\windows\system32;..." instead of passing the Unix one through, so
+    -- a Windows program never sees it as an over-long variable at all --
+    -- verified by launching an EA game (Jedi Fallen Order) with this
+    -- exemption in place.
+    let eaHack = filter (\(k, v) -> k == "PATH" || length v < 1000) currentEnv
 
     let filteredEnv = filter (\(k, _) -> k `notElem` overrideKeys) eaHack
 
