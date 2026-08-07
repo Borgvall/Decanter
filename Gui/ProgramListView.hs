@@ -34,12 +34,18 @@ applicationMenuCategories =
 -- 'Bottle.Logic.addToApplicationMenu'/'removeFromApplicationMenu'). The
 -- state (already added or not) is freshly checked via 'isInApplicationMenu'
 -- on every call; "onChanged" lets the caller rebuild the program list after
--- a change, so the button's state updates. Deliberately left unlocked even
--- while Windows programs are currently blocked (see
--- 'buildProgramListSection'): this only writes/deletes a ".desktop" file,
--- it doesn't start a Wine program itself.
-buildAppMenuButton :: Bottle -> T.Text -> FilePath -> IO () -> IO Gtk.Widget
-buildAppMenuButton bottle appName lnkPath onChanged = do
+-- a change, so the button's state updates.
+--
+-- The two directions are gated differently on purpose. *Adding* needs a
+-- launchable bottle: it extracts the entry's icon by running Wine/Proton
+-- (see 'Bottle.Logic.Process.extractAppIcon'), and the entry it writes has
+-- an "Exec=decanter start ...", which would fail the moment anyone clicked
+-- it in the host's menu. *Removing* only deletes a ".desktop" file and
+-- stays available precisely then -- otherwise a bottle whose runner
+-- disappeared would keep a dead menu entry that can no longer be cleaned
+-- up from here.
+buildAppMenuButton :: Bottle -> Either T.Text ExistingRunner -> T.Text -> FilePath -> IO () -> IO Gtk.Widget
+buildAppMenuButton bottle launchable appName lnkPath onChanged = do
   alreadyAdded <- isInApplicationMenu bottle appName
   if alreadyAdded
     then do
@@ -52,54 +58,63 @@ buildAppMenuButton bottle appName lnkPath onChanged = do
         removeFromApplicationMenu bottle appName
         onChanged
       Gtk.toWidget btn
-    else do
-      menuBtn <- new Gtk.MenuButton
-        [ #iconName := "list-add-symbolic"
-        , #tooltipText := tr "Add to application menu"
-        , #valign := Gtk.AlignCenter
-        ]
+    else case launchable of
+      Left blockTooltip -> do
+        blockedBtn <- new Gtk.MenuButton
+          [ #iconName := "list-add-symbolic"
+          , #tooltipText := blockTooltip
+          , #valign := Gtk.AlignCenter
+          , #sensitive := False
+          ]
+        Gtk.toWidget blockedBtn
 
-      popover <- new Gtk.Popover []
-      popBox <- new Gtk.Box
-        [ #orientation := Gtk.OrientationVertical
-        , #spacing := 8
-        , #marginTop := 8, #marginBottom := 8, #marginStart := 8, #marginEnd := 8
-        ]
-      #setChild popover (Just popBox)
+      Right existingRunner -> do
+        menuBtn <- new Gtk.MenuButton
+          [ #iconName := "list-add-symbolic"
+          , #tooltipText := tr "Add to application menu"
+          , #valign := Gtk.AlignCenter
+          ]
 
-      headingLabel <- new Gtk.Label
-        [ #label := tr "Add to application menu"
-        , #halign := Gtk.AlignStart
-        , #cssClasses := ["heading"]
-        ]
-      #append popBox headingLabel
+        popover <- new Gtk.Popover []
+        popBox <- new Gtk.Box
+          [ #orientation := Gtk.OrientationVertical
+          , #spacing := 8
+          , #marginTop := 8, #marginBottom := 8, #marginStart := 8, #marginEnd := 8
+          ]
+        #setChild popover (Just popBox)
 
-      -- A flat list of clickable rows instead of a nested dropdown (e.g.
-      -- Adw.ComboRow): a GTK4 popup inside another popup collides during
-      -- the pointer grab, so only the first entry could ever be selected.
-      -- Clicking a row adds immediately with that category, just like the
-      -- runner popover in Gui.BottleView.
-      categoryGroup <- new Adw.PreferencesGroup [ #title := tr "Category" ]
-      #append popBox categoryGroup
+        headingLabel <- new Gtk.Label
+          [ #label := tr "Add to application menu"
+          , #halign := Gtk.AlignStart
+          , #cssClasses := ["heading"]
+          ]
+        #append popBox headingLabel
 
-      forM_ applicationMenuCategories $ \category -> do
-        row <- new Adw.ActionRow [ #title := category, #activatable := True ]
-        -- addToApplicationMenu extracts an icon via Wine/winemenubuilder
-        -- (see Bottle.Logic.Process.extractAppIcon), so it can take a few
-        -- seconds -- runs in its own thread so this doesn't briefly freeze
-        -- the UI.
-        void $ on row #activated $ do
-          #popdown popover
-          void $ async $ do
-            addToApplicationMenu bottle appName lnkPath category
-            GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
-              onChanged
-              return False
-        #add categoryGroup row
+        -- A flat list of clickable rows instead of a nested dropdown (e.g.
+        -- Adw.ComboRow): a GTK4 popup inside another popup collides during
+        -- the pointer grab, so only the first entry could ever be selected.
+        -- Clicking a row adds immediately with that category, just like the
+        -- runner popover in Gui.BottleView.
+        categoryGroup <- new Adw.PreferencesGroup [ #title := tr "Category" ]
+        #append popBox categoryGroup
 
-      #setPopover menuBtn (Just popover)
-      Gtk.toWidget menuBtn
+        forM_ applicationMenuCategories $ \category -> do
+          row <- new Adw.ActionRow [ #title := category, #activatable := True ]
+          -- addToApplicationMenu extracts an icon via Wine/winemenubuilder
+          -- (see Bottle.Logic.Process.extractAppIcon), so it can take a few
+          -- seconds -- runs in its own thread so this doesn't briefly freeze
+          -- the UI.
+          void $ on row #activated $ do
+            #popdown popover
+            void $ async $ do
+              addToApplicationMenu bottle existingRunner appName lnkPath category
+              GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+                onChanged
+                return False
+          #add categoryGroup row
 
+        #setPopover menuBtn (Just popover)
+        Gtk.toWidget menuBtn
 
 -- | Builds the "Installed Programs" section: an expander listing every
 -- Wine start-menu shortcut found in the bottle, each with a button to run
@@ -114,8 +129,8 @@ buildAppMenuButton bottle appName lnkPath onChanged = do
 -- as already-rendered text rather than a 'BlockReason' so this module
 -- doesn't need to know about Direct3D/runner internals itself.
 --
--- The application-menu button is deliberately not blocked by it, see
--- 'buildAppMenuButton'.
+-- See 'buildAppMenuButton' for why the application-menu button is only
+-- half-blocked by this (removing stays possible, adding doesn't).
 buildProgramListSection :: Bottle -> Either T.Text ExistingRunner -> Gtk.Box -> IO ()
 buildProgramListSection bottle launchable contentBox = do
   progSectionBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10 ]
@@ -157,7 +172,7 @@ buildProgramListSection bottle launchable contentBox = do
                 #append rowBox progBtn
                 blockIfBlocked progBtn
 
-                menuBtn <- buildAppMenuButton bottle name path refreshPrograms
+                menuBtn <- buildAppMenuButton bottle launchable name path refreshPrograms
                 #append rowBox menuBtn
 
                 #append progBox rowBox

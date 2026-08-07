@@ -96,19 +96,14 @@ removeApplicationMenuSymlink bottle = do
 -- The icon is extracted from the ".lnk" file via 'extractAppIcon' (best
 -- effort, see there): if that fails, the entry simply gets no "Icon="
 -- field, instead of the whole addition failing.
-addToApplicationMenu :: Bottle -> T.Text -> FilePath -> T.Text -> IO ()
-addToApplicationMenu bottle appName lnkPath category = do
+addToApplicationMenu :: Bottle -> ExistingRunner -> T.Text -> FilePath -> T.Text -> IO ()
+addToApplicationMenu bottle existingRunner appName lnkPath category = do
   createDirectoryIfMissing True (bottleMenuDir bottle)
   createDirectoryIfMissing True (bottleMenuDir bottle </> "icons")
   ensureApplicationMenuSymlink bottle
 
   let iconPath = iconFilePath bottle appName
-  -- Extraction runs Wine/Proton, so it needs an installed runner. Without
-  -- one the entry is still created, just without an "Icon=" field -- the
-  -- same best-effort degradation as a failed extraction.
-  iconExtracted <- case runnableRunner (runner bottle) of
-    Just r  -> extractAppIcon bottle r lnkPath iconPath
-    Nothing -> pure False
+  iconExtracted <- extractAppIcon bottle existingRunner lnkPath iconPath
   let iconLine = if iconExtracted then ["Icon=" <> T.pack iconPath] else []
 
   writeFile (desktopFilePath bottle appName) $ T.unpack $ T.unlines $
