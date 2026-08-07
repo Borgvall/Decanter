@@ -16,19 +16,23 @@ import qualified Data.Text as T
 import Data.Text (Text)
 
 import Bottle.Types
-import Bottle.Logic
+import Bottle.Logic.Name (parseName, explainInvalidName)
 import Bottle.Logic.Snapshots
 import Logic.Translation (tr)
 
 validateSnapshotName :: Adw.EntryRow -> Gtk.Button -> Gtk.Label -> IO ()
 validateSnapshotName entryRow createBtn errorLabel = do
   nameText <- #getText entryRow
-  let status = checkNameValidity nameText
-  let valid = status == Valid
-  #setSensitive createBtn valid
-  if valid
-    then Gtk.widgetRemoveCssClass entryRow "error" >> #setVisible errorLabel False
-    else Gtk.widgetAddCssClass entryRow "error" >> #setLabel errorLabel (explainNameValid status) >> #setVisible errorLabel True
+  case parseName nameText of
+    Right _ -> do
+      #setSensitive createBtn True
+      Gtk.widgetRemoveCssClass entryRow "error"
+      #setVisible errorLabel False
+    Left reason -> do
+      #setSensitive createBtn False
+      Gtk.widgetAddCssClass entryRow "error"
+      #setLabel errorLabel (explainInvalidName reason)
+      #setVisible errorLabel True
 
 showCreateSnapshotPopover :: Gtk.Button -> Bottle -> IO () -> IO ()
 showCreateSnapshotPopover parentBtn bottle refreshCallback = do
@@ -45,13 +49,19 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
   createBtn <- new Gtk.Button [ #label := tr "Create", #cssClasses := ["suggested-action"], #sensitive := False, #halign := Gtk.AlignEnd ]
   #append contentBox createBtn
   void $ on nameEntry #changed $ validateSnapshotName nameEntry createBtn errorLabel
+  -- Runs the naming rules on the current text instead of reading the
+  -- button's own sensitivity back out as if it were the source of truth:
+  -- the 'ValidName' that falls out is exactly what 'createSnapshotLogic'
+  -- takes, so passing the check and being allowed to create are one step.
   let doCreate = do
-        isValid <- #getSensitive createBtn
-        when isValid $ do
-            sName <- #getText nameEntry
+        sName <- #getText nameEntry
+        case parseName sName of
+          Left reason ->
+            #setLabel errorLabel (explainInvalidName reason) >> #setVisible errorLabel True
+          Right validName -> do
             #setSensitive createBtn False
             void $ async $ do
-              res <- try (createSnapshotLogic bottle sName) :: IO (Either SomeException ())
+              res <- try (createSnapshotLogic bottle validName) :: IO (Either SomeException ())
               GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                 case res of
                   Right _ -> #popdown popover >> refreshCallback

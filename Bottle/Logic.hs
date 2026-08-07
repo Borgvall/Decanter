@@ -16,11 +16,6 @@ module Bottle.Logic
   , BlockReason(..)
   , launchableRunner
   , explainBlockReason
-
-    -- * Validation
-  , checkNameValidity
-  , NameValid(Valid)
-  , explainNameValid
   ) where
 
 import Bottle.Types
@@ -31,8 +26,8 @@ import Bottle.Logic.Snapshots
     , deleteSubvolumeForcible
     , deleteAllSnapshots
     , recoverInterruptedRestores
-    , reservedNameSuffixes
     )
+import Bottle.Logic.Name (ValidName, validNameText)
 import Bottle.Logic.ApplicationMenu (removeApplicationMenuSymlink)
 import Bottle.Logic.Direct3dWrappers (isBottleReadyForWindowsApps)
 import Bottle.Logic.Runner (engineFamily)
@@ -48,7 +43,6 @@ import System.Directory
 import System.FilePath ((</>), takeBaseName)
 import Control.Exception (try, IOException, SomeException)
 import Control.Monad (filterM, forM)
-import Data.List (isSuffixOf)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 
@@ -174,76 +168,44 @@ createVolume path = do
       putStrLn "No BTRFS or error, using standard directory."
       createDirectoryIfMissing True path
 
-data NameValid
-  = Valid
-  | EmptyName
-  | NameTooLong
-  | ContainsSlash
-  | ReservedSuffix
-  deriving (Show, Eq)
-
-checkNameValidity :: T.Text -> NameValid
-checkNameValidity name
-  | T.null name = EmptyName
-  | T.length name > 256 = NameTooLong
-  | T.elem '/' name = ContainsSlash
-  -- Reserved so a bottle name can never collide with the temporary
-  -- directory restoreSnapshotLogic's crash-safe restore uses (see
-  -- Bottle.Logic.Snapshots.reservedNameSuffixes).
-  | any (`isSuffixOf` T.unpack name) reservedNameSuffixes = ReservedSuffix
-  | otherwise = Valid
-
-explainNameValid :: NameValid -> T.Text
-explainNameValid status = case status of
-  Valid          -> ""
-  EmptyName      -> tr "The name cannot be empty."
-  NameTooLong    -> tr "The name is too long (max 256 characters)."
-  ContainsSlash  -> tr "The name cannot contain a slash ('/')."
-  ReservedSuffix -> tr "The name cannot end with \".restoring\" (reserved for snapshot restore)."
-
-createBottleObject :: T.Text -> ExistingRunner -> IO Bottle
+createBottleObject :: ValidName -> ExistingRunner -> IO Bottle
 createBottleObject name rType = do
   base <- getBottlesBaseDir
-  let path = base </> T.unpack name
-  return $ Bottle name path (Existing rType)
+  let path = base </> T.unpack (validNameText name)
+  return $ Bottle (validNameText name) path (Existing rType)
 
 -- | Creates a bottle: its volume, its config file, and an initialized Wine
 -- prefix.
 --
--- Takes the name and an 'ExistingRunner' rather than a finished 'Bottle',
--- so a bottle configured for a runner that isn't installed cannot reach
--- this at all -- initializing a prefix is exactly what needs a runner to
--- actually be there. It builds its own 'Bottle' via 'createBottleObject',
--- which is deterministic in these same two arguments, so callers that also
--- want the object (see 'Bottle.Logic.TestSupport.withTestBottle') can ask
--- for it separately without the two disagreeing.
-createBottleLogic :: T.Text -> ExistingRunner -> IO ()
+-- Takes a 'ValidName' and an 'ExistingRunner' rather than a finished
+-- 'Bottle', so neither an unusable name nor a runner that isn't installed
+-- can reach it -- both are exactly what initializing a prefix needs to be
+-- settled beforehand, and the function has a branch for neither. It builds
+-- its own 'Bottle' via 'createBottleObject', which is deterministic in
+-- these same two arguments, so callers that also want the object (see
+-- 'Bottle.Logic.TestSupport.withTestBottle') can ask for it separately
+-- without the two disagreeing.
+createBottleLogic :: ValidName -> ExistingRunner -> IO ()
 createBottleLogic name existingRunner = do
-  case checkNameValidity name of
-    Valid -> do
-      bottle <- createBottleObject name existingRunner
-      createVolume (bottlePath bottle)
+  bottle <- createBottleObject name existingRunner
+  createVolume (bottlePath bottle)
 
-      saveBottleConfig bottle
+  saveBottleConfig bottle
 
-      mergedEnv <- getMergedWineEnv bottle existingRunner
+  mergedEnv <- getMergedWineEnv bottle existingRunner
 
-      -- Remove DISPLAY and WAYLAND_DISPLAY from the environment so wineboot
-      -- doesn't open a window (like the Gecko/Mono installer dialog).
-      let headlessEnv = filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) mergedEnv
+  -- Remove DISPLAY and WAYLAND_DISPLAY from the environment so wineboot
+  -- doesn't open a window (like the Gecko/Mono installer dialog).
+  let headlessEnv = filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) mergedEnv
 
-      -- For Proton we also use wineboot (via umu-run wineboot), even though
-      -- umu-run often initializes the prefix itself on first start. We call
-      -- wineboot regardless for consistency, just adjusting the command.
-      let (bootCmd, bootArgs) = case existingRunner of
-            SystemWine -> ("wineboot", ["-u"])
-            Proton _   -> ("umu-run", ["wineboot", "-u"])
+  -- For Proton we also use wineboot (via umu-run wineboot), even though
+  -- umu-run often initializes the prefix itself on first start. We call
+  -- wineboot regardless for consistency, just adjusting the command.
+  let (bootCmd, bootArgs) = case existingRunner of
+        SystemWine -> ("wineboot", ["-u"])
+        Proton _   -> ("umu-run", ["wineboot", "-u"])
 
-      let procConfig = setEnv headlessEnv $ proc bootCmd bootArgs
-      runProcess_ procConfig
-
-    invalidName ->
-      putStrLn $ "Ignoring creation with invalid bottle name '" ++ T.unpack name ++ "': " ++ T.unpack (explainNameValid invalidName)
+  runProcess_ $ setEnv headlessEnv $ proc bootCmd bootArgs
 
 -- | Deletes a bottle and all its snapshots
 deleteBottleLogic :: Bottle -> IO ()

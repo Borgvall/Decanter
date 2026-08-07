@@ -5,7 +5,7 @@ module Bottle.Logic.Direct3dWrappersSpec (spec) where
 import Test.Hspec
 import Bottle.Logic.Direct3dWrappers
 import Bottle.Logic (createBottleObject)
-import Bottle.Logic.TestSupport (withTestBottle)
+import Bottle.Logic.TestSupport (withTestBottle, testName)
 import Bottle.Logic.Runner (getAvailableRunners)
 import Bottle.Types
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, pathIsSymbolicLink, removeFile, createFileLink)
@@ -167,6 +167,6 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
       -- builds the Bottle record and doesn't create the prefix itself, but
       -- still needs a writable XDG_DATA_HOME (see 'withTestEnvironment')
       -- for its own bookkeeping directory.
-      bottle <- createBottleObject "Direct3dWrapperStatusProtonTestBottle" (Proton "/Test/Path")
+      bottle <- createBottleObject (testName "Direct3dWrapperStatusProtonTestBottle") (Proton "/Test/Path")
       getDirect3DWrapperStatus bottle `shouldReturn` WrapperNotManaged
       isBottleReadyForWindowsApps bottle `shouldReturn` True

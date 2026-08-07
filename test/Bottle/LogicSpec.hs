@@ -14,7 +14,7 @@ import System.Directory
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import Control.Exception (finally)
-import Bottle.Logic.TestSupport (withTestBottle)
+import Bottle.Logic.TestSupport (withTestBottle, testName)
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 
 -- | Sets up an isolated test environment
@@ -40,24 +40,8 @@ spec = do
   
   describe "Bottle.Logic" $ do
     
-    describe "checkNameValidity" $ do
-      it "accepts valid names" $ do
-        checkNameValidity "MyBottle" `shouldBe` Valid
-        checkNameValidity "Gaming-Setup_2024" `shouldBe` Valid
-
-      it "rejects empty names" $ do
-        checkNameValidity "" `shouldNotBe` Valid
-
-      it "rejects names containing slashes" $ do
-        checkNameValidity "Hack/Me" `shouldNotBe` Valid
-        checkNameValidity "/RootBottle" `shouldNotBe` Valid
-
-      it "rejects overly long names" $ do
-        let longName = T.pack $ replicate 300 'a'
-        checkNameValidity longName `shouldNotBe` Valid
-
-      it "rejects names ending in a reserved restore-marker suffix" $ do
-        checkNameValidity "MyBottle.restoring" `shouldNotBe` Valid
+    -- The naming rules themselves are covered by Bottle.Logic.NameSpec,
+    -- alongside the module they moved to.
 
     describe "isEngineFamilyChange" $ do
       let wine     = Existing SystemWine
@@ -119,7 +103,7 @@ spec = do
 
 
       it "creates a bottle object with correct paths" $ do
-        bottle <- createBottleObject "TestBottle" SystemWine
+        bottle <- createBottleObject (testName "TestBottle") SystemWine
         bottleName bottle `shouldBe` "TestBottle"
         return ()
 
@@ -139,7 +123,7 @@ spec = do
             noBottles `shouldBe` []
 
       it "create and delete a bottle" $
-        createAndDeleteBottle "CreateDeleteTest" SystemWine
+        createAndDeleteBottle (testName "CreateDeleteTest") SystemWine
 
       it "persists runner configuration (Proton)" $ do
         pendingWith "UMU-Launcher and Proton currently not available in test environment."

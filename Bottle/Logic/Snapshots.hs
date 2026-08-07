@@ -9,7 +9,6 @@ module Bottle.Logic.Snapshots
   , openSnapshotFileManager
   , deleteAllSnapshots
   , recoverInterruptedRestores
-  , reservedNameSuffixes
 
     -- * BTRFS Helpers
     -- Only exported because "Bottle.Logic" also needs them to manage a
@@ -19,6 +18,7 @@ module Bottle.Logic.Snapshots
   ) where
 
 import Bottle.Types
+import Bottle.Logic.Name (ValidName, validNameText, restoreTempSuffix)
 import Bottle.Logic.Process (killBottleProcesses)
 import Logic.SystemTool (runSystemTool)
 import System.Directory
@@ -112,7 +112,7 @@ getNextSnapshotId :: [BottleSnapshot] -> Int
 getNextSnapshotId [] = 0
 getNextSnapshotId snaps = maximum (map snapshotId snaps) + 1
 
-createSnapshotLogic :: Bottle -> T.Text -> IO ()
+createSnapshotLogic :: Bottle -> ValidName -> IO ()
 createSnapshotLogic bottle sName = do
     baseSnapDir <- getSnapshotsDir
     let bottleSnapDir = baseSnapDir </> T.unpack (bottleName bottle)
@@ -121,21 +121,10 @@ createSnapshotLogic bottle sName = do
     currentSnaps <- listSnapshots bottle
     let nextId = getNextSnapshotId currentSnaps
 
-    let folderName = show nextId ++ "_" ++ T.unpack sName
+    let folderName = show nextId ++ "_" ++ T.unpack (validNameText sName)
     let destPath = bottleSnapDir </> folderName
 
     Btrfs.snapshot (bottlePath bottle) destPath True
-
--- | Suffix for the temporary directory 'restoreSnapshotLogic' builds the
--- restored copy in, before it's swapped into place.
-restoreTempSuffix :: String
-restoreTempSuffix = ".restoring"
-
--- | Reserved so a bottle can never be named in a way that collides with
--- 'restoreSnapshotLogic's own temporary directory -- see
--- "Bottle.Logic".checkNameValidity.
-reservedNameSuffixes :: [String]
-reservedNameSuffixes = [restoreTempSuffix]
 
 -- | Restores a bottle from a snapshot.
 --

@@ -5,7 +5,7 @@ module Bottle.Logic.SnapshotsSpec (spec) where
 import Test.Hspec
 import Bottle.Logic
 import Bottle.Logic.Snapshots
-import Bottle.Logic.TestSupport (withTestBottle)
+import Bottle.Logic.TestSupport (withTestBottle, testName)
 import Bottle.Logic.Process (killBottleProcesses)
 import Bottle.Types
 import System.Directory
@@ -47,7 +47,7 @@ spec = do
 
         if supportsSnaps
           then do
-            createSnapshotLogic bottle "Initial"
+            createSnapshotLogic bottle (testName "Initial")
             snaps1 <- listSnapshots bottle
             case snaps1 of
               [snap1] -> snapshotName snap1 `shouldBe` "Initial"
@@ -58,7 +58,7 @@ spec = do
             existsAfterWrite <- doesFileExist testFile
             existsAfterWrite `shouldBe` True
 
-            createSnapshotLogic bottle "WithFile"
+            createSnapshotLogic bottle (testName "WithFile")
             snaps2 <- listSnapshots bottle
             length snaps2 `shouldBe` 2
 
@@ -108,8 +108,8 @@ spec = do
 
         if supportsSnaps
           then do
-            createSnapshotLogic bottle "First"
-            createSnapshotLogic bottle "Second"
+            createSnapshotLogic bottle (testName "First")
+            createSnapshotLogic bottle (testName "Second")
             snapsBefore <- listSnapshots bottle
             length snapsBefore `shouldBe` 2
 

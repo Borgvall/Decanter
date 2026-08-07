@@ -12,12 +12,8 @@ import Control.Monad (forM_, void)
 import qualified Data.Text as T
 
 import Bottle.Types
-import Bottle.Logic
-  ( checkNameValidity
-  , NameValid(Valid)
-  , explainNameValid
-  , createBottleLogic
-  )
+import Bottle.Logic (createBottleLogic)
+import Bottle.Logic.Name (parseName, explainInvalidName)
 import Bottle.Logic.Runner (getAvailableRunners, getRunnerTypeDisplayName)
 import Gui.BottleView (runnerTypeToString)
 import Logic.Translation (tr)
@@ -27,20 +23,15 @@ validateName :: Adw.EntryRow -> Gtk.Button -> Gtk.Label -> IO ()
 validateName entryRow createBtn errorLabel = do
   nameText <- #getText entryRow
 
-  let status = checkNameValidity nameText
-  let valid = status == Valid
-
-  #setSensitive createBtn valid
-
-  if valid
-    then do
+  case parseName nameText of
+    Right _ -> do
+      #setSensitive createBtn True
       Gtk.widgetRemoveCssClass entryRow (T.pack "error")
       #setVisible errorLabel False
-    else do
+    Left reason -> do
+      #setSensitive createBtn False
       Gtk.widgetAddCssClass entryRow (T.pack "error")
-
-      let errorMsg = explainNameValid status
-      #setLabel errorLabel errorMsg
+      #setLabel errorLabel (explainInvalidName reason)
       #setVisible errorLabel True
 
 -- | Builds the "New Bottle" popover, meant to be attached to a
@@ -127,29 +118,38 @@ buildNewBottlePopover refreshCallback = do
   void $ on createBtn #clicked $ do
     nameText <- #getText nameEntry
 
-    #setSensitive createBtn False
-    #setLabel statusLabel (tr "Creating prefix (this may take a while)...")
-    #setVisible statusLabel True
+    -- Re-runs the rules on the text as it is now, rather than trusting
+    -- that 'validateName' left the button sensitive: the 'ValidName' it
+    -- yields is what 'createBottleLogic' needs, so the check and the
+    -- permission to create are the same step.
+    case parseName nameText of
+      Left reason -> do
+        #setLabel statusLabel (explainInvalidName reason)
+        #setVisible statusLabel True
+      Right validName -> do
+        #setSensitive createBtn False
+        #setLabel statusLabel (tr "Creating prefix (this may take a while)...")
+        #setVisible statusLabel True
 
-    mSelectedRow <- #getSelectedRow runnerListBox
-    selectedRunner <- case mSelectedRow of
-      Nothing -> pure SystemWine
-      Just row -> do
-        idx <- #getIndex row
-        pure (availableRunners !! fromIntegral idx)
+        mSelectedRow <- #getSelectedRow runnerListBox
+        selectedRunner <- case mSelectedRow of
+          Nothing -> pure SystemWine
+          Just row -> do
+            idx <- #getIndex row
+            pure (availableRunners !! fromIntegral idx)
 
-    void $ async $ do
-      res <- try (createBottleLogic nameText selectedRunner) :: IO (Either IOError ())
+        void $ async $ do
+          res <- try (createBottleLogic validName selectedRunner) :: IO (Either IOError ())
 
-      GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
-         case res of
-           Right _ -> do
-             #popdown popover
-             refreshCallback
-           Left err -> do
-             #setLabel statusLabel (T.pack $ "Error: " ++ show err)
-             #setSensitive createBtn True
-         return False
+          GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+             case res of
+               Right _ -> do
+                 #popdown popover
+                 refreshCallback
+               Left err -> do
+                 #setLabel statusLabel (T.pack $ "Error: " ++ show err)
+                 #setSensitive createBtn True
+             return False
 
   #append btnBox createBtn
 
