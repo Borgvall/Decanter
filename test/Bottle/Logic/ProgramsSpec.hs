@@ -49,9 +49,22 @@ spec = do
         contents `shouldBe` Just (bottlePath bottle)
 
     describe "isWinetricksAvailable" $ do
-      it "matches whether 'winetricks' is on PATH" $ do
+      let bottleWith r = Bottle "WinetricksSpecBottle" "/tmp/decanter-test-winetricks-prefix" r
+
+      it "matches whether 'winetricks' is on PATH for a System Wine bottle" $ do
         expected <- isJust <$> findExecutable "winetricks"
-        isWinetricksAvailable `shouldReturn` expected
+        isWinetricksAvailable (bottleWith SystemWine) `shouldReturn` expected
+
+      -- A System Wine bottle whose runner is currently missing keeps the
+      -- entry; the GUI disables it along with the other Wine tools rather
+      -- than hiding it.
+      it "matches whether 'winetricks' is on PATH for a bottle with a missing System Wine" $ do
+        expected <- isJust <$> findExecutable "winetricks"
+        isWinetricksAvailable (bottleWith MissingSystemWine) `shouldReturn` expected
+
+      it "is never available for Proton bottles, even with winetricks on PATH" $ do
+        isWinetricksAvailable (bottleWith (Proton "/opt/proton")) `shouldReturn` False
+        isWinetricksAvailable (bottleWith (MissingProton "/opt/proton")) `shouldReturn` False
 
     describe "findWineStartMenuLnks" $ do
       it "finds .lnk files in the common and per-user Start Menu, including nested folders, ignoring non-.lnk files" $ do

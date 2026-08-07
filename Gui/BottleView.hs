@@ -479,7 +479,7 @@ buildBottleView window bottle stack showError refreshCallback = do
   addBtn (tr "Wine Config") (tr "Opens winecfg") [] (runWineCfg bottle) >>= blockIfWineAppsBlocked
   addBtn (tr "Registry Editor") (tr "Opens regedit") [] (runRegedit bottle) >>= blockIfWineAppsBlocked
   addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (runUninstaller bottle) >>= blockIfWineAppsBlocked
-  hasWinetricks <- isWinetricksAvailable
+  hasWinetricks <- isWinetricksAvailable bottle
   when hasWinetricks $
     addBtn (tr "Winetricks") (tr "Manage packages") [] (runWinetricks bottle) >>= blockIfWineAppsBlocked
   -- Deliberately left unlocked: only opens the Linux file manager (xdg-open)

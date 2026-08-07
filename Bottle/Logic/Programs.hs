@@ -25,11 +25,35 @@ import Control.Monad (void, filterM, forM)
 import Data.List (isSuffixOf)
 import Data.Maybe (isJust)
 
-isWinetricksAvailable :: IO Bool
-isWinetricksAvailable = do
-    path <- findExecutable "winetricks"
-    return (isJust path)
+-- | Whether the "Winetricks" entry should be offered for a bottle: only for
+-- System Wine bottles, and only if winetricks is actually installed.
+--
+-- Deliberately not offered for Proton bottles. The winetricks on PATH drives
+-- whatever "wine" it finds there -- the host's System Wine -- so pointing it
+-- at a Proton bottle would run the host's Wine against a prefix that Proton's
+-- own Wine fork created, without Proton's runtime. Doing it properly means
+-- going through "umu-run winetricks", which only accepts a fixed list of
+-- verbs (no interactive session) and needs GE-Proton/UMU-Proton; and the
+-- runtimes people would reach for are largely what GE-Proton ships anyway,
+-- with per-game workarounds already handled by umu's protonfixes. See the
+-- Non-Goals section in Readme.md on staying out of install recipes.
+--
+-- 'MissingSystemWine' still counts as a System Wine bottle whose runner
+-- happens to be gone: the entry stays visible but the GUI disables it, the
+-- same way it treats the winecfg/regedit/uninstaller buttons.
+isWinetricksAvailable :: Bottle -> IO Bool
+isWinetricksAvailable Bottle{..} = case runner of
+    SystemWine        -> isWinetricksInstalled
+    MissingSystemWine -> isWinetricksInstalled
+    Proton _          -> pure False
+    MissingProton _   -> pure False
+  where
+    isWinetricksInstalled = isJust <$> findExecutable "winetricks"
 
+-- | Starts winetricks for a bottle. Callers are expected to check
+-- 'isWinetricksAvailable' first -- this doesn't re-check the runner, and
+-- would drive the host's System Wine against a Proton prefix if called for
+-- a Proton bottle.
 runWinetricks :: Bottle -> IO ()
 runWinetricks bottle = runCmd bottle "winetricks" []
 

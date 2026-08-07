@@ -74,7 +74,8 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
     * `winecfg`
     * `regedit`
     * `uninstaller`
-    * `winetricks` (if installed)
+    * `winetricks` (System Wine bottles, if installed - it drives the host's
+      Wine, which isn't the right runner for a Proton bottle's prefix)
     * `wineserver -k` (Kill all processes of a Bottle)
 * **Direct3D Wrapper Switch:** For System Wine bottles, toggle between Wine's
   built-in Direct3D implementation, DXVK, and DXVK + vkd3d-proton right from
