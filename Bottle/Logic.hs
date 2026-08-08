@@ -6,7 +6,6 @@ module Bottle.Logic
     listExistingBottles
   , findBottleByName
   , findAppLnkByName
-  , createBottleObject
   , createBottleLogic
   , changeBottleRunnerLogic
   , isEngineFamilyChange
@@ -168,26 +167,23 @@ createVolume path = do
       putStrLn "No BTRFS or error, using standard directory."
       createDirectoryIfMissing True path
 
-createBottleObject :: ValidName -> ExistingRunner -> IO Bottle
-createBottleObject name rType = do
-  base <- getBottlesBaseDir
-  let path = base </> T.unpack (validNameText name)
-  return $ Bottle (validNameText name) path (Existing rType)
-
 -- | Creates a bottle: its volume, its config file, and an initialized Wine
--- prefix.
+-- prefix, and returns the 'Bottle' it created.
 --
 -- Takes a 'ValidName' and an 'ExistingRunner' rather than a finished
 -- 'Bottle', so neither an unusable name nor a runner that isn't installed
 -- can reach it -- both are exactly what initializing a prefix needs to be
--- settled beforehand, and the function has a branch for neither. It builds
--- its own 'Bottle' via 'createBottleObject', which is deterministic in
--- these same two arguments, so callers that also want the object (see
--- 'Bottle.Logic.TestSupport.withTestBottle') can ask for it separately
--- without the two disagreeing.
-createBottleLogic :: ValidName -> ExistingRunner -> IO ()
+-- settled beforehand, and the function has a branch for neither. The
+-- 'Bottle' record only comes into existence here, as a *result* of the
+-- creation, so callers that need it afterwards (to delete it again, to
+-- compare it against 'listExistingBottles', ...) get the one that was
+-- actually created rather than rebuilding their own.
+createBottleLogic :: ValidName -> ExistingRunner -> IO Bottle
 createBottleLogic name existingRunner = do
-  bottle <- createBottleObject name existingRunner
+  base <- getBottlesBaseDir
+  let path = base </> T.unpack (validNameText name)
+      bottle = Bottle (validNameText name) path (Existing existingRunner)
+
   createVolume (bottlePath bottle)
 
   saveBottleConfig bottle
@@ -206,6 +202,8 @@ createBottleLogic name existingRunner = do
         Proton _   -> ("umu-run", ["wineboot", "-u"])
 
   runProcess_ $ setEnv headlessEnv $ proc bootCmd bootArgs
+
+  return bottle
 
 -- | Deletes a bottle and all its snapshots
 deleteBottleLogic :: Bottle -> IO ()

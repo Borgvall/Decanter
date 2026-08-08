@@ -4,8 +4,7 @@ module Bottle.Logic.Direct3dWrappersSpec (spec) where
 
 import Test.Hspec
 import Bottle.Logic.Direct3dWrappers
-import Bottle.Logic (createBottleObject)
-import Bottle.Logic.TestSupport (withTestBottle, testName)
+import Bottle.Logic.TestSupport (withTestBottle)
 import Bottle.Logic.Runner (getAvailableRunners)
 import Bottle.Types
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, pathIsSymbolicLink, removeFile, createFileLink)
@@ -161,12 +160,15 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
             assertDirect3DWrapperState bottle DxvkAndVkd3dProton
 
   describe "getDirect3DWrapperStatus / isBottleReadyForWindowsApps" $
-    it "reports a Proton bottle as unmanaged and always ready" $ withTestEnvironment $ do
-      -- Proton brings its own DXVK/vkd3d-proton, so this must hold without
-      -- requiring an actual Proton install -- createBottleObject only
-      -- builds the Bottle record and doesn't create the prefix itself, but
-      -- still needs a writable XDG_DATA_HOME (see 'withTestEnvironment')
-      -- for its own bookkeeping directory.
-      bottle <- createBottleObject (testName "Direct3dWrapperStatusProtonTestBottle") (Proton "/Test/Path")
+    it "reports a Proton bottle as unmanaged and always ready" $ do
+      -- Proton brings its own DXVK/vkd3d-proton, so the status short-
+      -- circuits on the runner alone and never looks at the prefix (see
+      -- 'getDirect3DWrapperStatus'). A literal Bottle record with a path
+      -- that doesn't exist is therefore enough -- no Proton install, no
+      -- created prefix, and no isolated XDG_DATA_HOME needed, which keeps
+      -- this assertion running everywhere instead of pending wherever
+      -- Proton happens to be absent.
+      let bottle = Bottle "Direct3dWrapperStatusProtonTest" "/nonexistent"
+                          (Existing (Proton "/Test/Path"))
       getDirect3DWrapperStatus bottle `shouldReturn` WrapperNotManaged
       isBottleReadyForWindowsApps bottle `shouldReturn` True

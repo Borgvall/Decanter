@@ -1,6 +1,6 @@
 module Bottle.Logic.TestSupport (withTestBottle, testName) where
 
-import Bottle.Logic (createBottleObject, createBottleLogic, deleteBottleLogic)
+import Bottle.Logic (createBottleLogic, deleteBottleLogic)
 import Bottle.Logic.Name (ValidName, parseName)
 import Bottle.Types (Bottle, ExistingRunner)
 import Control.Exception (finally)
@@ -18,13 +18,11 @@ import qualified Data.Text as T
 --
 -- Takes the name and runner rather than a ready-made 'Bottle' because
 -- 'createBottleLogic' does: only an installed runner can initialize a
--- prefix. The 'Bottle' handed to "action" (and deleted afterwards) comes
--- from 'createBottleObject' on those same two arguments.
+-- prefix. The 'Bottle' handed to "action" (and deleted afterwards) is the
+-- one 'createBottleLogic' returns.
 withTestBottle :: Text -> ExistingRunner -> (Bottle -> IO ()) -> IO ()
 withTestBottle name runner action = do
-  let validName = testName name
-  bottle <- createBottleObject validName runner
-  createBottleLogic validName runner
+  bottle <- createBottleLogic (testName name) runner
   action bottle `finally` deleteBottleLogic bottle
 
 -- | A literal name from a spec, run through 'parseName'. Specs pick their

@@ -139,7 +139,7 @@ buildNewBottlePopover refreshCallback = do
             pure (availableRunners !! fromIntegral idx)
 
         void $ async $ do
-          res <- try (createBottleLogic validName selectedRunner) :: IO (Either IOError ())
+          res <- try (createBottleLogic validName selectedRunner) :: IO (Either IOError Bottle)
 
           GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
              case res of

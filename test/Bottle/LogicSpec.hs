@@ -14,6 +14,7 @@ import System.Directory
 import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>))
 import Control.Exception (finally)
+import Bottle.Logic.Name (validNameText)
 import Bottle.Logic.TestSupport (withTestBottle, testName)
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 
@@ -102,18 +103,16 @@ spec = do
     describe "Bottle Management (Integration)" $ around_ withTestEnvironment $ do
 
 
-      it "creates a bottle object with correct paths" $ do
-        bottle <- createBottleObject (testName "TestBottle") SystemWine
-        bottleName bottle `shouldBe` "TestBottle"
-        return ()
-
       it "lists bottles correctly when empty" $ do
         bottles <- listExistingBottles
         bottles `shouldBe` []
 
+      -- Checks the created bottle against what 'listExistingBottles' reads
+      -- back off disk, so the record 'createBottleLogic' returns is held to
+      -- the same name, path and runner the creation actually persisted.
       let createAndDeleteBottle name existingRunner = do
-            bottle <- createBottleObject name existingRunner
-            createBottleLogic name existingRunner
+            bottle <- createBottleLogic name existingRunner
+            bottleName bottle `shouldBe` validNameText name
             bottles <- listExistingBottles
             case bottles of
               [listedBottle] -> listedBottle `shouldBe` bottle
