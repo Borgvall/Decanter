@@ -263,6 +263,43 @@ afterwards costs a round of un-editing and re-editing per commit, and
 each reconstruction is a chance to commit something that was never
 actually tested in that shape.
 
+## 13. A function that creates something returns it
+
+Rule 10 is about an argument type that is too wide. This is the same
+mistake on the other side: a result type that is too narrow. If a
+function brings a value into existence - a created bottle, a resolved
+path, a written record - it should hand that value back, even when the
+caller could recompute it from the same arguments.
+
+The tell is a doc comment explaining that a caller may safely rebuild the
+value itself *because* the computation is deterministic in those
+arguments. An argument for why two computations cannot disagree is a sign
+that there should not be two. Recomputation also tends to make the tests
+tautological: they end up asserting that a pure function agrees with
+itself, rather than that what was created matches what is really there.
+
+## 14. A parsed value only proves what the parser could see
+
+`ValidName` and `ExistingRunner` (rule 10) are real guarantees, and that
+is exactly what makes them easy to over-read. `ValidName` proves the
+*text* passes the naming rules. It says nothing about whether a bottle by
+that name already exists - `parseName` is pure and never touches the
+filesystem.
+
+`createBottleLogic` once treated it as a complete precondition and
+checked nothing further, so creating a bottle under an existing name ran
+silently *into* that bottle: `createVolume` fell back to the directory
+already there, `saveBottleConfig` overwrote its `decanter.cfg`
+(discarding the runner it was created with), and wineboot re-ran over its
+prefix - with nothing raised, so the GUI reported success and closed the
+dialog.
+
+Before acting on a parsed value, ask which preconditions lie outside the
+parser's reach: existence, ownership, or whether something resolved
+earlier is still there now. Those need their own check at the point of
+use, and it belongs *before* the first destructive step, so a rejection
+leaves the existing state untouched.
+
 ## Commit messages
 
 The author of an AI commit shall be the used LLM name and version e.g. Opus
