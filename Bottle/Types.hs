@@ -67,6 +67,15 @@ data BottleG r = Bottle
 -- 'listExistingBottles' hands out and what the GUI's bottle list holds.
 type Bottle = BottleG RunnerType
 
+-- | Forgets that a bottle's runner is known to be installed, so it can be
+-- handed to something that accepts any bottle -- e.g. 'deleteBottleLogic',
+-- which deliberately still copes with a runner that has since disappeared.
+-- The other direction has no such function on purpose: narrowing is a claim
+-- about the world that has to be checked, which is
+-- 'Bottle.Logic.launchableBottle''s job.
+widenRunner :: BottleG ExistingRunner -> Bottle
+widenRunner bottle = bottle { runner = Existing (runner bottle) }
+
 data BottleSnapshot = BottleSnapshot
   { snapshotId   :: Int
   , snapshotName :: Text

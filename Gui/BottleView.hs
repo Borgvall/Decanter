@@ -21,7 +21,7 @@ import Bottle.Logic
   ( deleteBottleLogic
   , changeBottleRunnerLogic
   , isEngineFamilyChange
-  , launchableRunner
+  , launchableBottle
   , explainBlockReason
   )
 import Bottle.Logic.Process (killBottleProcesses)
@@ -365,16 +365,16 @@ buildBottleView window bottle stack showError refreshCallback = do
 
   -- Status of the Direct3D wrapper -- controls whether/how the Direct3D
   -- section below is built. Whether Windows programs may be started at all
-  -- is asked separately from the bottle (via 'launchableRunner', which also
+  -- is asked separately from the bottle (via 'launchableBottle', which also
   -- covers a missing runner, not just Direct3D-wrapper health), instead of
   -- deciding that here based on wrapper internals.
   direct3DStatus <- getDirect3DWrapperStatus bottle
 
-  -- Either why this bottle can't launch anything, or the runner to launch
-  -- with. Every widget below that starts a Windows program is driven by
-  -- this one value: 'blockIfWineAppsBlocked' disables it on 'Left',
-  -- 'withRunner' supplies the runner on 'Right'.
-  launchable <- launchableRunner bottle
+  -- Either why this bottle can't launch anything, or the bottle itself at a
+  -- type that says its runner is installed. Every widget below that starts a
+  -- Windows program is driven by this one value: 'blockIfWineAppsBlocked'
+  -- disables it on 'Left', 'withLaunchable' supplies the bottle on 'Right'.
+  launchable <- launchableBottle bottle
   let blockIfWineAppsBlocked :: Gtk.IsWidget w => w -> IO ()
       blockIfWineAppsBlocked widget = case launchable of
         Right _ -> pure ()
@@ -422,11 +422,11 @@ buildBottleView window bottle stack showError refreshCallback = do
     WrapperManaged health -> buildDirect3DWrapperSection window stack showError refreshCallback health contentBox bottle
     WrapperNotManaged     -> pure ()
 
-  -- Runs "action" with the bottle's runner, or does nothing when there
-  -- isn't one -- in which case 'blockIfWineAppsBlocked' has already
+  -- Runs "action" on the bottle as something launchable, or does nothing
+  -- when it isn't -- in which case 'blockIfWineAppsBlocked' has already
   -- disabled the widget this is attached to, so it can't fire anyway.
-  let withRunner :: (ExistingRunner -> IO ()) -> IO ()
-      withRunner action = either (const (pure ())) action launchable
+  let withLaunchable :: (BottleG ExistingRunner -> IO ()) -> IO ()
+      withLaunchable action = either (const (pure ())) action launchable
 
   let addBtn label tooltip cssClasses action = do
         btn <- new Gtk.Button [ #label := label, #tooltipText := tooltip, #cssClasses := cssClasses, #halign := Gtk.AlignFill ]
@@ -435,8 +435,8 @@ buildBottleView window bottle stack showError refreshCallback = do
         return btn
 
   runBtn <- new Gtk.Button [ #label := tr "Run Executable / Installer", #cssClasses := ["suggested-action", "pill"], #halign := Gtk.AlignFill ]
-  void $ on runBtn #clicked $ withRunner $ \r ->
-    openExecutableFileDialog window showError (runExecutable bottle r)
+  void $ on runBtn #clicked $ withLaunchable $ \runnable ->
+    openExecutableFileDialog window showError (runExecutable runnable)
   #append contentBox runBtn
   blockIfWineAppsBlocked runBtn
 
@@ -454,7 +454,7 @@ buildBottleView window bottle stack showError refreshCallback = do
           Just gFile -> do
               mpath <- Gio.fileGetPath gFile
               case mpath of
-                  Just path -> withRunner (\r -> runFileWithStart bottle r path) >> return True
+                  Just path -> withLaunchable (\runnable -> runFileWithStart runnable path) >> return True
                   Nothing -> return False
           Nothing -> return False
   #addController dropZone dropTarget
@@ -488,12 +488,12 @@ buildBottleView window bottle stack showError refreshCallback = do
 
   toolsLabel <- new Gtk.Label [ #label := tr "System Tools", #halign := Gtk.AlignStart, #cssClasses := ["heading"] ]
   #append contentBox toolsLabel
-  addBtn (tr "Wine Config") (tr "Opens winecfg") [] (withRunner (runWineCfg bottle)) >>= blockIfWineAppsBlocked
-  addBtn (tr "Registry Editor") (tr "Opens regedit") [] (withRunner (runRegedit bottle)) >>= blockIfWineAppsBlocked
-  addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (withRunner (runUninstaller bottle)) >>= blockIfWineAppsBlocked
+  addBtn (tr "Wine Config") (tr "Opens winecfg") [] (withLaunchable runWineCfg) >>= blockIfWineAppsBlocked
+  addBtn (tr "Registry Editor") (tr "Opens regedit") [] (withLaunchable runRegedit) >>= blockIfWineAppsBlocked
+  addBtn (tr "Uninstaller") (tr "Manage installed programs") [] (withLaunchable runUninstaller) >>= blockIfWineAppsBlocked
   hasWinetricks <- isWinetricksAvailable bottle
   when hasWinetricks $
-    addBtn (tr "Winetricks") (tr "Manage packages") [] (withRunner (runWinetricks bottle)) >>= blockIfWineAppsBlocked
+    addBtn (tr "Winetricks") (tr "Manage packages") [] (withLaunchable runWinetricks) >>= blockIfWineAppsBlocked
   -- Deliberately left unlocked: only opens the Linux file manager (xdg-open)
   -- on drive_c, so it doesn't start a Wine program.
   void $ addBtn (tr "Browse Files") (tr "Open drive_c") [] (runFileManager bottle)

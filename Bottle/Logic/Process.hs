@@ -33,7 +33,7 @@ menuBuilderOverrideEntry = "winemenubuilder.exe="
 -- vkd3d-proton's DLLs instead of its own builtin Direct3D implementation for
 -- them (see Bottle.Logic.Direct3dWrappers.direct3DWrapperOverrideDllNames
 -- for why placing the DLL file alone isn't enough), if any are needed.
-direct3DOverrideEntry :: Bottle -> IO (Maybe String)
+direct3DOverrideEntry :: BottleG r -> IO (Maybe String)
 direct3DOverrideEntry bottle = do
     state <- getDirect3DWrapperState bottle
     pure $ case direct3DWrapperOverrideDllNames state of
@@ -43,8 +43,8 @@ direct3DOverrideEntry bottle = do
 -- | WINEDLLOVERRIDES entries. Only meaningful for System Wine bottles --
 -- Proton neither integrates with the host desktop nor manages DXVK/
 -- vkd3d-proton the way System Wine does, so we leave it alone there.
-getWineDllOverridesEnv :: Bottle -> ExistingRunner -> IO [(String, String)]
-getWineDllOverridesEnv bottle r = case r of
+getWineDllOverridesEnv :: BottleG ExistingRunner -> IO [(String, String)]
+getWineDllOverridesEnv bottle = case runner bottle of
     Proton _   -> pure []
     SystemWine -> do
         maybeDirect3DEntry <- direct3DOverrideEntry bottle
@@ -68,12 +68,12 @@ getProtonEnv r = case r of
     SystemWine -> []
 
 -- | Wine-specific environment variables that need to be set/overridden.
-getWineOverrides :: Bottle -> ExistingRunner -> IO [(String, String)]
-getWineOverrides bottle r = do
-    wineDllOverridesEnv <- getWineDllOverridesEnv bottle r
+getWineOverrides :: BottleG ExistingRunner -> IO [(String, String)]
+getWineOverrides bottle = do
+    wineDllOverridesEnv <- getWineDllOverridesEnv bottle
     pure $
       [ ("WINEPREFIX", bottlePath bottle)
-      ] ++ getProtonEnv r
+      ] ++ getProtonEnv (runner bottle)
         ++ wineDllOverridesEnv
 
 -- | Merges bottle-specific Wine environment variables with the host
@@ -111,8 +111,8 @@ mergeWithHostEnv wineSpecificEnv = do
     return (wineSpecificEnv ++ filteredEnv)
 
 -- | Builds the environment variables for Wine/Proton
-getMergedWineEnv :: Bottle -> ExistingRunner -> IO [(String, String)]
-getMergedWineEnv bottle r = getWineOverrides bottle r >>= mergeWithHostEnv
+getMergedWineEnv :: BottleG ExistingRunner -> IO [(String, String)]
+getMergedWineEnv bottle = getWineOverrides bottle >>= mergeWithHostEnv
 
 -- | Wine environment specifically for icon extraction via winemenubuilder.exe
 -- (see 'extractAppIcon'). Deliberately its own, parallel function instead of
@@ -127,9 +127,9 @@ getMergedWineEnv bottle r = getWineOverrides bottle r >>= mergeWithHostEnv
 -- installer dialog for a not-yet-initialized bottle (e.g. in tests) --
 -- extractAppIcon should always run headless (same reasoning as for wineboot
 -- in Bottle.Logic.createBottleLogic).
-getIconExtractionWineEnv :: Bottle -> ExistingRunner -> IO [(String, String)]
-getIconExtractionWineEnv Bottle{..} r = do
-    env <- mergeWithHostEnv $ ("WINEPREFIX", bottlePath) : getProtonEnv r
+getIconExtractionWineEnv :: BottleG ExistingRunner -> IO [(String, String)]
+getIconExtractionWineEnv Bottle{..} = do
+    env <- mergeWithHostEnv $ ("WINEPREFIX", bottlePath) : getProtonEnv runner
     pure $ filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) env
 
 -- | Extracts a start-menu application's (".lnk") icon as a PNG file, via
@@ -142,11 +142,11 @@ getIconExtractionWineEnv Bottle{..} r = do
 -- False is returned instead of throwing an exception -- callers treat this
 -- as a best-effort step that e.g. shouldn't prevent adding an
 -- application-menu entry overall.
-extractAppIcon :: Bottle -> ExistingRunner -> FilePath -> FilePath -> IO Bool
-extractAppIcon bottle r lnkPath outputPngPath = do
-    env <- getIconExtractionWineEnv bottle r
+extractAppIcon :: BottleG ExistingRunner -> FilePath -> FilePath -> IO Bool
+extractAppIcon bottle lnkPath outputPngPath = do
+    env <- getIconExtractionWineEnv bottle
     let args = ["winemenubuilder.exe", "-t", lnkPath, outputPngPath]
-    let cmd = case r of
+    let cmd = case runner bottle of
                 Proton _   -> "umu-run"
                 SystemWine -> "wine"
     result <- try (runProcess (setEnv env (proc cmd args))) :: IO (Either IOException ExitCode)
@@ -165,7 +165,7 @@ extractAppIcon bottle r lnkPath outputPngPath = do
 killBottleProcesses :: Bottle -> IO ()
 killBottleProcesses bottle = case runner bottle of
   Existing SystemWine -> do
-    mergedEnv <- getMergedWineEnv bottle SystemWine
+    mergedEnv <- getMergedWineEnv (bottle { runner = SystemWine })
     -- We use runProcess_ instead of startProcess to wait until the command has finished.
     runProcess_ $ setEnv mergedEnv $ proc "wineserver" ["-k"]
   Existing (Proton _)       -> killProtonProcesses bottle
@@ -197,7 +197,7 @@ killBottleProcesses bottle = case runner bottle of
 -- own container and thus its own scope, all sharing the same
 -- WINEPREFIX-derived name prefix but a different trailing PID. All of
 -- them need to be killed, not just the first one found.
-killProtonProcesses :: Bottle -> IO ()
+killProtonProcesses :: BottleG r -> IO ()
 killProtonProcesses bottle = do
   scopeNames <- findBottleScopes bottle
   case scopeNames of
@@ -210,7 +210,7 @@ killProtonProcesses bottle = do
 -- guessing at the wineserver binary's on-disk path, which can differ from
 -- what actually shows up in a running process' command line (e.g. behind
 -- extra layers of symlinks/wrapper scripts).
-findBottleScopes :: Bottle -> IO [String]
+findBottleScopes :: BottleG r -> IO [String]
 findBottleScopes bottle = do
   canonicalPrefix <- canonicalizePath (bottlePath bottle)
   prefixHash <- md5Hex canonicalPrefix

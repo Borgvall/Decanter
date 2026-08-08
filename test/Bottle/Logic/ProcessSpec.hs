@@ -71,16 +71,16 @@ pingMarker = "ping -n 240 127.0.0.1"
 -- | Starts a Windows "ping" inside the bottle that runs long enough (240
 -- iterations, one per second) for the kill tests below to reliably catch it
 -- still running before they try to kill it.
-startLongRunningPing :: Bottle -> ExistingRunner -> IO ()
-startLongRunningPing bottle r = runCmd bottle r "wine" ["cmd.exe", "/c", pingMarker]
+startLongRunningPing :: BottleG ExistingRunner -> IO ()
+startLongRunningPing bottle = runCmd bottle "wine" ["cmd.exe", "/c", pingMarker]
 
 spec :: Spec
 spec = describe "Bottle.Logic.Process" $ do
 
   describe "getMergedWineEnv" $ do
     it "sets WINEPREFIX according to the bottle" $ do
-      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing SystemWine)
-      env <- getMergedWineEnv bottle SystemWine
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
+      env <- getMergedWineEnv bottle
       lookup "WINEPREFIX" env `shouldBe` Just "/tmp/decanter-test-prefix"
       lookup "PROTONPATH" env `shouldBe` Nothing
 
@@ -88,38 +88,38 @@ spec = describe "Bottle.Logic.Process" $ do
     -- for the EA app's sake, which used to take PATH with it on NixOS
     -- (>4000 characters) and left winetricks unable to find "wineserver".
     it "keeps PATH even when it is longer than the EA-app length limit" $ do
-      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing SystemWine)
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
       let longPath = intercalate ":" (replicate 200 "/some/reasonably/long/directory")
       length longPath `shouldSatisfy` (> 1000)
 
       -- Restore the real PATH afterwards no matter what: every later test
       -- that looks for wine/umu-run on it would otherwise fail.
       originalPath <- lookupEnv "PATH"
-      env <- (setEnv "PATH" longPath >> getMergedWineEnv bottle SystemWine)
+      env <- (setEnv "PATH" longPath >> getMergedWineEnv bottle)
         `finally` mapM_ (setEnv "PATH") originalPath
       lookup "PATH" env `shouldBe` Just longPath
 
     it "sets PROTONPATH when using a Proton runner" $ do
-      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing (Proton "/opt/GE-Proton"))
-      env <- getMergedWineEnv bottle (Proton "/opt/GE-Proton")
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
+      env <- getMergedWineEnv bottle
       lookup "PROTONPATH" env `shouldBe` Just "/opt/GE-Proton"
 
     it "sets PRESSURE_VESSEL_SYSTEMD_SCOPE for a Proton runner, but not for System Wine" $ do
-      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing (Proton "/opt/GE-Proton"))
-      protonEnv <- getMergedWineEnv protonBottle (Proton "/opt/GE-Proton")
+      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
+      protonEnv <- getMergedWineEnv protonBottle
       lookup "PRESSURE_VESSEL_SYSTEMD_SCOPE" protonEnv `shouldBe` Just "1"
 
-      let systemWineBottle = protonBottle { runner = Existing SystemWine }
-      systemWineEnv <- getMergedWineEnv systemWineBottle SystemWine
+      let systemWineBottle = protonBottle { runner = SystemWine }
+      systemWineEnv <- getMergedWineEnv systemWineBottle
       lookup "PRESSURE_VESSEL_SYSTEMD_SCOPE" systemWineEnv `shouldBe` Nothing
 
     it "always disables winemenubuilder.exe for System Wine, but not for Proton" $ do
-      let systemWineBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing SystemWine)
-      systemWineEnv <- getMergedWineEnv systemWineBottle SystemWine
+      let systemWineBottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
+      systemWineEnv <- getMergedWineEnv systemWineBottle
       lookup "WINEDLLOVERRIDES" systemWineEnv `shouldBe` Just "winemenubuilder.exe="
 
-      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Existing (Proton "/opt/GE-Proton"))
-      protonEnv <- getMergedWineEnv protonBottle (Proton "/opt/GE-Proton")
+      let protonBottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
+      protonEnv <- getMergedWineEnv protonBottle
       lookup "WINEDLLOVERRIDES" protonEnv `shouldBe` Nothing
 
     it "sets WINEDLLOVERRIDES for a System Wine bottle with DXVK/vkd3d-proton installed, but always disables winemenubuilder.exe" $ withTestEnvironment $ do
@@ -132,19 +132,19 @@ spec = describe "Bottle.Logic.Process" $ do
         (_, _, Nothing) -> pendingWith "DECANTER_VKD3D_PROTON_PATH is not set; enter the Nix dev shell to run this test."
         (True, Just _, Just _) -> do
           withTestBottle "WineDllOverridesTestBottle" SystemWine $ \bottle -> do
-            freshEnv <- getMergedWineEnv bottle SystemWine
+            freshEnv <- getMergedWineEnv bottle
             lookup "WINEDLLOVERRIDES" freshEnv `shouldBe` Just "winemenubuilder.exe="
 
             setDirect3DWrapperState bottle Dxvk
-            dxvkEnv <- getMergedWineEnv bottle SystemWine
+            dxvkEnv <- getMergedWineEnv bottle
             lookup "WINEDLLOVERRIDES" dxvkEnv `shouldBe` Just "winemenubuilder.exe=;d3d8,d3d9,d3d10core,d3d11,dxgi=native"
 
             setDirect3DWrapperState bottle DxvkAndVkd3dProton
-            bothEnv <- getMergedWineEnv bottle SystemWine
+            bothEnv <- getMergedWineEnv bottle
             lookup "WINEDLLOVERRIDES" bothEnv `shouldBe` Just "winemenubuilder.exe=;d3d8,d3d9,d3d10core,d3d11,dxgi,d3d12,d3d12core=native"
 
             setDirect3DWrapperState bottle WineD3D
-            resetEnv <- getMergedWineEnv bottle SystemWine
+            resetEnv <- getMergedWineEnv bottle
             lookup "WINEDLLOVERRIDES" resetEnv `shouldBe` Just "winemenubuilder.exe="
 
   describe "extractAppIcon" $ do
@@ -153,11 +153,11 @@ spec = describe "Bottle.Logic.Process" $ do
       case SystemWine `elem` runners of
         False -> pendingWith "No system Wine installation found in this environment; not testable here."
         True -> do
-          let bottle = Bottle "Test" "/tmp/decanter-test-icon-extraction-prefix" (Existing SystemWine)
+          let bottle = Bottle "Test" "/tmp/decanter-test-icon-extraction-prefix" SystemWine
           let outputPath = "/tmp/decanter-test-icon-extraction-output.png"
 
           removePathForcibly outputPath
-          succeeded <- extractAppIcon bottle SystemWine "/nonexistent/Some App.lnk" outputPath
+          succeeded <- extractAppIcon bottle "/nonexistent/Some App.lnk" outputPath
             `finally` removePathForcibly outputPath
 
           succeeded `shouldBe` False
@@ -184,12 +184,12 @@ spec = describe "Bottle.Logic.Process" $ do
         False -> pendingWith "No system Wine installation found in this environment; not testable here."
         True -> do
           withTestBottle "SystemWineKillTestBottle" SystemWine $ \bottle -> do
-            startLongRunningPing bottle SystemWine
+            startLongRunningPing bottle
 
             started <- waitUntil 30 (isProcessRunning pingMarker)
             started `shouldBe` True
 
-            killBottleProcesses bottle
+            killBottleProcesses (widenRunner bottle)
 
             stopped <- waitUntil 10 (not <$> isProcessRunning pingMarker)
             stopped `shouldBe` True
@@ -204,14 +204,14 @@ spec = describe "Bottle.Logic.Process" $ do
       case (maybeUmuRun, dwprotonPaths ++ otherProtonPaths) of
         (Just _, protonPath : _) -> do
           withTestBottle "ProtonKillTestBottle" (Proton protonPath) $ \bottle -> do
-            startLongRunningPing bottle (Proton protonPath)
+            startLongRunningPing bottle
 
             -- A fresh pressure-vessel container takes a while to boot,
             -- so poll generously before giving up.
             started <- waitUntil 120 (not . null <$> findBottleScopes bottle)
             started `shouldBe` True
 
-            killBottleProcesses bottle
+            killBottleProcesses (widenRunner bottle)
 
             stopped <- waitUntil 30 (null <$> findBottleScopes bottle)
             stopped `shouldBe` True

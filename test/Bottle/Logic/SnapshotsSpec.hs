@@ -65,7 +65,7 @@ spec = do
             case find (\s -> snapshotName s == "Initial") snaps2 of
               Nothing -> expectationFailure $ "Expected to find a snapshot named 'Initial', got: " ++ show snaps2
               Just snapInitial -> do
-                restoreSnapshotLogic bottle snapInitial
+                restoreSnapshotLogic (widenRunner bottle) snapInitial
 
                 -- The file must be gone after restoring the snapshot taken before it existed
                 existsAfterRestore1 <- doesFileExist testFile
@@ -80,7 +80,7 @@ spec = do
                 case find (\s -> snapshotName s == "WithFile") snaps3 of
                   Nothing -> expectationFailure $ "Expected to find a snapshot named 'WithFile', got: " ++ show snaps3
                   Just snapWithFile -> do
-                    restoreSnapshotLogic bottle snapWithFile
+                    restoreSnapshotLogic (widenRunner bottle) snapWithFile
 
                     -- The file must be back after restoring the snapshot taken after it was written
                     existsAfterRestore2 <- doesFileExist testFile
@@ -91,7 +91,7 @@ spec = do
                     -- Exercises deleteBottleLogic's interaction with
                     -- listExistingBottles directly (on top of the automatic
                     -- cleanup 'withTestBottle' does afterwards regardless).
-                    deleteBottleLogic bottle
+                    deleteBottleLogic (widenRunner bottle)
                     remainingBottles <- listExistingBottles
                     let ourBottles = filter (\b -> bottleName b == "SnapshotTestBottle") remainingBottles
                     ourBottles `shouldBe` []
@@ -129,7 +129,7 @@ spec = do
             -- touching the filesystem, so a still-resident wineserver from
             -- createBottleLogic's wineboot doesn't race with the delete/
             -- snapshot calls below.
-            _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
+            _ <- try (killBottleProcesses (widenRunner bottle)) :: IO (Either SomeException ())
 
             -- Simulate a crash right after "Btrfs.snapshot ... restoringPath"
             -- succeeded but before the old bottle was deleted: the live
@@ -151,7 +151,7 @@ spec = do
 
         if supportsSnaps
           then do
-            _ <- try (killBottleProcesses bottle) :: IO (Either SomeException ())
+            _ <- try (killBottleProcesses (widenRunner bottle)) :: IO (Either SomeException ())
 
             -- Simulate a crash between the delete and the final rename: the
             -- old bottle is already gone, only the fully-built ".restoring"

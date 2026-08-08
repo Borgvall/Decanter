@@ -116,9 +116,9 @@ spec = do
             bottleName bottle `shouldBe` validNameText name
             bottles <- listExistingBottles
             case bottles of
-              [listedBottle] -> listedBottle `shouldBe` bottle
+              [listedBottle] -> listedBottle `shouldBe` widenRunner bottle
               _ -> expectationFailure $ "Expecting exactly one bottle, got :" ++ show bottles
-            deleteBottleLogic bottle
+            deleteBottleLogic (widenRunner bottle)
             noBottles <- listExistingBottles
             noBottles `shouldBe` []
 
@@ -135,7 +135,7 @@ spec = do
             `shouldThrow` isAlreadyExistsError
 
           survivors <- listExistingBottles
-          survivors `shouldBe` [bottle]
+          survivors `shouldBe` [widenRunner bottle]
 
       it "persists runner configuration (Proton)" $ do
         pendingWith "UMU-Launcher and Proton currently not available in test environment."
@@ -148,7 +148,7 @@ spec = do
 
           -- Check that the runner is still Proton
           case loadedBottles of
-            [loaded] -> runner loaded `shouldBe` runner bottle
+            [loaded] -> runner loaded `shouldBe` Existing (runner bottle)
             _ -> expectationFailure $ "Expecting exactly one bottle, got: " ++ show loadedBottles
 
       -- Config-file-format-specific coverage (legacy formats, persisted-
@@ -156,22 +156,24 @@ spec = do
       -- now, testing Bottle.Logic.Config's saveBottleConfig/loadBottleConfig
       -- directly rather than through listExistingBottles.
 
-      describe "launchableRunner / explainBlockReason" $ do
+      describe "launchableBottle / explainBlockReason" $ do
         let dummyBottle = Bottle "BlockReasonTest" "/nonexistent"
 
         it "reports RunnerMissing for MissingSystemWine, without touching the filesystem" $ do
-          launchableRunner (dummyBottle (Missing MissingSystemWine))
+          launchableBottle (dummyBottle (Missing MissingSystemWine))
             `shouldReturn` Left (RunnerMissing MissingSystemWine)
 
         it "reports RunnerMissing for MissingProton, without touching the filesystem" $ do
-          launchableRunner (dummyBottle (Missing (MissingProton "/legacy/path")))
+          launchableBottle (dummyBottle (Missing (MissingProton "/legacy/path")))
             `shouldReturn` Left (RunnerMissing (MissingProton "/legacy/path"))
 
-        -- The point of the Either: passing the check hands back what to
-        -- launch with, so callers never have to ask for the runner again.
-        it "returns the runner to launch with when nothing blocks the bottle" $ do
-          launchableRunner (dummyBottle (Existing SystemWine))
-            `shouldReturn` Right SystemWine
+        -- The point of the Either: passing the check hands back the bottle
+        -- at a type that says its runner is installed, so callers never
+        -- have to ask for the runner again -- and can't pair the answer
+        -- with a different bottle than the one that was checked.
+        it "returns the bottle to launch from when nothing blocks it" $ do
+          launchableBottle (dummyBottle (Existing SystemWine))
+            `shouldReturn` Right (dummyBottle SystemWine)
 
         it "explains a missing System Wine runner" $ do
           explainBlockReason (RunnerMissing MissingSystemWine) `shouldNotBe` ""

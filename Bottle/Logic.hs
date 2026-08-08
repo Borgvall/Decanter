@@ -13,7 +13,7 @@ module Bottle.Logic
 
     -- * Readiness
   , BlockReason(..)
-  , launchableRunner
+  , launchableBottle
   , explainBlockReason
   ) where
 
@@ -88,23 +88,31 @@ explainBlockReason (RunnerMissing (MissingProton path)) = T.concat
 explainBlockReason Direct3DWrapperDangling =
   tr "The Direct3D wrapper's files are missing (e.g. removed by Nix garbage collection). Windows programs are blocked until this is repaired."
 
--- | The runner a bottle may currently launch Windows programs with, or why
--- it can't. This is the single check both the GUI (to grey out/explain the
--- relevant widgets) and 'decanter start'/'decanter open' (to fail up front
--- with a clear message, instead of silently doing nothing deep inside
+-- | The bottle as something that may currently launch Windows programs, or
+-- why it can't. This is the single check both the GUI (to grey out/explain
+-- the relevant widgets) and 'decanter start'/'decanter open' (to fail up
+-- front with a clear message, instead of silently doing nothing deep inside
 -- "Bottle.Logic.Programs".runCmd) should use, rather than separately
 -- querying runner/Direct3D internals.
 --
--- Returns the 'ExistingRunner' rather than just "yes, ready": passing this
--- check is exactly what entitles a caller to start something, so handing
--- back what to start it with means no call site has to ask a second time,
--- and none of them needs a branch for a case the check already ruled out.
-launchableRunner :: Bottle -> IO (Either BlockReason ExistingRunner)
-launchableRunner bottle = case runner bottle of
+-- Returns the bottle at @BottleG ExistingRunner@ rather than just "yes,
+-- ready": passing this check is exactly what entitles a caller to start
+-- something, so handing back what to start it /with/ means no call site has
+-- to ask a second time, and none of them needs a branch for a case the
+-- check already ruled out. Handing back the whole bottle rather than the
+-- bare runner additionally keeps the two from being carried around as a
+-- pair that nothing forces to agree.
+--
+-- This is the only place that narrows a bottle's runner. Note that the
+-- narrowed type proves only that the runner is installed -- 'Right' here
+-- means more than its type does, because 'Direct3DWrapperDangling' is
+-- checked at the same time but recorded nowhere.
+launchableBottle :: Bottle -> IO (Either BlockReason (BottleG ExistingRunner))
+launchableBottle bottle = case runner bottle of
   Missing m  -> pure (Left (RunnerMissing m))
   Existing r -> do
     ready <- isBottleReadyForWindowsApps bottle
-    pure $ if ready then Right r else Left Direct3DWrapperDangling
+    pure $ if ready then Right (bottle { runner = r }) else Left Direct3DWrapperDangling
 
 -- | Determines the base directory for all bottles
 getBottlesBaseDir :: IO FilePath
@@ -175,10 +183,14 @@ createVolume path = do
 -- 'Bottle', so neither an unusable name nor a runner that isn't installed
 -- can reach it -- both are exactly what initializing a prefix needs to be
 -- settled beforehand, and the function has a branch for neither. The
--- 'Bottle' record only comes into existence here, as a *result* of the
+-- bottle record only comes into existence here, as a *result* of the
 -- creation, so callers that need it afterwards (to delete it again, to
 -- compare it against 'listExistingBottles', ...) get the one that was
 -- actually created rather than rebuilding their own.
+--
+-- Returned at @BottleG ExistingRunner@, the same type it was created at:
+-- narrowing it again afterwards would mean recomputing what this function
+-- already knew. Callers that need the wider type apply 'widenRunner'.
 --
 -- Refuses a name an existing bottle already occupies. 'ValidName' can't
 -- rule this out -- the naming rules are pure text rules and know nothing
@@ -187,11 +199,11 @@ createVolume path = do
 -- directory that's already there, 'saveBottleConfig' overwrites its
 -- decanter.cfg (and with it the runner it was created with), and wineboot
 -- re-runs over its prefix.
-createBottleLogic :: ValidName -> ExistingRunner -> IO Bottle
+createBottleLogic :: ValidName -> ExistingRunner -> IO (BottleG ExistingRunner)
 createBottleLogic name existingRunner = do
   base <- getBottlesBaseDir
   let path = base </> T.unpack (validNameText name)
-      bottle = Bottle (validNameText name) path (Existing existingRunner)
+      bottle = Bottle (validNameText name) path existingRunner
 
   taken <- doesDirectoryExist path
   when taken $ throwIO $
@@ -199,9 +211,9 @@ createBottleLogic name existingRunner = do
 
   createVolume (bottlePath bottle)
 
-  saveBottleConfig bottle
+  saveBottleConfig (widenRunner bottle)
 
-  mergedEnv <- getMergedWineEnv bottle existingRunner
+  mergedEnv <- getMergedWineEnv bottle
 
   -- Remove DISPLAY and WAYLAND_DISPLAY from the environment so wineboot
   -- doesn't open a window (like the Gecko/Mono installer dialog).

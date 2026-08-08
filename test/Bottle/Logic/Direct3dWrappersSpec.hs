@@ -27,14 +27,14 @@ withTestEnvironment action = do
 
     action `finally` unsetEnv "XDG_DATA_HOME"
 
-system32Dll :: Bottle -> String -> FilePath
+system32Dll :: BottleG r -> String -> FilePath
 system32Dll bottle name = bottlePath bottle </> "drive_c" </> "windows" </> "system32" </> name
 
-syswow64Dll :: Bottle -> String -> FilePath
+syswow64Dll :: BottleG r -> String -> FilePath
 syswow64Dll bottle name = bottlePath bottle </> "drive_c" </> "windows" </> "syswow64" </> name
 
 -- | Whether "name" is symlinked in both system32 and syswow64 of "bottle".
-isSymlinkedInBothDirs :: Bottle -> String -> IO Bool
+isSymlinkedInBothDirs :: BottleG r -> String -> IO Bool
 isSymlinkedInBothDirs bottle name = do
   inSystem32 <- pathIsSymbolicLink (system32Dll bottle name)
   inSyswow64 <- pathIsSymbolicLink (syswow64Dll bottle name)
@@ -42,7 +42,7 @@ isSymlinkedInBothDirs bottle name = do
 
 -- | Whether "name" is still Wine's own file (not a symlink) in both
 -- directories of "bottle".
-isWineOwnInBothDirs :: Bottle -> String -> IO Bool
+isWineOwnInBothDirs :: BottleG r -> String -> IO Bool
 isWineOwnInBothDirs bottle name = do
   inSystem32 <- pathIsSymbolicLink (system32Dll bottle name)
   inSyswow64 <- pathIsSymbolicLink (syswow64Dll bottle name)
@@ -51,7 +51,7 @@ isWineOwnInBothDirs bottle name = do
 -- | Asserts "bottle" is really in "state": both the reported state and the
 -- on-disk symlink status of a DXVK marker DLL (dxgi.dll) and a
 -- vkd3d-proton marker DLL (d3d12.dll) must agree.
-assertDirect3DWrapperState :: Bottle -> Direct3DWrapperState -> Expectation
+assertDirect3DWrapperState :: BottleG r -> Direct3DWrapperState -> Expectation
 assertDirect3DWrapperState bottle state = do
   getDirect3DWrapperState bottle `shouldReturn` state
   case state of
@@ -130,8 +130,8 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
           withTestBottle "Direct3dWrapperHealthTestBottle" SystemWine $ \bottle -> do
             setDirect3DWrapperState bottle DxvkAndVkd3dProton
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperValid
-            getDirect3DWrapperStatus bottle `shouldReturn` WrapperManaged WrapperValid
-            isBottleReadyForWindowsApps bottle `shouldReturn` True
+            getDirect3DWrapperStatus (widenRunner bottle) `shouldReturn` WrapperManaged WrapperValid
+            isBottleReadyForWindowsApps (widenRunner bottle) `shouldReturn` True
 
             -- Simulate a symlink left over from an older Decanter/DXVK
             -- version: still resolves to a real file, just not the one the
@@ -142,21 +142,21 @@ spec = describe "Bottle.Logic.Direct3dWrappers" $ do
             removeFile dxgiPath
             createFileLink decoyPath dxgiPath
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperOutdated
-            getDirect3DWrapperStatus bottle `shouldReturn` WrapperManaged WrapperOutdated
-            isBottleReadyForWindowsApps bottle `shouldReturn` True
+            getDirect3DWrapperStatus (widenRunner bottle) `shouldReturn` WrapperManaged WrapperOutdated
+            isBottleReadyForWindowsApps (widenRunner bottle) `shouldReturn` True
 
             -- Simulate the store path having been garbage-collected since.
             removeFile dxgiPath
             createFileLink (bottlePath bottle </> "does-not-exist.dll") dxgiPath
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperDangling
-            getDirect3DWrapperStatus bottle `shouldReturn` WrapperManaged WrapperDangling
-            isBottleReadyForWindowsApps bottle `shouldReturn` False
+            getDirect3DWrapperStatus (widenRunner bottle) `shouldReturn` WrapperManaged WrapperDangling
+            isBottleReadyForWindowsApps (widenRunner bottle) `shouldReturn` False
 
             -- Repairing must restore a healthy symlink without changing the
             -- nominal state (still DxvkAndVkd3dProton).
             repairDirect3DWrapperState bottle
             getDirect3DWrapperHealth bottle `shouldReturn` WrapperValid
-            isBottleReadyForWindowsApps bottle `shouldReturn` True
+            isBottleReadyForWindowsApps (widenRunner bottle) `shouldReturn` True
             assertDirect3DWrapperState bottle DxvkAndVkd3dProton
 
   describe "getDirect3DWrapperStatus / isBottleReadyForWindowsApps" $

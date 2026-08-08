@@ -44,7 +44,7 @@ applicationMenuCategories =
 -- stays available precisely then -- otherwise a bottle whose runner
 -- disappeared would keep a dead menu entry that can no longer be cleaned
 -- up from here.
-buildAppMenuButton :: Bottle -> Either T.Text ExistingRunner -> T.Text -> FilePath -> IO () -> IO Gtk.Widget
+buildAppMenuButton :: Bottle -> Either T.Text (BottleG ExistingRunner) -> T.Text -> FilePath -> IO () -> IO Gtk.Widget
 buildAppMenuButton bottle launchable appName lnkPath onChanged = do
   alreadyAdded <- isInApplicationMenu bottle appName
   if alreadyAdded
@@ -68,7 +68,7 @@ buildAppMenuButton bottle launchable appName lnkPath onChanged = do
           ]
         Gtk.toWidget blockedBtn
 
-      Right existingRunner -> do
+      Right runnable -> do
         menuBtn <- new Gtk.MenuButton
           [ #iconName := "list-add-symbolic"
           , #tooltipText := tr "Add to application menu"
@@ -107,7 +107,7 @@ buildAppMenuButton bottle launchable appName lnkPath onChanged = do
           void $ on row #activated $ do
             #popdown popover
             void $ async $ do
-              addToApplicationMenu bottle existingRunner appName lnkPath category
+              addToApplicationMenu runnable appName lnkPath category
               GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                 onChanged
                 return False
@@ -123,15 +123,15 @@ buildAppMenuButton bottle launchable appName lnkPath onChanged = do
 -- 'Gui.BottleView.buildDirect3DWrapperSection' does.
 --
 -- "launchable" is what 'Gui.BottleView.buildBottleView' got from
--- 'Bottle.Logic.launchableRunner' and also drives its own buttons with:
--- 'Right' carries the runner to launch programs with, 'Left' a tooltip
--- explaining why nothing can be launched. The blocked side is passed down
--- as already-rendered text rather than a 'BlockReason' so this module
--- doesn't need to know about Direct3D/runner internals itself.
+-- 'Bottle.Logic.launchableBottle' and also drives its own buttons with:
+-- 'Right' carries the bottle at a type that says its runner is installed,
+-- 'Left' a tooltip explaining why nothing can be launched. The blocked side
+-- is passed down as already-rendered text rather than a 'BlockReason' so
+-- this module doesn't need to know about Direct3D/runner internals itself.
 --
 -- See 'buildAppMenuButton' for why the application-menu button is only
 -- half-blocked by this (removing stays possible, adding doesn't).
-buildProgramListSection :: Bottle -> Either T.Text ExistingRunner -> Gtk.Box -> IO ()
+buildProgramListSection :: Bottle -> Either T.Text (BottleG ExistingRunner) -> Gtk.Box -> IO ()
 buildProgramListSection bottle launchable contentBox = do
   progSectionBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 10 ]
   #append contentBox progSectionBox
@@ -167,8 +167,8 @@ buildProgramListSection bottle launchable contentBox = do
                 -- With nothing to launch with, the button gets no handler at
                 -- all; 'blockIfBlocked' disables it in that case anyway.
                 case launchable of
-                  Right r -> void $ on progBtn #clicked $ runWindowsLnk bottle r path
-                  Left _  -> pure ()
+                  Right runnable -> void $ on progBtn #clicked $ runWindowsLnk runnable path
+                  Left _         -> pure ()
                 #append rowBox progBtn
                 blockIfBlocked progBtn
 

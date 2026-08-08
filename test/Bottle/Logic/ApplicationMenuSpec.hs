@@ -41,7 +41,7 @@ spec = do
           cwd <- getCurrentDirectory
           let path = cwd </> "test-env" </> "MenuTestBottle"
           createDirectoryIfMissing True path
-          return $ Bottle "MenuTestBottle" path (Existing SystemWine)
+          return $ Bottle "MenuTestBottle" path SystemWine
 
     -- A deliberately non-existent .lnk path is enough for most of these
     -- tests: icon extraction (see Bottle.Logic.Process.extractAppIcon) is
@@ -51,7 +51,7 @@ spec = do
 
     it "creates a .desktop entry inside the bottle and a symlink pointing at its menu dir" $ do
       bottle <- makeMenuTestBottle
-      addToApplicationMenu bottle SystemWine "MyGame" bogusLnkPath "Game"
+      addToApplicationMenu bottle "MyGame" bogusLnkPath "Game"
 
       isInApplicationMenu bottle "MyGame" `shouldReturn` True
 
@@ -66,22 +66,22 @@ spec = do
 
     it "omits the Icon= field when icon extraction fails (best effort)" $ do
       bottle <- makeMenuTestBottle
-      addToApplicationMenu bottle SystemWine "MyGame" bogusLnkPath "Game"
+      addToApplicationMenu bottle "MyGame" bogusLnkPath "Game"
 
       content <- readFile (bottlePath bottle </> "menu" </> "MyGame.desktop")
       content `shouldNotContain` "Icon="
 
     it "reuses the existing symlink for a second application in the same bottle" $ do
       bottle <- makeMenuTestBottle
-      addToApplicationMenu bottle SystemWine "FirstApp" bogusLnkPath "Game"
-      addToApplicationMenu bottle SystemWine "SecondApp" bogusLnkPath "Utility"
+      addToApplicationMenu bottle "FirstApp" bogusLnkPath "Game"
+      addToApplicationMenu bottle "SecondApp" bogusLnkPath "Utility"
 
       isInApplicationMenu bottle "FirstApp" `shouldReturn` True
       isInApplicationMenu bottle "SecondApp" `shouldReturn` True
 
     it "removeFromApplicationMenu removes the entry again" $ do
       bottle <- makeMenuTestBottle
-      addToApplicationMenu bottle SystemWine "MyApp" bogusLnkPath "Utility"
+      addToApplicationMenu bottle "MyApp" bogusLnkPath "Utility"
       isInApplicationMenu bottle "MyApp" `shouldReturn` True
 
       removeFromApplicationMenu bottle "MyApp"
@@ -93,7 +93,7 @@ spec = do
 
     it "removeApplicationMenuSymlink removes the ~/.local/share/applications symlink" $ do
       bottle <- makeMenuTestBottle
-      addToApplicationMenu bottle SystemWine "MyApp" bogusLnkPath "Utility"
+      addToApplicationMenu bottle "MyApp" bogusLnkPath "Utility"
 
       appsDir <- getXdgDirectory XdgData "applications"
       let linkPath = appsDir </> "decanter-MenuTestBottle"

@@ -79,10 +79,10 @@ deleteSubvolumeForcible subvolPath = do
       -- Something unexpected happened, rethrow this error
       | otherwise -> ioError exception
 
-isSnapshotableBottle :: Bottle -> IO Bool
+isSnapshotableBottle :: BottleG r -> IO Bool
 isSnapshotableBottle = isBtrfsSubvolume . bottlePath
 
-listSnapshots :: Bottle -> IO [BottleSnapshot]
+listSnapshots :: BottleG r -> IO [BottleSnapshot]
 listSnapshots bottle = do
     baseSnapDir <- getSnapshotsDir
     let bottleSnapDir = baseSnapDir </> T.unpack (bottleName bottle)
@@ -112,7 +112,7 @@ getNextSnapshotId :: [BottleSnapshot] -> Int
 getNextSnapshotId [] = 0
 getNextSnapshotId snaps = maximum (map snapshotId snaps) + 1
 
-createSnapshotLogic :: Bottle -> ValidName -> IO ()
+createSnapshotLogic :: BottleG r -> ValidName -> IO ()
 createSnapshotLogic bottle sName = do
     baseSnapDir <- getSnapshotsDir
     let bottleSnapDir = baseSnapDir </> T.unpack (bottleName bottle)
@@ -185,7 +185,7 @@ deleteSnapshotLogic snapshot = do
 
 -- | Deletes all of a bottle's snapshots along with the (then-empty) snapshot folder.
 -- Used by "Bottle.Logic.deleteBottleLogic" when deleting an entire bottle.
-deleteAllSnapshots :: Bottle -> IO ()
+deleteAllSnapshots :: BottleG r -> IO ()
 deleteAllSnapshots bottle = do
     baseSnapDir <- getSnapshotsDir
     let bottleSnapDir = baseSnapDir </> T.unpack (bottleName bottle)

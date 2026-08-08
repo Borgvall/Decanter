@@ -2,7 +2,7 @@ module Bottle.Logic.TestSupport (withTestBottle, testName) where
 
 import Bottle.Logic (createBottleLogic, deleteBottleLogic)
 import Bottle.Logic.Name (ValidName, parseName)
-import Bottle.Types (Bottle, ExistingRunner)
+import Bottle.Types (BottleG, ExistingRunner, widenRunner)
 import Control.Exception (finally)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -16,14 +16,21 @@ import qualified Data.Text as T
 -- create/finally-delete pairing, some of them without the 'finally' at
 -- all, which skipped cleanup on the first failing expectation.
 --
--- Takes the name and runner rather than a ready-made 'Bottle' because
+-- Takes the name and runner rather than a ready-made bottle because
 -- 'createBottleLogic' does: only an installed runner can initialize a
--- prefix. The 'Bottle' handed to "action" (and deleted afterwards) is the
+-- prefix. The bottle handed to "action" (and deleted afterwards) is the
 -- one 'createBottleLogic' returns.
-withTestBottle :: Text -> ExistingRunner -> (Bottle -> IO ()) -> IO ()
+--
+-- Handed over at @BottleG ExistingRunner@, since it was just created with
+-- an installed runner: a test body can pass it straight to the launch
+-- paths without re-stating which runner that was. Tests that need the
+-- wider type (for 'deleteBottleLogic', 'killBottleProcesses' or
+-- 'restoreSnapshotLogic', which all still cope with a runner that has
+-- since disappeared) apply 'widenRunner' at the call site.
+withTestBottle :: Text -> ExistingRunner -> (BottleG ExistingRunner -> IO ()) -> IO ()
 withTestBottle name runner action = do
   bottle <- createBottleLogic (testName name) runner
-  action bottle `finally` deleteBottleLogic bottle
+  action bottle `finally` deleteBottleLogic (widenRunner bottle)
 
 -- | A literal name from a spec, run through 'parseName'. Specs pick their
 -- own bottle/snapshot names, so a rejection here is a mistake in the test

@@ -47,19 +47,19 @@ isWinetricksAvailable Bottle{..} = case engineFamily runner of
     WineEngine   -> isJust <$> findExecutable "winetricks"
     ProtonEngine -> pure False
 
--- | Starts winetricks for a bottle. Only ever called with 'SystemWine' --
--- 'isWinetricksAvailable' gates the entry on that, and the parameter makes
--- the caller show its work rather than this function trusting a comment.
-runWinetricks :: Bottle -> ExistingRunner -> IO ()
-runWinetricks bottle r = runCmd bottle r "winetricks" []
+-- | Starts winetricks for a bottle. Only ever called for a 'SystemWine'
+-- bottle -- 'isWinetricksAvailable' gates the entry on that, and the
+-- bottle's own runner records which one it is.
+runWinetricks :: BottleG ExistingRunner -> IO ()
+runWinetricks bottle = runCmd bottle "winetricks" []
 
 -- | Helper to start processes (asynchronously).
 -- Adjusts the command if Proton is used.
-runCmd :: Bottle -> ExistingRunner -> String -> [String] -> IO ()
-runCmd bottle r cmd args = do
-  mergedEnv <- getMergedWineEnv bottle r
+runCmd :: BottleG ExistingRunner -> String -> [String] -> IO ()
+runCmd bottle cmd args = do
+  mergedEnv <- getMergedWineEnv bottle
 
-  case r of
+  case runner bottle of
     SystemWine ->
         void $ startProcess $ setEnv mergedEnv $ proc cmd args
 
@@ -74,37 +74,37 @@ runCmd bottle r cmd args = do
         -- TODO: check whether umu-run is on PATH or needs to be configured explicitly
         void $ startProcess $ setEnv mergedEnv $ proc realCmd realArgs
 
-runWineCfg :: Bottle -> ExistingRunner -> IO ()
-runWineCfg bottle r = runCmd bottle r "wine" ["winecfg"]
+runWineCfg :: BottleG ExistingRunner -> IO ()
+runWineCfg bottle = runCmd bottle "wine" ["winecfg"]
 
-runRegedit :: Bottle -> ExistingRunner -> IO ()
-runRegedit bottle r = runCmd bottle r "wine" ["regedit"]
+runRegedit :: BottleG ExistingRunner -> IO ()
+runRegedit bottle = runCmd bottle "wine" ["regedit"]
 
-runUninstaller :: Bottle -> ExistingRunner -> IO ()
-runUninstaller bottle r = runCmd bottle r "wine" ["uninstaller"]
+runUninstaller :: BottleG ExistingRunner -> IO ()
+runUninstaller bottle = runCmd bottle "wine" ["uninstaller"]
 
-runFileManager :: Bottle -> IO ()
+runFileManager :: BottleG r -> IO ()
 runFileManager Bottle{..} = do
   let driveC = bottlePath </> "drive_c"
   runSystemTool "xdg-open" [driveC]
 
-runExecutable :: Bottle -> ExistingRunner -> FilePath -> IO ()
-runExecutable bottle r filePath = do
+runExecutable :: BottleG ExistingRunner -> FilePath -> IO ()
+runExecutable bottle filePath = do
   let ext = takeExtension filePath
   if ext == ".msi" || ext == ".MSI"
-    then runCmd bottle r "wine" ["msiexec", "/i", filePath]
-    else runCmd bottle r "wine" [filePath]
+    then runCmd bottle "wine" ["msiexec", "/i", filePath]
+    else runCmd bottle "wine" [filePath]
 
-runFileWithStart :: Bottle -> ExistingRunner -> FilePath -> IO ()
-runFileWithStart bottle r path = runCmd bottle r "wine" ["start", "/unix", path]
+runFileWithStart :: BottleG ExistingRunner -> FilePath -> IO ()
+runFileWithStart bottle path = runCmd bottle "wine" ["start", "/unix", path]
 
 -- | Runs a Windows start-menu shortcut (".lnk"). Same as 'runFileWithStart'
 -- -- kept as its own name for readability at call sites that specifically
 -- launch a start-menu entry, rather than an arbitrary file.
-runWindowsLnk :: Bottle -> ExistingRunner -> FilePath -> IO ()
+runWindowsLnk :: BottleG ExistingRunner -> FilePath -> IO ()
 runWindowsLnk = runFileWithStart
 
-findWineStartMenuLnks :: Bottle -> IO [FilePath]
+findWineStartMenuLnks :: BottleG r -> IO [FilePath]
 findWineStartMenuLnks Bottle{..} = do
     let driveC = bottlePath </> "drive_c"
     let commonStartMenu = driveC </> "ProgramData/Microsoft/Windows/Start Menu"

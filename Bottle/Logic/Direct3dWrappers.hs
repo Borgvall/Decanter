@@ -76,16 +76,16 @@ vkd3dProtonPackage = WrapperPackage
 backupSuffix :: String
 backupSuffix = ".orig-wine"
 
-system32Dir :: Bottle -> FilePath
+system32Dir :: BottleG r -> FilePath
 system32Dir Bottle{..} = bottlePath </> "drive_c" </> "windows" </> "system32"
 
-syswow64Dir :: Bottle -> FilePath
+syswow64Dir :: BottleG r -> FilePath
 syswow64Dir Bottle{..} = bottlePath </> "drive_c" </> "windows" </> "syswow64"
 
 -- | Wine-prefix directories to manage, paired with whether they hold
 -- 64-bit DLLs. Every bottle is a 64-bit (Win64) prefix, with both a
 -- 64-bit system32 and a 32-bit syswow64.
-targetDirs :: Bottle -> [(FilePath, Bool)]
+targetDirs :: BottleG r -> [(FilePath, Bool)]
 targetDirs bottle = [ (system32Dir bottle, True), (syswow64Dir bottle, False) ]
 
 -- | The Nix store path of a wrapper package, exposed via its
@@ -150,7 +150,7 @@ uninstallDll targetDir name = do
   when backupExists $ renameFile backup target
 
 -- | Symlinks all of "pkg"'s DLLs into every relevant directory of "bottle".
-installPackage :: Bottle -> WrapperPackage -> IO ()
+installPackage :: BottleG r -> WrapperPackage -> IO ()
 installPackage bottle pkg = do
   storePath <- getPackageStorePath pkg
   forM_ (targetDirs bottle) $ \(dir, is64) ->
@@ -158,14 +158,14 @@ installPackage bottle pkg = do
     in forM_ (wrapperDllNames pkg) (installDll dir sourceDir)
 
 -- | Removes all of "pkg"'s DLLs from every relevant directory of "bottle".
-uninstallPackage :: Bottle -> WrapperPackage -> IO ()
+uninstallPackage :: BottleG r -> WrapperPackage -> IO ()
 uninstallPackage bottle pkg =
   forM_ (targetDirs bottle) $ \(dir, _) ->
     forM_ (wrapperDllNames pkg) (uninstallDll dir)
 
 -- | Installs or removes "pkg" so that it ends up (not) installed as
 -- requested. Does nothing if it already is in that state.
-setPackageInstalled :: Bottle -> WrapperPackage -> Bool -> IO ()
+setPackageInstalled :: BottleG r -> WrapperPackage -> Bool -> IO ()
 setPackageInstalled bottle pkg wanted = do
   isInstalled <- isPackageInstalledIn pkg (system32Dir bottle)
   unless (isInstalled == wanted) $
@@ -173,7 +173,7 @@ setPackageInstalled bottle pkg wanted = do
 
 -- | Determines a bottle's current Direct3D wrapper state by checking which
 -- of DXVK's/vkd3d-proton's DLLs are symlinked in versus Wine's own files.
-getDirect3DWrapperState :: Bottle -> IO Direct3DWrapperState
+getDirect3DWrapperState :: BottleG r -> IO Direct3DWrapperState
 getDirect3DWrapperState bottle = do
   dxvkInstalled <- isPackageInstalledIn dxvkPackage (system32Dir bottle)
   vkd3dProtonInstalled <- isPackageInstalledIn vkd3dProtonPackage (system32Dir bottle)
@@ -185,7 +185,7 @@ getDirect3DWrapperState bottle = do
 -- | Installs or removes DXVK's/vkd3d-proton's DLLs in "bottle" so that it
 -- ends up in "desired" state. Does nothing for a package that's already
 -- (not) installed as "desired" requires.
-setDirect3DWrapperState :: Bottle -> Direct3DWrapperState -> IO ()
+setDirect3DWrapperState :: BottleG r -> Direct3DWrapperState -> IO ()
 setDirect3DWrapperState bottle desired = do
   setPackageInstalled bottle dxvkPackage (desired /= WineD3D)
   setPackageInstalled bottle vkd3dProtonPackage (desired == DxvkAndVkd3dProton)
@@ -220,7 +220,7 @@ getWrapperPackageHealth pkg dir = do
 -- | Worst-of health across whichever packages "bottle"'s current Direct3D
 -- wrapper state actually has installed. 'WineD3D' has no symlinks at all and
 -- is therefore always 'WrapperValid'.
-getDirect3DWrapperHealth :: Bottle -> IO WrapperHealth
+getDirect3DWrapperHealth :: BottleG r -> IO WrapperHealth
 getDirect3DWrapperHealth bottle = do
   state <- getDirect3DWrapperState bottle
   healths <- mapM (\pkg -> getWrapperPackageHealth pkg (system32Dir bottle)) (packagesFor state)
@@ -273,7 +273,7 @@ isBottleReadyForWindowsApps bottle = do
 -- the "already installed" shortcut in 'setPackageInstalled' -- which is
 -- exactly what makes it able to repair an outdated or dangling symlink:
 -- 'installDll' always relinks unconditionally once actually invoked.
-repairDirect3DWrapperState :: Bottle -> IO ()
+repairDirect3DWrapperState :: BottleG r -> IO ()
 repairDirect3DWrapperState bottle = do
   state <- getDirect3DWrapperState bottle
   case state of
