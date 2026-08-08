@@ -37,11 +37,35 @@ data RunnerType
   | Missing MissingRunner
   deriving (Show, Eq)
 
-data Bottle = Bottle
+-- | A bottle, parameterized over what is known about its runner. The
+-- parameter is the *only* place a runner is stored, so a bottle and "the
+-- runner to use with it" can't drift apart the way a separate
+-- @Bottle -> ExistingRunner@ argument pair could.
+--
+-- Two instantiations are in use:
+--
+-- * @BottleG RunnerType@ (the 'Bottle' synonym) -- a bottle as it comes off
+--   disk, whose runner may or may not still be installed. The bottle list
+--   is deliberately mixed, so this is what 'listExistingBottles' yields.
+-- * @BottleG ExistingRunner@ -- a bottle whose runner is known to be
+--   installed, and which can therefore be handed to the functions that
+--   build a process invocation (see "Bottle.Logic.Process".getMergedWineEnv,
+--   "Bottle.Logic.Programs".runCmd). "Bottle.Logic".launchableRunner is the
+--   one place that narrows the former into the latter.
+--
+-- Deliberately not given a name like @RunnableBottle@: the parameter says
+-- the runner exists, and nothing more. Whether a bottle may actually launch
+-- something additionally depends on its Direct3D wrapper being intact,
+-- which no type here carries -- see 'Bottle.Logic.launchableRunner'.
+data BottleG r = Bottle
   { bottleName :: Text
   , bottlePath :: FilePath
-  , runner     :: RunnerType
+  , runner     :: r
   } deriving (Show, Eq)
+
+-- | A bottle whose runner may since have been uninstalled -- what
+-- 'listExistingBottles' hands out and what the GUI's bottle list holds.
+type Bottle = BottleG RunnerType
 
 data BottleSnapshot = BottleSnapshot
   { snapshotId   :: Int
