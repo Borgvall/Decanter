@@ -12,6 +12,7 @@ import System.Directory
   , getCurrentDirectory
   )
 import System.Environment (setEnv, unsetEnv)
+import System.IO.Error (isAlreadyExistsError)
 import System.FilePath ((</>))
 import Control.Exception (finally)
 import Bottle.Logic.Name (validNameText)
@@ -123,6 +124,18 @@ spec = do
 
       it "create and delete a bottle" $
         createAndDeleteBottle (testName "CreateDeleteTest") SystemWine
+
+      -- The name rules are pure and can't see the filesystem, so this is
+      -- the only thing standing between a second creation and silently
+      -- overwriting the existing bottle's config and prefix. The throw
+      -- happens before any of that, so the first bottle stays untouched.
+      it "refuses a name an existing bottle already occupies" $
+        withTestBottle "DuplicateNameTest" SystemWine $ \bottle -> do
+          createBottleLogic (testName "DuplicateNameTest") SystemWine
+            `shouldThrow` isAlreadyExistsError
+
+          survivors <- listExistingBottles
+          survivors `shouldBe` [bottle]
 
       it "persists runner configuration (Proton)" $ do
         pendingWith "UMU-Launcher and Proton currently not available in test environment."

@@ -40,8 +40,9 @@ import System.Directory
     , removePathForcibly
     )
 import System.FilePath ((</>), takeBaseName)
-import Control.Exception (try, IOException, SomeException)
-import Control.Monad (filterM, forM)
+import Control.Exception (try, throwIO, IOException, SomeException)
+import Control.Monad (filterM, forM, when)
+import System.IO.Error (mkIOError, alreadyExistsErrorType)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 
@@ -178,11 +179,23 @@ createVolume path = do
 -- creation, so callers that need it afterwards (to delete it again, to
 -- compare it against 'listExistingBottles', ...) get the one that was
 -- actually created rather than rebuilding their own.
+--
+-- Refuses a name an existing bottle already occupies. 'ValidName' can't
+-- rule this out -- the naming rules are pure text rules and know nothing
+-- about what's on disk -- and without the check the creation quietly
+-- proceeds *into* the existing bottle: 'createVolume' falls back to the
+-- directory that's already there, 'saveBottleConfig' overwrites its
+-- decanter.cfg (and with it the runner it was created with), and wineboot
+-- re-runs over its prefix.
 createBottleLogic :: ValidName -> ExistingRunner -> IO Bottle
 createBottleLogic name existingRunner = do
   base <- getBottlesBaseDir
   let path = base </> T.unpack (validNameText name)
       bottle = Bottle (validNameText name) path (Existing existingRunner)
+
+  taken <- doesDirectoryExist path
+  when taken $ throwIO $
+    mkIOError alreadyExistsErrorType "createBottleLogic" Nothing (Just path)
 
   createVolume (bottlePath bottle)
 
