@@ -14,11 +14,11 @@
 
 stdenvNoCC.mkDerivation rec {
   pname = "vkd3d-proton-decanter";
-  version = "3.0.1";
+  version = "3.1";
 
   src = fetchurl {
     url = "https://github.com/HansKristian-Work/vkd3d-proton/releases/download/v${version}/vkd3d-proton-${version}.tar.zst";
-    hash = "sha256-PPIxVSKvXkNgXvbTxB2tkThwQL+XGZk08/erdsqqLww=";
+    hash = "sha256-uF6oIZtxCTo5JJE916rmFyMz3AwGmYPtUQgW1n8CEgs=";
   };
 
   nativeBuildInputs = [ zstd ];
