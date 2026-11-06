@@ -7,6 +7,7 @@ module Bottle.Logic.Process
   , findBottleScopes
   , md5Hex
   , extractAppIcons
+  , getIconExtractionWineEnv
   ) where
 
 import Bottle.Types
@@ -116,22 +117,46 @@ mergeWithHostEnv wineSpecificEnv = do
 getMergedWineEnv :: BottleG ExistingRunner -> IO [(String, String)]
 getMergedWineEnv bottle = getWineOverrides bottle >>= mergeWithHostEnv
 
+-- | The WINEDLLOVERRIDES entry that *enables* winemenubuilder.exe, the exact
+-- opposite of 'menuBuilderOverrideEntry'. "b" forces Wine's builtin
+-- implementation, which is what "-t" needs.
+iconExtractionMenuBuilderOverrideEntry :: String
+iconExtractionMenuBuilderOverrideEntry = "winemenubuilder.exe=b"
+
 -- | Wine environment specifically for icon extraction via winemenubuilder.exe
--- (see 'extractAppIcon'). Deliberately its own, parallel function instead of
--- a Bool flag through 'getWineOverrides'/'getMergedWineEnv': those always set
+-- (see 'extractAppIcons'). Deliberately its own, parallel function instead of
+-- a Bool flag through 'getWineOverrides'/'getMergedWineEnv': those set
 -- WINEDLLOVERRIDES=winemenubuilder.exe= for System Wine bottles (see
 -- 'menuBuilderOverrideEntry'), which would block the very call to
 -- winemenubuilder.exe needed here. Since icon extraction needs no Direct3D,
--- we drop WINEDLLOVERRIDES entirely here instead of burdening the
--- functions used everywhere else with a special case.
+-- only that one entry is set here, instead of burdening the functions used
+-- everywhere else with a special case.
+--
+-- The entry is set explicitly rather than just dropping WINEDLLOVERRIDES
+-- (which is what this did before) because the *bottle's own registry* can
+-- disable winemenubuilder.exe too: HKCU\Software\Wine\DllOverrides may hold
+-- "winemenubuilder.exe"="", as one Proton bottle did. Wine then refuses both
+-- the extraction call and, on a prefix that still needs initializing, the
+-- "winemenubuilder.exe -r" autostart of wineboot -- failing the whole
+-- invocation (observed as exit code 53, "Error running cmd ...
+-- winemenubuilder.exe -r (126)"). An environment override takes precedence
+-- over the registry (WINEDLLOVERRIDES first, then per-app, then the standard
+-- DllOverrides key -- see Wine's dlls/ntdll/unix/loadorder.c), so this entry
+-- beats it. Deliberately not repairing the registry entry itself: it may
+-- have been put there on purpose, and normal bottle launches keep honoring
+-- it ('getWineDllOverridesEnv' only disables it for System Wine).
 --
 -- DISPLAY/WAYLAND_DISPLAY are removed so Wine doesn't pop up the Gecko/Mono
 -- installer dialog for a not-yet-initialized bottle (e.g. in tests) --
--- extractAppIcon should always run headless (same reasoning as for wineboot
+-- extractAppIcons should always run headless (same reasoning as for wineboot
 -- in Bottle.Logic.createBottleLogic).
 getIconExtractionWineEnv :: BottleG ExistingRunner -> IO [(String, String)]
 getIconExtractionWineEnv Bottle{..} = do
-    env <- mergeWithHostEnv $ ("WINEPREFIX", bottlePath) : getProtonEnv runner
+    let wineSpecificEnv =
+          [ ("WINEPREFIX", bottlePath)
+          , ("WINEDLLOVERRIDES", iconExtractionMenuBuilderOverrideEntry)
+          ] ++ getProtonEnv runner
+    env <- mergeWithHostEnv wineSpecificEnv
     pure $ filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) env
 
 -- | Extracts the icons of several start-menu applications (".lnk" files) as

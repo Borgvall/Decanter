@@ -77,6 +77,23 @@ startLongRunningPing bottle = runCmd bottle "wine" ["cmd.exe", "/c", pingMarker]
 spec :: Spec
 spec = describe "Bottle.Logic.Process" $ do
 
+  describe "getIconExtractionWineEnv" $ do
+    -- Regression test: dropping WINEDLLOVERRIDES (as this used to) is not
+    -- enough, because a bottle's own registry can disable
+    -- winemenubuilder.exe. Without an explicit positive override, extraction
+    -- silently produced no icons for such a bottle.
+    it "explicitly enables winemenubuilder.exe, the opposite of a normal launch" $ do
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
+      env <- getIconExtractionWineEnv bottle
+      lookup "WINEDLLOVERRIDES" env `shouldBe` Just "winemenubuilder.exe=b"
+
+    it "runs headless and keeps the Proton environment" $ do
+      let bottle = Bottle "Test" "/tmp/decanter-test-prefix" (Proton "/opt/GE-Proton")
+      env <- getIconExtractionWineEnv bottle
+      lookup "DISPLAY" env `shouldBe` Nothing
+      lookup "WAYLAND_DISPLAY" env `shouldBe` Nothing
+      lookup "PROTONPATH" env `shouldBe` Just "/opt/GE-Proton"
+
   describe "getMergedWineEnv" $ do
     it "sets WINEPREFIX according to the bottle" $ do
       let bottle = Bottle "Test" "/tmp/decanter-test-prefix" SystemWine
