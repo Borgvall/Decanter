@@ -8,7 +8,9 @@ import qualified GI.GLib as GLib
 import Data.GI.Base
 import Control.Concurrent.Async (async)
 import qualified Data.Text as T
-import Control.Monad (forM_, void)
+import Control.Monad (forM, forM_, unless, void)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import System.Directory (doesFileExist)
 import System.FilePath (takeBaseName)
 
 import Bottle.Types
@@ -16,9 +18,16 @@ import Bottle.Logic.ApplicationMenu
   ( addToApplicationMenu
   , removeFromApplicationMenu
   , isInApplicationMenu
+  , applicationIconPath
   )
+import Bottle.Logic.Process (extractAppIcons)
 import Bottle.Logic.Programs (findWineStartMenuLnks, runWindowsLnk)
 import Logic.Translation (tr)
+
+-- | Icon shown for a program whose real icon hasn't been extracted yet (or
+-- can't be: a bottle whose runner is missing can't run Wine to extract it).
+missingIconName :: T.Text
+missingIconName = "application-x-executable-symbolic"
 
 -- | Categories offered for application-menu entries (see
 -- 'Bottle.Logic.addToApplicationMenu'). These are exact Freedesktop
@@ -117,10 +126,10 @@ buildAppMenuButton bottle launchable appName lnkPath onChanged = do
         Gtk.toWidget menuBtn
 
 -- | Builds the "Installed Programs" section: an expander listing every
--- Wine start-menu shortcut found in the bottle, each with a button to run
--- it and a button to add/remove it from the host's application menu (see
--- 'buildAppMenuButton'). Appends itself directly into "contentBox", like
--- 'Gui.BottleView.buildDirect3DWrapperSection' does.
+-- Wine start-menu shortcut found in the bottle, each with its icon, a button
+-- to run it and a button to add/remove it from the host's application menu
+-- (see 'buildAppMenuButton'). Appends itself directly into "contentBox",
+-- like 'Gui.BottleView.buildDirect3DWrapperSection' does.
 --
 -- "launchable" is what 'Gui.BottleView.buildBottleView' got from
 -- 'Bottle.Logic.launchableBottle' and also drives its own buttons with:
@@ -128,6 +137,14 @@ buildAppMenuButton bottle launchable appName lnkPath onChanged = do
 -- 'Left' a tooltip explaining why nothing can be launched. The blocked side
 -- is passed down as already-rendered text rather than a 'BlockReason' so
 -- this module doesn't need to know about Direct3D/runner internals itself.
+--
+-- Icons come from the same cache the application-menu entries use (see
+-- 'applicationIconPath'): icons already extracted are shown immediately,
+-- the rest are extracted in the background by one batched Wine/Proton
+-- invocation and filled in as they arrive. That keeps the list usable while
+-- extraction runs - it takes a few seconds even batched, and it needs a
+-- launchable bottle at all (a missing runner can't run Wine, so those rows
+-- keep the placeholder icon).
 --
 -- See 'buildAppMenuButton' for why the application-menu button is only
 -- half-blocked by this (removing stays possible, adding doesn't).
@@ -139,6 +156,12 @@ buildProgramListSection bottle launchable contentBox = do
   #append progSectionBox progExpander
   progBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical, #spacing := 5, #marginTop := 10 ]
   #setChild progExpander (Just progBox)
+
+  -- Icon widgets of the rows currently displayed. A background extraction
+  -- that finishes after a rebuild ("Refresh" clicked meanwhile) updates the
+  -- rows that are on screen by looking them up here, instead of writing into
+  -- widgets that were removed from the box.
+  shownIconsRef <- newIORef [] :: IO (IORef [(FilePath, Gtk.Image)])
 
   let blockIfBlocked :: Gtk.Button -> IO ()
       blockIfBlocked btn = case launchable of
@@ -159,11 +182,24 @@ buildProgramListSection bottle launchable contentBox = do
             emptyLabel <- new Gtk.Label [ #label := tr "No programs found", #cssClasses := ["dim-label"] ]
             #append progBox emptyLabel
           else do
-            forM_ lnkFiles $ \path -> do
+            programs <- forM lnkFiles $ \path -> do
                 let name = T.pack $ takeBaseName path
+                let iconPath = applicationIconPath bottle name
+                iconExists <- doesFileExist iconPath
+
                 rowBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 4 ]
 
-                progBtn <- new Gtk.Button [ #label := name, #hexpand := True, #halign := Gtk.AlignFill, #tooltipText := T.pack path ]
+                progBtn <- new Gtk.Button [ #hexpand := True, #halign := Gtk.AlignFill, #tooltipText := T.pack path ]
+                progContent <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal, #spacing := 8 ]
+                progIcon <- new Gtk.Image [ #pixelSize := 24, #valign := Gtk.AlignCenter ]
+                if iconExists
+                  then set progIcon [ #file := T.pack iconPath ]
+                  else set progIcon [ #iconName := missingIconName ]
+                progLabel <- new Gtk.Label [ #label := name, #hexpand := True, #halign := Gtk.AlignStart ]
+                #append progContent progIcon
+                #append progContent progLabel
+                #setChild progBtn (Just progContent)
+
                 -- With nothing to launch with, the button gets no handler at
                 -- all; 'blockIfBlocked' disables it in that case anyway.
                 case launchable of
@@ -176,7 +212,27 @@ buildProgramListSection bottle launchable contentBox = do
                 #append rowBox menuBtn
 
                 #append progBox rowBox
+                return (path, iconPath, progIcon, iconExists)
+            writeIORef shownIconsRef [ (iconPath, icon) | (_, iconPath, icon, _) <- programs ]
             set progExpander [ #expanded := True ]
+
+            -- One batched invocation for every icon that isn't cached yet
+            -- (see 'extractAppIcons'), in its own thread so the list isn't
+            -- held up while Wine/Proton starts; the GUI itself is only
+            -- touched again through 'GLib.idleAdd'.
+            case launchable of
+              Left _ -> pure ()
+              Right runnable -> do
+                let missing = [ (path, iconPath) | (path, iconPath, _, cached) <- programs, not cached ]
+                unless (null missing) $ void $ async $ do
+                  createdIcons <- extractAppIcons runnable missing
+                  unless (null createdIcons) $ void $ GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
+                    shownIcons <- readIORef shownIconsRef
+                    forM_ createdIcons $ \iconPath ->
+                      case lookup iconPath shownIcons of
+                        Just icon -> set icon [ #file := T.pack iconPath ]
+                        Nothing   -> pure ()
+                    return False
 
   refreshBtn <- new Gtk.Button [ #iconName := "view-refresh-symbolic", #tooltipText := tr "Refresh program list", #valign := Gtk.AlignStart ]
   void $ on refreshBtn #clicked refreshPrograms

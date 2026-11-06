@@ -6,6 +6,7 @@ module Bottle.Logic.ApplicationMenu
   , removeFromApplicationMenu
   , isInApplicationMenu
   , removeApplicationMenuSymlink
+  , applicationIconPath
   ) where
 
 import Bottle.Types
@@ -47,8 +48,12 @@ desktopFilePath bottle appName = bottleMenuDir bottle </> T.unpack appName ++ ".
 -- | Path of an application's (best-effort extracted) icon inside the
 -- bottle. Lives in the "menu" directory just like the ".desktop" file
 -- itself, so it travels along with snapshots too.
-iconFilePath :: BottleG r -> T.Text -> FilePath
-iconFilePath bottle appName = bottleMenuDir bottle </> "icons" </> T.unpack appName ++ ".png"
+--
+-- The file only exists once 'extractAppIcons' (via 'addToApplicationMenu',
+-- or the program list in the GUI) has written it; this function just names
+-- the cache location, it never touches the filesystem.
+applicationIconPath :: BottleG r -> T.Text -> FilePath
+applicationIconPath bottle appName = bottleMenuDir bottle </> "icons" </> T.unpack appName ++ ".png"
 
 -- | Name of the symlink in ~/.local/share/applications for a bottle.
 applicationMenuSymlinkName :: BottleG r -> String
@@ -102,7 +107,7 @@ addToApplicationMenu bottle appName lnkPath category = do
   createDirectoryIfMissing True (bottleMenuDir bottle </> "icons")
   ensureApplicationMenuSymlink bottle
 
-  let iconPath = iconFilePath bottle appName
+  let iconPath = applicationIconPath bottle appName
   extractedIcons <- extractAppIcons bottle [(lnkPath, iconPath)]
   let iconLine = map (\path -> "Icon=" <> T.pack path) extractedIcons
 
@@ -123,7 +128,7 @@ removeFromApplicationMenu bottle appName = do
   exists <- doesFileExist path
   when exists $ removeFile path
 
-  let iconPath = iconFilePath bottle appName
+  let iconPath = applicationIconPath bottle appName
   iconExists <- doesFileExist iconPath
   when iconExists $ removeFile iconPath
 

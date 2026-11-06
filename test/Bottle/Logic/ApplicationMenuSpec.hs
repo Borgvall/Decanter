@@ -49,6 +49,11 @@ spec = do
     -- instead of making addToApplicationMenu fail as a whole.
     let bogusLnkPath = "/nonexistent/MyGame.lnk"
 
+    it "derives the icon cache path inside the bottle's menu directory" $ do
+      let bottle = Bottle "AnyBottle" "/bottles/AnyBottle" SystemWine
+      applicationIconPath bottle "MyGame"
+        `shouldBe` "/bottles/AnyBottle/menu/icons/MyGame.png"
+
     it "creates a .desktop entry inside the bottle and a symlink pointing at its menu dir" $ do
       bottle <- makeMenuTestBottle
       addToApplicationMenu bottle "MyGame" bogusLnkPath "Game"
