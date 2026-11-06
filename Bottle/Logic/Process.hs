@@ -6,16 +6,18 @@ module Bottle.Logic.Process
   , killBottleProcesses
   , findBottleScopes
   , md5Hex
-  , extractAppIcon
+  , extractAppIcons
   ) where
 
 import Bottle.Types
 import Bottle.Logic.Direct3dWrappers (getDirect3DWrapperState, direct3DWrapperOverrideDllNames)
 import System.Process.Typed
 import System.Environment (getEnvironment)
-import System.Directory (canonicalizePath, doesFileExist)
+import System.Directory (canonicalizePath, doesFileExist, createDirectoryIfMissing)
+import System.FilePath (takeDirectory)
 import Data.List (intercalate)
 import Data.Maybe (maybeToList)
+import Control.Monad (filterM)
 import Control.Exception (try, IOException)
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 
@@ -132,27 +134,57 @@ getIconExtractionWineEnv Bottle{..} = do
     env <- mergeWithHostEnv $ ("WINEPREFIX", bottlePath) : getProtonEnv runner
     pure $ filter (\(k, _) -> k `notElem` ["DISPLAY", "WAYLAND_DISPLAY"]) env
 
--- | Extracts a start-menu application's (".lnk") icon as a PNG file, via
--- Wine's own winemenubuilder.exe ("-t" flag, "thumbnail_lnk"): resolves the
--- .lnk link to the actual .exe and writes the found icon resource via WIC,
--- fully headless (no display needed).
+-- | Extracts the icons of several start-menu applications (".lnk" files) as
+-- PNG files, via Wine's own winemenubuilder.exe ("-t" flag,
+-- "thumbnail_lnk"): resolves each .lnk link to the actual .exe and writes
+-- the found icon resource via WIC, fully headless (no display needed).
 --
--- Runs synchronously, unlike 'runCmd': callers need the finished file right
--- afterwards (e.g. to enter it into a .desktop file). If extraction fails,
--- False is returned instead of throwing an exception -- callers treat this
--- as a best-effort step that e.g. shouldn't prevent adding an
--- application-menu entry overall.
-extractAppIcon :: BottleG ExistingRunner -> FilePath -> FilePath -> IO Bool
-extractAppIcon bottle lnkPath outputPngPath = do
+-- winemenubuilder accepts "-t <lnk> <png>" repeatedly in one invocation
+-- (it parses its command line in a loop), so passing every pair costs the
+-- process startup only once. That matters most for Proton bottles, where
+-- each invocation boots a fresh umu-run/pressure-vessel container.
+--
+-- Runs synchronously, unlike 'runCmd': callers need the finished files right
+-- afterwards (e.g. to enter one into a .desktop file, or to show it in the
+-- GUI). Best effort, like the single-icon version this replaces: a failing
+-- .lnk doesn't abort the others (winemenubuilder logs the failure and
+-- continues), and an invocation that couldn't be started at all yields no
+-- results instead of throwing.
+--
+-- Returns the output paths for which an icon exists afterwards. That file
+-- check is the only reliable success signal: winemenubuilder's "-t" mode
+-- never affects its exit code.
+extractAppIcons :: BottleG ExistingRunner -> [(FilePath, FilePath)] -> IO [FilePath]
+extractAppIcons _ [] = pure []
+extractAppIcons bottle icons = do
+    mapM_ (createDirectoryIfMissing True . takeDirectory . snd) icons
     env <- getIconExtractionWineEnv bottle
-    let args = ["winemenubuilder.exe", "-t", lnkPath, outputPngPath]
-    let cmd = case runner bottle of
-                Proton _   -> "umu-run"
-                SystemWine -> "wine"
-    result <- try (runProcess (setEnv env (proc cmd args))) :: IO (Either IOException ExitCode)
-    case result of
-      Right ExitSuccess -> doesFileExist outputPngPath
-      _                 -> pure False
+    -- Windows caps a process command line at ~32k characters. A normal
+    -- start menu fits into a single invocation, but chunk anyway so an
+    -- unusually large one can't silently lose icons to truncation.
+    concat <$> mapM (extractChunk env) (chunksOf maxIconsPerInvocation icons)
+  where
+    extractChunk env chunk = do
+      let args = "winemenubuilder.exe" : concatMap (\(lnk, png) -> ["-t", lnk, png]) chunk
+      let cmd = case runner bottle of
+                  Proton _   -> "umu-run"
+                  SystemWine -> "wine"
+      result <- try (runProcess (setEnv env (proc cmd args))) :: IO (Either IOException ExitCode)
+      case result of
+        Right ExitSuccess -> filterM doesFileExist (map snd chunk)
+        _                 -> pure []
+
+-- | Upper bound on "-t" pairs per winemenubuilder invocation (see
+-- 'extractAppIcons'). Well below the ~32k character command-line limit even
+-- for long paths.
+maxIconsPerInvocation :: Int
+maxIconsPerInvocation = 50
+
+chunksOf :: Int -> [a] -> [[a]]
+chunksOf _ [] = []
+chunksOf n xs =
+    let (chunk, rest) = splitAt n xs
+     in chunk : chunksOf n rest
 
 -- | Stops all processes in the bottle.
 -- This should happen synchronously so that subsequent operations (like deletion) are safe.

@@ -9,7 +9,7 @@ module Bottle.Logic.ApplicationMenu
   ) where
 
 import Bottle.Types
-import Bottle.Logic.Process (extractAppIcon)
+import Bottle.Logic.Process (extractAppIcons)
 import System.Directory
     ( createDirectoryIfMissing
     , getXdgDirectory
@@ -93,7 +93,7 @@ removeApplicationMenuSymlink bottle = do
 -- Decanter's own execution logic (env merging, Proton routing, Direct3D
 -- wrapper) instead of invoking Wine/the application directly.
 --
--- The icon is extracted from the ".lnk" file via 'extractAppIcon' (best
+-- The icon is extracted from the ".lnk" file via 'extractAppIcons' (best
 -- effort, see there): if that fails, the entry simply gets no "Icon="
 -- field, instead of the whole addition failing.
 addToApplicationMenu :: BottleG ExistingRunner -> T.Text -> FilePath -> T.Text -> IO ()
@@ -103,8 +103,8 @@ addToApplicationMenu bottle appName lnkPath category = do
   ensureApplicationMenuSymlink bottle
 
   let iconPath = iconFilePath bottle appName
-  iconExtracted <- extractAppIcon bottle lnkPath iconPath
-  let iconLine = if iconExtracted then ["Icon=" <> T.pack iconPath] else []
+  extractedIcons <- extractAppIcons bottle [(lnkPath, iconPath)]
+  let iconLine = map (\path -> "Icon=" <> T.pack path) extractedIcons
 
   writeFile (desktopFilePath bottle appName) $ T.unpack $ T.unlines $
     [ "[Desktop Entry]"

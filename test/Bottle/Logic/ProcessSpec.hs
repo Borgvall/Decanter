@@ -147,20 +147,29 @@ spec = describe "Bottle.Logic.Process" $ do
             resetEnv <- getMergedWineEnv bottle
             lookup "WINEDLLOVERRIDES" resetEnv `shouldBe` Just "winemenubuilder.exe="
 
-  describe "extractAppIcon" $ do
-    it "returns False and creates no file for a non-existent .lnk path" $ withTestEnvironment $ do
+  describe "extractAppIcons" $ do
+    it "returns no icons (and starts no process) for an empty request" $ do
+      let bottle = Bottle "Test" "/tmp/decanter-test-icon-extraction-prefix" SystemWine
+      extractAppIcons bottle [] `shouldReturn` []
+
+    it "returns no paths for several non-existent .lnk files in one invocation" $ withTestEnvironment $ do
       runners <- getAvailableRunners
       case SystemWine `elem` runners of
         False -> pendingWith "No system Wine installation found in this environment; not testable here."
         True -> do
           let bottle = Bottle "Test" "/tmp/decanter-test-icon-extraction-prefix" SystemWine
-          let outputPath = "/tmp/decanter-test-icon-extraction-output.png"
+          let firstOutput = "/tmp/decanter-test-icon-extraction-first.png"
+          let secondOutput = "/tmp/decanter-test-icon-extraction-second.png"
+          let outputPaths = [firstOutput, secondOutput]
+          mapM_ removePathForcibly outputPaths
+          extracted <- extractAppIcons
+            bottle
+            [ ("/nonexistent/Some App.lnk", firstOutput)
+            , ("/nonexistent/Other App.lnk", secondOutput)
+            ]
+            `finally` mapM_ removePathForcibly outputPaths
 
-          removePathForcibly outputPath
-          succeeded <- extractAppIcon bottle "/nonexistent/Some App.lnk" outputPath
-            `finally` removePathForcibly outputPath
-
-          succeeded `shouldBe` False
+          extracted `shouldBe` []
 
     -- The success path (resolving a real .lnk to its .exe and extracting a
     -- real icon resource via WIC) would need a genuine Windows shortcut

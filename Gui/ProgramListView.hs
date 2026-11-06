@@ -38,7 +38,7 @@ applicationMenuCategories =
 --
 -- The two directions are gated differently on purpose. *Adding* needs a
 -- launchable bottle: it extracts the entry's icon by running Wine/Proton
--- (see 'Bottle.Logic.Process.extractAppIcon'), and the entry it writes has
+-- (see 'Bottle.Logic.Process.extractAppIcons'), and the entry it writes has
 -- an "Exec=decanter start ...", which would fail the moment anyone clicked
 -- it in the host's menu. *Removing* only deletes a ".desktop" file and
 -- stays available precisely then -- otherwise a bottle whose runner
@@ -101,7 +101,7 @@ buildAppMenuButton bottle launchable appName lnkPath onChanged = do
         forM_ applicationMenuCategories $ \category -> do
           row <- new Adw.ActionRow [ #title := category, #activatable := True ]
           -- addToApplicationMenu extracts an icon via Wine/winemenubuilder
-          -- (see Bottle.Logic.Process.extractAppIcon), so it can take a few
+          -- (see Bottle.Logic.Process.extractAppIcons), so it can take a few
           -- seconds -- runs in its own thread so this doesn't briefly freeze
           -- the UI.
           void $ on row #activated $ do

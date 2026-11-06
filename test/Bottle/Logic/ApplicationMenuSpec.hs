@@ -44,7 +44,7 @@ spec = do
           return $ Bottle "MenuTestBottle" path SystemWine
 
     -- A deliberately non-existent .lnk path is enough for most of these
-    -- tests: icon extraction (see Bottle.Logic.Process.extractAppIcon) is
+    -- tests: icon extraction (see Bottle.Logic.Process.extractAppIcons) is
     -- best effort and simply fails gracefully for it (no "Icon=" field),
     -- instead of making addToApplicationMenu fail as a whole.
     let bogusLnkPath = "/nonexistent/MyGame.lnk"
