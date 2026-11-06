@@ -47,18 +47,19 @@ spec = do
 
         if supportsSnaps
           then do
-            createSnapshotLogic bottle (testName "Initial")
+            created <- createSnapshotLogic bottle (testName "Initial")
             snaps1 <- listSnapshots bottle
-            case snaps1 of
-              [snap1] -> snapshotName snap1 `shouldBe` "Initial"
-              _ -> expectationFailure $ "Expected exactly one snapshot, got: " ++ show snaps1
+            -- The returned record is the snapshot that was actually created:
+            -- 'listSnapshots' reads the same id, name and path back off
+            -- disk, instead of the caller having to search for it.
+            snaps1 `shouldBe` [created]
 
             let testFile = bottlePath bottle </> "testfile.txt"
             writeFile testFile "State 2: With File"
             existsAfterWrite <- doesFileExist testFile
             existsAfterWrite `shouldBe` True
 
-            createSnapshotLogic bottle (testName "WithFile")
+            _ <- createSnapshotLogic bottle (testName "WithFile")
             snaps2 <- listSnapshots bottle
             length snaps2 `shouldBe` 2
 
@@ -108,8 +109,8 @@ spec = do
 
         if supportsSnaps
           then do
-            createSnapshotLogic bottle (testName "First")
-            createSnapshotLogic bottle (testName "Second")
+            _ <- createSnapshotLogic bottle (testName "First")
+            _ <- createSnapshotLogic bottle (testName "Second")
             snapsBefore <- listSnapshots bottle
             length snapsBefore `shouldBe` 2
 

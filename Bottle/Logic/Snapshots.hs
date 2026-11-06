@@ -112,7 +112,13 @@ getNextSnapshotId :: [BottleSnapshot] -> Int
 getNextSnapshotId [] = 0
 getNextSnapshotId snaps = maximum (map snapshotId snaps) + 1
 
-createSnapshotLogic :: BottleG r -> ValidName -> IO ()
+-- | Creates a snapshot of "bottle" and returns the snapshot it created.
+--
+-- Returns it rather than '()' because the id is derived here, from the
+-- bottle's existing snapshots: a caller that wants to report or address the
+-- new snapshot would otherwise have to list the bottle's snapshots again and
+-- guess which of them is the one it just made.
+createSnapshotLogic :: BottleG r -> ValidName -> IO BottleSnapshot
 createSnapshotLogic bottle sName = do
     baseSnapDir <- getSnapshotsDir
     let bottleSnapDir = baseSnapDir </> T.unpack (bottleName bottle)
@@ -125,6 +131,8 @@ createSnapshotLogic bottle sName = do
     let destPath = bottleSnapDir </> folderName
 
     Btrfs.snapshot (bottlePath bottle) destPath True
+
+    pure $ BottleSnapshot nextId (validNameText sName) destPath
 
 -- | Restores a bottle from a snapshot.
 --

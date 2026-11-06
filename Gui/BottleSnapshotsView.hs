@@ -61,7 +61,7 @@ showCreateSnapshotPopover parentBtn bottle refreshCallback = do
           Right validName -> do
             #setSensitive createBtn False
             void $ async $ do
-              res <- try (createSnapshotLogic bottle validName) :: IO (Either SomeException ())
+              res <- try (createSnapshotLogic bottle validName) :: IO (Either SomeException BottleSnapshot)
               GLib.idleAdd GLib.PRIORITY_DEFAULT $ do
                 case res of
                   Right _ -> #popdown popover >> refreshCallback
