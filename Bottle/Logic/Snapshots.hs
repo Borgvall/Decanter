@@ -10,6 +10,11 @@ module Bottle.Logic.Snapshots
   , deleteAllSnapshots
   , recoverInterruptedRestores
 
+    -- * Resolving a snapshot reference typed by the user
+  , SnapshotRefError(..)
+  , resolveSnapshotRef
+  , explainSnapshotRefError
+
     -- * BTRFS Helpers
     -- Only exported because "Bottle.Logic" also needs them to manage a
     -- bottle's own subvolume (which isn't itself a snapshot).
@@ -21,6 +26,7 @@ import Bottle.Types
 import Bottle.Logic.Name (ValidName, validNameText, restoreTempSuffix)
 import Bottle.Logic.Process (killBottleProcesses)
 import Logic.SystemTool (runSystemTool)
+import Logic.Translation (tr)
 import System.Directory
     ( createDirectoryIfMissing
     , getXdgDirectory
@@ -33,9 +39,10 @@ import System.Directory
 import System.FilePath ((</>))
 import Control.Exception (try, IOException, SomeException)
 import Control.Monad (forM_, when)
-import Data.List (sortOn, isSuffixOf)
+import Data.List (find, sortOn, isSuffixOf)
 import Data.Maybe (mapMaybe)
 import Data.Char (isDigit)
+import Text.Read (readMaybe)
 import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 import System.IO.Error
@@ -111,6 +118,51 @@ listSnapshots bottle = do
 getNextSnapshotId :: [BottleSnapshot] -> Int
 getNextSnapshotId [] = 0
 getNextSnapshotId snaps = maximum (map snapshotId snaps) + 1
+
+-- | Why a snapshot reference didn't resolve to exactly one snapshot.
+-- Deliberately not a 'Maybe': "not found" and "ambiguous" call for different
+-- advice, and the caller can't recover which one it was from the reference
+-- alone.
+data SnapshotRefError
+  = NoSnapshotWithId Int
+  | NoSnapshotWithName T.Text
+  | AmbiguousSnapshotName T.Text [Int]
+  deriving (Eq, Show)
+
+-- | Resolves a snapshot reference as a user typed it (see
+-- "Cli".runRestoreSnapshot / "Cli".runDeleteSnapshot) to one of
+-- "snapshots".
+--
+-- A reference made up entirely of digits always means that snapshot's id;
+-- anything else is matched against 'snapshotName'. Ids are the unambiguous
+-- handle -- names aren't required to be unique, hence 'AmbiguousSnapshotName'
+-- lists every id carrying the given one. An all-digit reference is
+-- deliberately *not* retried as a name: a snapshot merely named "7" must
+-- never be restored by accident just because no id 7 exists.
+resolveSnapshotRef :: T.Text -> [BottleSnapshot] -> Either SnapshotRefError BottleSnapshot
+resolveSnapshotRef ref snapshots
+  | Just refId <- readMaybe (T.unpack ref) =
+      case find ((== refId) . snapshotId) snapshots of
+        Just snapshot -> Right snapshot
+        Nothing       -> Left (NoSnapshotWithId refId)
+  | otherwise =
+      case filter ((== ref) . snapshotName) snapshots of
+        []         -> Left (NoSnapshotWithName ref)
+        [snapshot] -> Right snapshot
+        found      -> Left (AmbiguousSnapshotName ref (map snapshotId found))
+
+explainSnapshotRefError :: SnapshotRefError -> T.Text
+explainSnapshotRefError (NoSnapshotWithId refId) = T.concat
+  [ tr "No snapshot with id ", T.pack (show refId), tr " in this bottle." ]
+explainSnapshotRefError (NoSnapshotWithName refName) = T.concat
+  [ tr "No snapshot named '", refName, tr "' in this bottle." ]
+explainSnapshotRefError (AmbiguousSnapshotName refName refIds) = T.concat
+  [ tr "Several snapshots are named '"
+  , refName
+  , tr "' (ids: "
+  , T.intercalate ", " (map (T.pack . show) refIds)
+  , tr "). Use the id instead."
+  ]
 
 -- | Creates a snapshot of "bottle" and returns the snapshot it created.
 --

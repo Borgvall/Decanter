@@ -13,7 +13,18 @@ import System.IO (hPutStrLn, stderr)
 
 import Bottle.Logic (findBottleByName, listExistingBottles)
 import Bottle.Types (Bottle)
-import Cli (Command(..), parseCommand, runListApps, runListBottles, runOpen, runStart)
+import Cli
+  ( Command(..)
+  , parseCommand
+  , runCreateSnapshot
+  , runDeleteSnapshot
+  , runListApps
+  , runListBottles
+  , runListSnapshots
+  , runOpen
+  , runRestoreSnapshot
+  , runStart
+  )
 import Gui.OverviewView (buildOverviewPage, navigateToBottle)
 
 main :: IO ()
@@ -25,6 +36,10 @@ main = do
     ListApps b      -> runListApps b
     Start b a       -> runStart b a
     Open b f        -> runOpen b f
+    ListSnapshots b -> runListSnapshots b
+    CreateSnapshot b n -> runCreateSnapshot b n
+    RestoreSnapshot b s c -> runRestoreSnapshot b s c
+    DeleteSnapshot b s c  -> runDeleteSnapshot b s c
 
 -- | Resolves the optional bottle name from 'decanter gui <bottle name>'.
 -- If the bottle doesn't exist, the process aborts before a window is even

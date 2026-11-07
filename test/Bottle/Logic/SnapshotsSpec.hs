@@ -19,6 +19,7 @@ import System.Environment (setEnv, unsetEnv)
 import System.FilePath ((</>), takeDirectory)
 import Control.Exception (finally, try, SomeException)
 import Data.List (find)
+import qualified Data.Text as T
 import qualified System.Linux.Btrfs as Btrfs
 
 -- | Sets up an isolated test environment
@@ -181,3 +182,46 @@ spec = do
 
     it "opens the snapshot's drive_c in the file manager" $ do
       pendingWith "openSnapshotFileManager launches an external GUI app (xdg-open) and isn't unit-testable in CI."
+
+  -- Pure: no bottle, no filesystem, no BTRFS needed.
+  describe "resolveSnapshotRef" $ do
+    let initial      = BottleSnapshot 0 "Initial" "/snapshots/0_Initial"
+        beforePatchA = BottleSnapshot 1 "BeforePatch" "/snapshots/1_BeforePatch"
+        beforePatchB = BottleSnapshot 2 "BeforePatch" "/snapshots/2_BeforePatch"
+        snapshots    = [initial, beforePatchA, beforePatchB]
+
+    it "resolves a numeric reference by snapshot id" $ do
+      resolveSnapshotRef "1" snapshots `shouldBe` Right beforePatchA
+
+    it "resolves a name reference" $ do
+      resolveSnapshotRef "Initial" snapshots `shouldBe` Right initial
+
+    it "reads an all-digit reference as an id, not as a name" $ do
+      let numeric       = BottleSnapshot 7 "Seventh" "/snapshots/7_Seventh"
+          namedLikeAnId = BottleSnapshot 8 "7" "/snapshots/8_7"
+      resolveSnapshotRef "7" [numeric, namedLikeAnId] `shouldBe` Right numeric
+
+    it "does not fall back to a name when the id doesn't exist" $ do
+      -- An all-digit reference always means an id: silently resolving a
+      -- snapshot merely *named* "7" would restore something the user didn't
+      -- ask for.
+      let namedLikeAnId = BottleSnapshot 8 "7" "/snapshots/8_7"
+      resolveSnapshotRef "7" [namedLikeAnId] `shouldBe` Left (NoSnapshotWithId 7)
+
+    it "reports an unknown id" $ do
+      resolveSnapshotRef "9" snapshots `shouldBe` Left (NoSnapshotWithId 9)
+
+    it "reports an unknown name" $ do
+      resolveSnapshotRef "Nope" snapshots `shouldBe` Left (NoSnapshotWithName "Nope")
+
+    it "reports an ambiguous name with every id that carries it" $ do
+      resolveSnapshotRef "BeforePatch" snapshots
+        `shouldBe` Left (AmbiguousSnapshotName "BeforePatch" [1, 2])
+
+    it "explains every kind of resolution failure" $ do
+      explainSnapshotRefError (NoSnapshotWithId 9)
+        `shouldSatisfy` T.isInfixOf "9"
+      explainSnapshotRefError (NoSnapshotWithName "Nope")
+        `shouldSatisfy` T.isInfixOf "Nope"
+      explainSnapshotRefError (AmbiguousSnapshotName "BeforePatch" [1, 2])
+        `shouldSatisfy` T.isInfixOf "1, 2"

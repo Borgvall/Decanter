@@ -84,8 +84,10 @@ Decanter provides a clean GUI to manage your Windows applications on Linux:
   built-in Direct3D implementation, DXVK, and DXVK + vkd3d-proton right from
   the bottle view. Unlike Proton, plain Wine doesn't ship these on its own;
   "DXVK + vkd3d-proton" is recommended for modern (Direct3D 12) games.
-* **Command Line Interface:** Manage bottles and launch applications from the
-  terminal (`decanter gui/list-bottles/list-apps/start/open`), with shell
+* **Command Line Interface:** Manage bottles, launch applications, and
+  create, restore or delete BTRFS snapshots from the terminal (`decanter
+  gui`, `list-bottles`, `list-apps`, `start`, `open`, `list-snapshots`,
+  `create-snapshot`, `restore-snapshot`, `delete-snapshot`), with shell
   completion for bash, zsh and fish.
 
 ## 🤖 An AI Coding Experiment
