@@ -14,6 +14,7 @@ module Cli
   , runDeleteSnapshot
   ) where
 
+import Control.Exception (IOException, try)
 import Control.Monad (unless)
 import Data.List (isPrefixOf, sortOn)
 import Data.Maybe (listToMaybe)
@@ -23,9 +24,9 @@ import qualified Data.Text.IO as TIO
 import Options.Applicative
 import System.Directory (doesFileExist)
 import System.Environment (getArgs)
-import System.Exit (exitFailure)
+import System.Exit (ExitCode(..), exitFailure, exitWith)
 import System.FilePath (takeBaseName)
-import System.IO (hPutStrLn, stderr)
+import System.IO (hFlush, hIsTerminalDevice, hPutStr, hPutStrLn, stderr, stdin)
 
 import Bottle.Logic
   ( findAppLnkByName
@@ -109,9 +110,9 @@ commandParser = subcommands <|> pure (Gui Nothing)
      <> command "create-snapshot" (info createSnapshotParser
           (progDesc "Create a snapshot of a bottle"))
      <> command "restore-snapshot" (info restoreSnapshotParser
-          (progDesc "Restore a bottle from a snapshot (needs --force)"))
+          (progDesc "Restore a bottle from a snapshot (asks for confirmation)"))
      <> command "delete-snapshot" (info deleteSnapshotParser
-          (progDesc "Delete a snapshot (needs --force)"))
+          (progDesc "Delete a snapshot (asks for confirmation)"))
       )
 
     guiParser = Gui <$> optional bottleArg
@@ -137,7 +138,7 @@ commandParser = subcommands <|> pure (Gui Nothing)
       )
     forceFlag = flag' Confirmed
       ( long "force" <> short 'f'
-     <> help "Confirm the operation even though it cannot be undone"
+     <> help "Skip the confirmation prompt (required when stdin is not a terminal)"
       )
       <|> pure Unconfirmed
 
@@ -274,6 +275,12 @@ runOpen bottleNm filePath = withBottle bottleNm $ \bottle -> do
 snapshotRefOf :: BottleSnapshot -> Text
 snapshotRefOf = T.pack . show . snapshotId
 
+-- | How a snapshot is named in messages to the user: its id plus its name,
+-- since the name alone may be ambiguous.
+snapshotLabel :: BottleSnapshot -> Text
+snapshotLabel snapshot = T.concat
+  [ snapshotRefOf snapshot, " ('", snapshotName snapshot, "')" ]
+
 -- | Prints a bottle's snapshots as "<id>\t<name>", one per line.
 --
 -- A bottle that isn't a BTRFS subvolume can't have any snapshots; that is
@@ -313,21 +320,23 @@ runRestoreSnapshot bottleNm snapshotRef confirmation = withBottle bottleNm $ \bo
   -- Resolved before the confirmation is demanded: "no such snapshot" is the
   -- more useful of the two errors when both apply.
   snapshot <- resolveSnapshotOrFail bottle snapshotRef
-  requireConfirmation "restore a snapshot over the bottle's current state" confirmation
+  confirmDestructiveAction confirmation $ T.concat
+    [ "restore bottle '", bottleNm, "' from snapshot ", snapshotLabel snapshot
+    , ", overwriting its current state"
+    ]
   restoreSnapshotLogic bottle snapshot
   TIO.putStrLn $ T.concat
-    [ "Restored bottle '", bottleNm, "' from snapshot ", snapshotRefOf snapshot
-    , " ('", snapshotName snapshot, "')."
+    [ "Restored bottle '", bottleNm, "' from snapshot ", snapshotLabel snapshot, "."
     ]
 
 runDeleteSnapshot :: Text -> Text -> Confirmation -> IO ()
 runDeleteSnapshot bottleNm snapshotRef confirmation = withBottle bottleNm $ \bottle -> do
   snapshot <- resolveSnapshotOrFail bottle snapshotRef
-  requireConfirmation "delete a snapshot" confirmation
+  confirmDestructiveAction confirmation $ T.concat
+    [ "delete snapshot ", snapshotLabel snapshot, " from bottle '", bottleNm, "'" ]
   deleteSnapshotLogic snapshot
   TIO.putStrLn $ T.concat
-    [ "Deleted snapshot ", snapshotRefOf snapshot
-    , " ('", snapshotName snapshot, "') from bottle '", bottleNm, "'."
+    [ "Deleted snapshot ", snapshotLabel snapshot, " from bottle '", bottleNm, "'."
     ]
 
 -- | Resolves a SNAPSHOT argument against the bottle's snapshots, or aborts
@@ -342,11 +351,52 @@ resolveSnapshotOrFail bottle ref = do
       hPutStrLn stderr $ T.unpack (explainSnapshotRefError reason)
       exitFailure
 
--- | Aborts a destructive command unless the user confirmed it with
--- @--force@.
-requireConfirmation :: String -> Confirmation -> IO ()
-requireConfirmation _ Confirmed = pure ()
-requireConfirmation operation Unconfirmed = do
-  hPutStrLn stderr $ "Refusing to " ++ operation
-    ++ ": this cannot be undone. Re-run with --force to proceed."
-  exitFailure
+-- | Asks the user to confirm a destructive operation, or aborts with
+-- 'notConfirmedExitCode'.
+--
+-- On a terminal this is the classic @[y/N]@ prompt; without one (a pipe, a
+-- script, CI) there is nobody to answer, so @--force@ is required instead.
+-- The prompt goes to stderr: stdout stays reserved for the command's actual
+-- output, and redirecting stdout can't swallow the question.
+--
+-- @operation@ completes the sentence \"This will ...\", so it is a phrase
+-- like \"delete snapshot 3 ('Before Patch') from bottle 'foo'\".
+confirmDestructiveAction :: Confirmation -> Text -> IO ()
+confirmDestructiveAction Confirmed _ = pure ()
+confirmDestructiveAction Unconfirmed operation = do
+  interactive <- hIsTerminalDevice stdin
+  if not interactive
+    then abortNotConfirmed $ T.concat
+      [ "Refusing to ", operation
+      , ": there is nobody to ask because stdin is not a terminal."
+      , " Re-run with --force to proceed."
+      ]
+    else do
+      hPutStr stderr $ T.unpack $ T.concat
+        [ "This will ", operation, ". This cannot be undone. Continue? [y/N] " ]
+      hFlush stderr
+      -- A closed or unreadable stdin is just another "no".
+      answer <- try getLine :: IO (Either IOException String)
+      case answer of
+        Right line | isAffirmative (T.pack line) -> pure ()
+        _ -> abortNotConfirmed "Aborted."
+
+-- | Whether a line typed at the confirmation prompt means \"yes\".
+-- Anything but an explicit yes -- including an empty line, the default
+-- hinted at by @[y/N]@ -- counts as a no.
+isAffirmative :: Text -> Bool
+isAffirmative answer = T.toLower (T.strip answer) `elem` ["y", "yes"]
+
+-- | Exit code for \"the operation was not confirmed\". Distinct from the
+-- generic failure code so scripts can tell a deliberate refusal (prompt
+-- answered no, or @--force@ missing without a terminal) from an actual
+-- error such as an unknown snapshot.
+notConfirmedExitCode :: Int
+notConfirmedExitCode = 2
+
+-- | Reports why a destructive operation was not performed and exits with
+-- 'notConfirmedExitCode'.
+abortNotConfirmed :: Text -> IO a
+abortNotConfirmed message = do
+  hPutStrLn stderr $ T.unpack message
+  exitWith (ExitFailure notConfirmedExitCode)

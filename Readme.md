@@ -210,6 +210,51 @@ that bottle's own `menu/` folder:
 
  * `~/.local/share/applications/decanter-<bottle>`
 
+## ⌨️ Command Line
+
+Running `decanter` without a subcommand starts the GUI. The other
+subcommands manage bottles and their BTRFS snapshots without opening a
+window, so they can be used from scripts:
+
+```bash
+decanter gui [BOTTLE]                          # Start the GUI, optionally on a bottle
+decanter list-bottles                          # One bottle name per line
+decanter list-apps BOTTLE                      # One start menu entry per line
+decanter start BOTTLE APPLICATION              # Start a start menu entry
+decanter open BOTTLE FILE                      # Open a file inside the bottle
+decanter list-snapshots BOTTLE                 # One "<id>\t<name>" line per snapshot
+decanter create-snapshot BOTTLE NAME           # Create a snapshot
+decanter restore-snapshot BOTTLE SNAPSHOT [-f] # Restore a bottle from a snapshot
+decanter delete-snapshot BOTTLE SNAPSHOT [-f]  # Delete a snapshot
+```
+
+`SNAPSHOT` is either a snapshot id or a name, as printed by
+`list-snapshots`. Names are not required to be unique; a reference made up
+entirely of digits is always read as an id, never as a name.
+
+Restoring and deleting destroy data that cannot be recovered, so they ask
+first:
+
+ * With a terminal on stdin, Decanter prints
+   `This will ... This cannot be undone. Continue? [y/N]` to stderr and
+   proceeds only on `y` or `yes`. An empty answer, EOF or anything else
+   aborts.
+ * Without a terminal (a pipe, a script, CI) there is nobody to ask, so
+   the operation is refused unless `--force` (`-f`) is given. `--force`
+   skips the prompt even on a terminal.
+
+Exit codes:
+
+| Code | Meaning                                                                                       |
+| ---- | --------------------------------------------------------------------------------------------- |
+| `0`  | Success                                                                                       |
+| `1`  | Error (unknown bottle or snapshot, invalid snapshot name, ...)                                |
+| `2`  | Destructive operation not confirmed (prompt answered no, or `--force` missing without a TTY)  |
+
+Shell completion for bash, zsh and fish is available via
+`decanter --bash-completion-script decanter` (and the `--zsh-`/`--fish-`
+equivalents).
+
 ## 🏃 Running Tests
 
 ```bash
